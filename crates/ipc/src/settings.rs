@@ -197,6 +197,10 @@ pub enum PopupStyle {
     Notifications,
 }
 
+fn default_theme() -> String {
+    "cranked".into()
+}
+
 /// Off until `url` is set. The token is a long-lived access token, kept in its own file readable only by you.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -232,6 +236,9 @@ pub struct Config {
     pub popups: bool,
     #[serde(default)]
     pub popup_style: PopupStyle,
+    /// The window's look: "cranked", "midnight", "graphite", "light" or "system" (your desktop's colours).
+    #[serde(default = "default_theme")]
+    pub theme: String,
     pub leds: Leds,
     pub home_assistant: HomeAssistant,
     #[serde(rename = "profile")]
@@ -244,6 +251,8 @@ pub struct Config {
 struct File {
     popups: bool,
     popup_style: PopupStyle,
+    #[serde(default = "default_theme")]
+    theme: String,
     leds: Leds,
     home_assistant: HomeAssistant,
     auto_lower: AutoLower,
@@ -258,6 +267,7 @@ impl Default for File {
         Self {
             popups: true,
             popup_style: PopupStyle::default(),
+            theme: default_theme(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             auto_lower: AutoLower::default(),
@@ -311,6 +321,7 @@ impl Default for Config {
         Self {
             popups: true,
             popup_style: PopupStyle::default(),
+            theme: default_theme(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             profiles: vec![Profile {
@@ -348,6 +359,7 @@ impl Config {
         let mut config = Self {
             popups: file.popups,
             popup_style: file.popup_style,
+            theme: file.theme,
             leds: file.leds,
             home_assistant: file.home_assistant,
             profiles,

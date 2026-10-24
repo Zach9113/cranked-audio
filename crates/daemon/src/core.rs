@@ -876,6 +876,7 @@ mod tests {
         Config {
             popups: true,
             popup_style: Default::default(),
+            theme: "cranked".into(),
             leds: Default::default(),
             home_assistant: Default::default(),
             profiles: vec![

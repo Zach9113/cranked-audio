@@ -1,5 +1,31 @@
 import { Button, CheckBox, ComboBox, LineEdit, SpinBox, Slider, ScrollView, GroupBox, ListView } from "std-widgets.slint";
 
+// Colours by role; the window sets them from the chosen theme (see themes.rs).
+export global Palette {
+    in-out property <color> background: #121216;
+    in-out property <color> card: #1b1b21;
+    in-out property <color> centre: #2a2a32;
+    in-out property <color> centre-hover: #2f2f38;
+    in-out property <color> track: #34343e;
+    in-out property <color> button: #26262e;
+    in-out property <color> button-hover: #30303a;
+    in-out property <color> edge: #3a3a44;
+    in-out property <color> text: #f2f2f5;
+    in-out property <color> text-strong: #ffffff;
+    in-out property <color> text-dim: #c4c4ce;
+    in-out property <color> subtle: #a8a8b4;
+    in-out property <color> faint: #8e8e9a;
+    in-out property <color> hint: #6e6e7a;
+    in-out property <color> list: #18181d;
+    in-out property <color> selected: #264a32;
+    in-out property <color> selected-hover: #2f5a3c;
+    in-out property <color> check: #6ee08a;
+    in-out property <color> ok: #5cc878;
+    in-out property <color> held: #4a3818;
+    in-out property <color> held-edge: #e0a040;
+    in-out property <color> held-text: #ffd38a;
+}
+
 export struct AppRow {
     name: string,
     selected: bool,
@@ -56,6 +82,9 @@ export global General {
     in-out property <bool> popups;
     // 0 automatic, 1 Atoll island, 2 KDE, 3 notifications
     in-out property <int> popup-style;
+    in-out property <int> theme-index;
+    in property <[string]> theme-names;
+    callback theme-changed(int);
     in-out property <float> brightness;
     in-out property <bool> dim-idle;
     // LED calibration: per-channel correction for dimming
@@ -92,12 +121,12 @@ export global General {
 }
 
 component Label inherits Text {
-    color: #c4c4ce;
+    color: Palette.text-dim;
     vertical-alignment: center;
 }
 
 component Hint inherits Text {
-    color: #8e8e9a;
+    color: Palette.faint;
     font-size: 12px;
     wrap: word-wrap;
 }
@@ -114,7 +143,7 @@ component ColorPicker inherits VerticalLayout {
             height: 28px;
             border-radius: 6px;
             border-width: 1px;
-            border-color: #55555f;
+            border-color: Palette.edge;
             background: Lists.parse-color(root.value);
         }
         LineEdit {
@@ -132,7 +161,7 @@ component ColorPicker inherits VerticalLayout {
             border-radius: 4px;
             background: swatch;
             border-width: Lists.swatch-hex[i] == root.value ? 2px : 0px;
-            border-color: #ffffff;
+            border-color: Palette.text-strong;
             TouchArea {
                 clicked => { root.value = Lists.swatch-hex[i]; }
             }
@@ -212,8 +241,8 @@ export component KnobPage inherits ScrollView {
                     animate height { duration: 160ms; easing: ease-out; }
                     border-radius: 8px;
                     border-width: 1px;
-                    border-color: #34343e;
-                    background: #18181d;
+                    border-color: Palette.track;
+                    background: Palette.list;
                     ListView {
                         for row[i] in KnobSettings.app-rows: Rectangle {
                             height: 40px;
@@ -225,8 +254,8 @@ export component KnobPage inherits ScrollView {
                                 height: parent.height - 4px;
                                 border-radius: 6px;
                                 background: row.selected
-                                    ? (pick.has-hover ? #2f5a3c : #264a32)
-                                    : (pick.has-hover ? #2a2a32 : transparent);
+                                    ? (pick.has-hover ? Palette.selected-hover : Palette.selected)
+                                    : (pick.has-hover ? Palette.centre : transparent);
                             }
                             HorizontalLayout {
                                 padding-left: 10px;
@@ -235,13 +264,13 @@ export component KnobPage inherits ScrollView {
                                 Text {
                                     text: row.selected ? "✓" : "";
                                     width: 16px;
-                                    color: #6ee08a;
+                                    color: Palette.check;
                                     font-weight: 800;
                                     vertical-alignment: center;
                                 }
                                 Text {
                                     text: row.name;
-                                    color: row.selected ? #ffffff : #d8d8e0;
+                                    color: row.selected ? Palette.text-strong : Palette.text-dim;
                                     font-weight: row.selected ? 600 : 400;
                                     vertical-alignment: center;
                                     horizontal-stretch: 1;
@@ -249,13 +278,13 @@ export component KnobPage inherits ScrollView {
                                 }
                                 if row.playing: Text {
                                     text: "playing now";
-                                    color: #6ee08a;
+                                    color: Palette.check;
                                     font-size: 12px;
                                     vertical-alignment: center;
                                 }
                                 if row.elsewhere != "": Text {
                                     text: "on " + row.elsewhere;
-                                    color: #8e8e9a;
+                                    color: Palette.faint;
                                     font-size: 12px;
                                     vertical-alignment: center;
                                 }
@@ -352,6 +381,19 @@ export component GeneralPage inherits ScrollView {
         padding: 4px;
         spacing: 14px;
         alignment: start;
+
+        GroupBox {
+            title: "Look";
+            HorizontalLayout {
+                spacing: 8px;
+                Label { text: "Theme"; width: 110px; }
+                ComboBox {
+                    model: General.theme-names;
+                    current-index <=> General.theme-index;
+                    selected => { General.theme-changed(self.current-index); }
+                }
+            }
+        }
 
         GroupBox {
             title: "Profiles";

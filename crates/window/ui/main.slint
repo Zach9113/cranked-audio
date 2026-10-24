@@ -1,6 +1,7 @@
 import { Button } from "std-widgets.slint";
-import { KnobPage, ButtonPage, GeneralPage, CalibrationPage, Lists, KnobSettings, General } from "settings.slint";
-export { Lists, KnobSettings, General }
+import { Palette, KnobPage, ButtonPage, GeneralPage, CalibrationPage, Lists, KnobSettings, General } from "settings.slint";
+export { Lists, KnobSettings, General, Palette }
+export { Palette as StdPalette } from "std-widgets.slint";
 
 export struct KnobData {
     name: string,
@@ -55,7 +56,7 @@ component Dial inherits Rectangle {
         width: 90px;
         height: 90px;
         border-radius: 45px;
-        background: area.pressed ? #34343e : (area.has-hover ? #2f2f38 : #2a2a32);
+        background: area.pressed ? Palette.track : (area.has-hover ? Palette.centre-hover : Palette.centre);
     }
 
     VerticalLayout {
@@ -65,7 +66,7 @@ component Dial inherits Rectangle {
             horizontal-alignment: center;
             font-size: 24px;
             font-weight: 700;
-            color: data.muted ? #8a8a96 : #f4f4f6;
+            color: data.muted ? Palette.faint : Palette.text;
         }
         if data.muted || data.lowered: Text {
             text: data.muted ? "muted" : "lowered";
@@ -114,8 +115,8 @@ component KnobButton inherits Rectangle {
     height: 92px;
     border-radius: 18px;
     border-width: 1px;
-    border-color: data.held ? #e0a040 : #3a3a44;
-    background: data.held ? #4a3818 : (touch.has-hover ? #30303a : #26262e);
+    border-color: data.held ? Palette.held-edge : Palette.edge;
+    background: data.held ? Palette.held : (touch.has-hover ? Palette.button-hover : Palette.button);
 
     Path {
         width: 44px;
@@ -123,7 +124,7 @@ component KnobButton inherits Rectangle {
         viewbox-width: 24;
         viewbox-height: 24;
         commands: data.icon-fill;
-        fill: data.held ? #ffd38a : #e6e6ec;
+        fill: data.held ? Palette.held-text : Palette.text;
     }
 
     Path {
@@ -132,7 +133,7 @@ component KnobButton inherits Rectangle {
         viewbox-width: 24;
         viewbox-height: 24;
         commands: data.icon-lines;
-        stroke: data.held ? #ffd38a : #e6e6ec;
+        stroke: data.held ? Palette.held-text : Palette.text;
         stroke-width: 3.5px;
     }
 
@@ -159,7 +160,7 @@ component KnobColumn inherits Rectangle {
     callback knob-settings();
     callback button-settings();
     border-radius: 16px;
-    background: #1b1b21;
+    background: Palette.card;
     min-width: 152px;
     // equal columns whatever the labels say
     preferred-width: 152px;
@@ -175,7 +176,7 @@ component KnobColumn inherits Rectangle {
             horizontal-alignment: center;
             font-size: 17px;
             font-weight: 700;
-            color: name-area.has-hover ? #ffffff : #f0f0f4;
+            color: name-area.has-hover ? Palette.text-strong : Palette.text;
             overflow: elide;
             name-area := TouchArea {
                 mouse-cursor: pointer;
@@ -197,7 +198,7 @@ component KnobColumn inherits Rectangle {
             text: data.source;
             horizontal-alignment: center;
             font-size: 13px;
-            color: #a8a8b4;
+            color: Palette.subtle;
             overflow: elide;
         }
 
@@ -215,7 +216,7 @@ component KnobColumn inherits Rectangle {
             text: "Press: " + data.press;
             horizontal-alignment: center;
             font-size: 12px;
-            color: #c4c4ce;
+            color: Palette.text-dim;
             wrap: word-wrap;
         }
 
@@ -223,7 +224,7 @@ component KnobColumn inherits Rectangle {
             text: "Hold: " + data.hold;
             horizontal-alignment: center;
             font-size: 12px;
-            color: #8e8e9a;
+            color: Palette.faint;
             wrap: word-wrap;
         }
     }
@@ -236,7 +237,7 @@ export component MainWindow inherits Window {
     preferred-height: 600px;
     min-width: 860px;
     min-height: 520px;
-    background: #121216;
+    background: Palette.background;
     default-font-size: 14px;
 
     in property <[KnobData]> knobs;
@@ -273,13 +274,13 @@ export component MainWindow inherits Window {
                     : "Settings";
                 font-size: 22px;
                 font-weight: 800;
-                color: #f4f4f6;
+                color: Palette.text;
                 vertical-alignment: center;
             }
             if root.page == 0: Text {
                 text: root.profile;
                 font-size: 14px;
-                color: #8e8e9a;
+                color: Palette.faint;
                 vertical-alignment: center;
             }
             Rectangle {
@@ -290,12 +291,12 @@ export component MainWindow inherits Window {
                 height: 10px;
                 y: (parent.height - self.height) / 2;
                 border-radius: 5px;
-                background: root.ok ? #5cc878 : #e0a040;
+                background: root.ok ? Palette.ok : Palette.held-edge;
             }
             if root.page == 0: Text {
                 text: root.status;
                 font-size: 14px;
-                color: #c4c4ce;
+                color: Palette.text-dim;
                 vertical-alignment: center;
             }
             if root.page == 0: Button {
@@ -323,7 +324,7 @@ export component MainWindow inherits Window {
         if root.page == 0: Text {
             text: "Turn a knob by dragging or scrolling it. Right-click a knob or button to change what it does.";
             font-size: 12px;
-            color: #6e6e7a;
+            color: Palette.hint;
             horizontal-alignment: center;
         }
         if root.page == 1: KnobPage { }

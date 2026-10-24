@@ -2,6 +2,7 @@
 //! It holds no state of its own; closing it frees everything and the service keeps running.
 
 mod editor;
+mod themes;
 
 use std::cell::RefCell;
 use std::f64::consts::PI;
@@ -58,9 +59,49 @@ fn color(hex: &str) -> Color {
     Color::from_rgb_u8((value >> 16) as u8, (value >> 8) as u8, value as u8)
 }
 
-/// The column's background, which the dial's colours are mixed toward.
-const PANEL: Color = Color::from_rgb_u8(0x1b, 0x1b, 0x21);
-const EMPTY_RING: Color = Color::from_rgb_u8(0x34, 0x34, 0x3e);
+// The theme in use (dial colours are mixed toward its card colour).
+thread_local! {
+    static THEME: RefCell<themes::Theme> = RefCell::new(themes::named("cranked"));
+}
+
+fn current_theme() -> themes::Theme {
+    THEME.with(|t| *t.borrow())
+}
+
+/// Sets every colour role in the window from a theme.
+fn apply_theme(window: &MainWindow, name: &str) {
+    let theme = themes::named(name);
+    THEME.with(|t| *t.borrow_mut() = theme);
+    let p = window.global::<Palette>();
+    p.set_background(theme.background);
+    p.set_card(theme.card);
+    p.set_centre(theme.centre);
+    p.set_centre_hover(theme.centre_hover);
+    p.set_track(theme.track);
+    p.set_button(theme.button);
+    p.set_button_hover(theme.button_hover);
+    p.set_edge(theme.edge);
+    p.set_text(theme.text);
+    p.set_text_strong(theme.text_strong);
+    p.set_text_dim(theme.text_dim);
+    p.set_subtle(theme.subtle);
+    p.set_faint(theme.faint);
+    p.set_hint(theme.hint);
+    p.set_list(theme.list);
+    p.set_selected(theme.selected);
+    p.set_selected_hover(theme.selected_hover);
+    p.set_check(theme.check);
+    p.set_ok(theme.ok);
+    // the built-in widgets (buttons, lists) follow light or dark too
+    let light =
+        u32::from(theme.background.red()) + u32::from(theme.background.green()) + u32::from(theme.background.blue())
+            > 384;
+    window.global::<StdPalette>().set_color_scheme(if light {
+        slint::language::ColorScheme::Light
+    } else {
+        slint::language::ColorScheme::Dark
+    });
+}
 
 /// `amount` of `color` over `under`, as one solid colour.
 fn mix(color: Color, under: Color, amount: f32) -> Color {
@@ -84,13 +125,13 @@ fn row(knob: &Knob) -> KnobData {
         fill_color: if knob.muted {
             mix(color(&knob.muted_color), Color::from_rgb_u8(255, 255, 255), 0.6)
         } else if knob.lowered {
-            mix(color(&knob.color), PANEL, 0.55)
+            mix(color(&knob.color), current_theme().card, 0.55)
         } else {
             color(&knob.color)
         },
         rest_color: match color(&knob.background) {
-            c if (c.red(), c.green(), c.blue()) == (0, 0, 0) => EMPTY_RING,
-            c => mix(c, PANEL, 0.55),
+            c if (c.red(), c.green(), c.blue()) == (0, 0, 0) => current_theme().track,
+            c => mix(c, current_theme().card, 0.55),
         },
         muted: knob.muted,
         lowered: knob.lowered,
@@ -325,6 +366,7 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
     let profile = &config.profiles[profile_index];
     let general = window.global::<General>();
     general.set_popups(config.popups);
+    general.set_theme_index(themes::NAMES.iter().position(|(n, _)| *n == config.theme).unwrap_or(0) as i32);
     general.set_popup_style(match config.popup_style {
         PopupStyle::Auto => 0,
         PopupStyle::Island => 1,
@@ -353,6 +395,8 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
 fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize) {
     let general = window.global::<General>();
     config.popups = general.get_popups();
+    config.theme =
+        themes::NAMES.get(general.get_theme_index().max(0) as usize).map_or("cranked", |(n, _)| n).to_string();
     config.popup_style = match general.get_popup_style() {
         1 => PopupStyle::Island,
         2 => PopupStyle::Kde,
@@ -494,9 +538,21 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                     });
                 }
                 ServerMessage::Config(config) => {
-                    if let Ok(mut link) = link.lock() {
-                        link.config = Some(config);
-                    }
+                    let theme = config.theme.clone();
+                    let snapshot = link
+                        .lock()
+                        .map(|mut link| {
+                            link.config = Some(config);
+                            link.snapshot.clone()
+                        })
+                        .ok();
+                    let _ = window.upgrade_in_event_loop(move |w| {
+                        apply_theme(&w, &theme);
+                        // redraw the dials in the new colours
+                        if let Some(snapshot) = snapshot {
+                            show(&w, &snapshot);
+                        }
+                    });
                 }
                 ServerMessage::Entities(entities) => {
                     if let Ok(mut link) = link.lock() {
@@ -624,6 +680,17 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     general.on_toggle_lower(flip(|g| g.get_lower(), window.as_weak()));
     general.on_toggle_trigger(flip(|g| g.get_triggers(), window.as_weak()));
     general.on_edit_file(open_settings);
+    general.set_theme_names(strings(themes::NAMES.iter().map(|(_, label)| *label)));
+    {
+        // picking a theme previews it right away; Back puts the saved one back
+        let weak = window.as_weak();
+        general.on_theme_changed(move |index| {
+            let Some(w) = weak.upgrade() else { return };
+            if let Some((name, _)) = themes::NAMES.get(index.max(0) as usize) {
+                apply_theme(&w, name);
+            }
+        });
+    }
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_open_calibration(move || {
@@ -654,6 +721,11 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_back(move || {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            if w.get_page() == 3 {
+                // leaving Settings without saving: back to the saved theme
+                let theme = link.config.as_ref().map_or("cranked".to_string(), |c| c.theme.clone());
+                apply_theme(&w, &theme);
+            }
             if w.get_page() == 4 {
                 // leave the pattern; nothing saved
                 link.send("calibrate off");
@@ -919,12 +991,13 @@ mod tests {
 
     #[test]
     fn dial_colours_are_solid() {
-        assert_eq!(mix(Color::from_rgb_u8(200, 0, 100), PANEL, 1.0), Color::from_rgb_u8(200, 0, 100));
+        let panel = themes::named("cranked").card;
+        assert_eq!(mix(Color::from_rgb_u8(200, 0, 100), panel, 1.0), Color::from_rgb_u8(200, 0, 100));
         let knob = Knob { color: "#00FF00".into(), background: "#B80045".into(), ..Knob::default() };
         let data = row(&knob);
         assert_eq!(data.rest_color.alpha(), 255);
-        assert_eq!(data.rest_color, mix(Color::from_rgb_u8(0xB8, 0, 0x45), PANEL, 0.55));
+        assert_eq!(data.rest_color, mix(Color::from_rgb_u8(0xB8, 0, 0x45), panel, 0.55));
         let dark = row(&Knob { background: "#000000".into(), ..knob });
-        assert_eq!(dark.rest_color, EMPTY_RING);
+        assert_eq!(dark.rest_color, themes::named("cranked").track);
     }
 }
