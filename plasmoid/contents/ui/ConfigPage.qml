@@ -29,6 +29,8 @@ KCM.SimpleKCM {
     property bool cfg_showBackgroundDefault
     property bool cfg_showInPanel
     property bool cfg_showInPanelDefault
+    property bool cfg_panelTooltip
+    property bool cfg_panelTooltipDefault
     property bool cfg_buttonsInDial
     property bool cfg_buttonsInDialDefault
     property string cfg_hiddenKnobs

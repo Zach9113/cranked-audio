@@ -27,6 +27,12 @@ ConfigPage {
             opacity: 0.7
             text: "They fit the panel's height: a tall panel shows full cards, a thin one bare dials."
         }
+        QQC2.CheckBox {
+            text: "Tooltip with every knob's level on hover (handy when they're small)"
+            enabled: page.cfg_showInPanel
+            checked: page.cfg_panelTooltip
+            onToggled: page.cfg_panelTooltip = checked
+        }
         QQC2.RadioButton {
             text: "An icon that opens them in a popup"
             checked: !page.cfg_showInPanel
