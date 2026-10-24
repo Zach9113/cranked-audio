@@ -110,6 +110,15 @@ PlasmoidItem {
         onTriggered: root.refresh()
     }
 
+    // right-click menu: these, then Plasma's own (Configure Cranked Audio…)
+    Plasmoid.contextualActions: [
+        PlasmaCore.Action {
+            text: "Open Cranked Audio"
+            icon.name: "io.github.zach9113.CrankedAudio"
+            onTriggered: root.call("OpenWindow", [], "", null)
+        }
+    ]
+
     Plasmoid.icon: "io.github.zach9113.CrankedAudio"
     Plasmoid.title: "Cranked Audio"
     // the frame Plasma draws behind a widget on the desktop; off lets the knobs float on the wallpaper
