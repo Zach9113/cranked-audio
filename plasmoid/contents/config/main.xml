@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0 http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+  <group name="General">
+    <!-- "knobs" (dials like the Cranked Audio window) or "sliders" (a compact list) -->
+    <entry name="style" type="String"><default>knobs</default></entry>
+    <!-- size in percent -->
+    <entry name="scale" type="Int"><default>100</default><min>50</min><max>160</max></entry>
+    <!-- "plasma", "cranked", "glass" or "minimal" -->
+    <entry name="theme" type="String"><default>plasma</default></entry>
+    <entry name="showName" type="Bool"><default>true</default></entry>
+    <entry name="showPercent" type="Bool"><default>true</default></entry>
+    <entry name="showSource" type="Bool"><default>true</default></entry>
+    <entry name="showButton" type="Bool"><default>true</default></entry>
+    <entry name="showActionLabels" type="Bool"><default>false</default></entry>
+    <entry name="showHeader" type="Bool"><default>true</default></entry>
+    <!-- knob numbers (from 1) to leave out, comma separated -->
+    <entry name="hiddenKnobs" type="String"><default></default></entry>
+    <!-- which knob scrolling over the panel icon turns (from 1) -->
+    <entry name="wheelKnob" type="Int"><default>1</default><min>1</min><max>16</max></entry>
+  </group>
+</kcfg>

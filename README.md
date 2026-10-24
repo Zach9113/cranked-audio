@@ -19,8 +19,9 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
   and goes dark when the screen locks. Built-in calibration keeps dimmed colours true on your LEDs.
 - **Popups where you want them:** KDE's on-screen display, the Atoll dynamic island, or standard
   notifications (automatic picks the island when it's running).
-- **Panel widget (KDE Plasma):** all your knobs and buttons in a popup from the panel, like the volume applet;
-  scroll over the icon to turn the first knob.
+- **Panel widget (KDE Plasma):** your knobs as dials (like the app) or sliders in a popup from the panel or on the
+  desktop. Pick its size, theme (match Plasma, Cranked, Glass, Minimal), which knobs and which text show; it shrinks to
+  fit. Give it a keyboard shortcut to pop it up, and scroll over its icon to turn a knob.
 - **Scriptable:** a D-Bus API turns knobs, presses buttons and switches profiles from scripts, KDE Connect commands
   or automations.
 - **Home Assistant:** a knob can dim a light, a button can toggle anything; changes made elsewhere show up live.
