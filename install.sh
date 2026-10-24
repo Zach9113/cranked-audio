@@ -15,6 +15,7 @@ app=io.github.zach9113.CrankedAudio
 
 if [ "${1:-}" = "--uninstall" ]; then
   systemctl --user disable --now "$service" 2>/dev/null || true
+  command -v kpackagetool6 >/dev/null && kpackagetool6 --type Plasma/Applet --remove io.github.zach9113.crankedaudio >/dev/null 2>&1 || true
   rm -f "$bin/cranked-audiod" "$bin/cranked-audio" "$units/$service" \
     "$share/applications/$app.desktop" "$share/icons/hicolor/scalable/apps/$app.svg"
   [ -w /etc/udev/rules.d/60-cranked-audio.rules ] && rm -f /etc/udev/rules.d/60-cranked-audio.rules 2>/dev/null || true
@@ -65,6 +66,12 @@ RestartSec=2
 [Install]
 WantedBy=graphical-session.target
 EOF
+
+# the Plasma panel widget (add it from "Add Widgets…" > Cranked Audio)
+if command -v kpackagetool6 >/dev/null; then
+  kpackagetool6 --type Plasma/Applet --upgrade "$root/plasmoid" >/dev/null 2>&1 ||
+    kpackagetool6 --type Plasma/Applet --install "$root/plasmoid" >/dev/null 2>&1 || true
+fi
 
 systemctl --user daemon-reload
 systemctl --user enable "$service" >/dev/null

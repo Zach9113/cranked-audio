@@ -19,6 +19,10 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
   and goes dark when the screen locks. Built-in calibration keeps dimmed colours true on your LEDs.
 - **Popups where you want them:** KDE's on-screen display, the Atoll dynamic island, or standard
   notifications (automatic picks the island when it's running).
+- **Panel widget (KDE Plasma):** all your knobs and buttons in a popup from the panel, like the volume applet;
+  scroll over the icon to turn the first knob.
+- **Scriptable:** a D-Bus API turns knobs, presses buttons and switches profiles from scripts, KDE Connect commands
+  or automations.
 - **Home Assistant:** a knob can dim a light, a button can toggle anything; changes made elsewhere show up live.
 - **Profiles:** switch whole layouts (apps, colours, buttons, Auto-lower) from a button or the tray.
 - **Light on the system:** a small background service (about 10 MB, near-zero CPU when idle) talks to PipeWire
@@ -67,15 +71,30 @@ Open **Cranked Audio** from the app menu or click the tray icon. Drag or scroll 
 to choose its apps, colours and range, and right-click a button to choose what a press and a hold do.
 **Settings** covers profiles, Auto-lower, LED brightness and calibration, popups and Home Assistant.
 
+On KDE Plasma, right-click the panel, choose **Add Widgets…** and add **Cranked Audio** to have your knobs one
+click away.
+
 Everything is saved in `~/.config/cranked-audio/config.toml` (editing it by hand works too; changes apply at once).
 The Home Assistant token is kept in its own file, readable only by you.
+
+## Scripting
+
+Cranked Audio answers on the session bus as `io.github.zach9113.CrankedAudio` (object
+`/io/github/zach9113/CrankedAudio`, interface `io.github.zach9113.CrankedAudio1`):
+`GetState`, `SetKnob(knob, percent)`, `StepKnob(knob, delta)`, `Press(button)`, `Hold(button)`, `SetProfile(name)`,
+`OpenWindow`, and a `StateChanged(json)` signal. Knobs and buttons count from 0. For example, to set the second knob
+to 40%:
+
+```bash
+busctl --user call io.github.zach9113.CrankedAudio /io/github/zach9113/CrankedAudio io.github.zach9113.CrankedAudio1 SetKnob uu 1 40
+```
 
 ## Development
 
 ```bash
 cargo build --release
 target/release/cranked-audiod --dry-run -v     # show which app goes on which knob, change nothing
-cargo test && tests/live.sh && tests/live_ha.sh && tests/live_duck.sh
+cargo test && tests/live.sh && tests/live_ha.sh && tests/live_duck.sh && tests/live_dbus.sh
 ```
 
 `SPEC.md` describes how everything behaves; `PLAN.md` is the roadmap.

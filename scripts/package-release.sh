@@ -20,6 +20,7 @@ cp "$root/target/release/cranked-audiod" "$pkg_dir/bin/"
 cp "$root/target/release/cranked-audio" "$pkg_dir/bin/"
 cp "$root/data/cranked-audio.svg" "$pkg_dir/share/"
 cp "$root/data/60-cranked-audio.rules" "$pkg_dir/udev/"
+cp -r "$root/plasmoid" "$pkg_dir/plasmoid"
 
 # Embedded self-contained installer that requires NO rust/cargo
 cat > "$pkg_dir/install.sh" << 'EOF'
@@ -36,6 +37,7 @@ app="io.github.zach9113.CrankedAudio"
 
 if [ "${1:-}" = "--uninstall" ]; then
   systemctl --user disable --now "$service" 2>/dev/null || true
+  command -v kpackagetool6 >/dev/null && kpackagetool6 --type Plasma/Applet --remove io.github.zach9113.crankedaudio >/dev/null 2>&1 || true
   rm -f "$bin/cranked-audiod" "$bin/cranked-audio" "$units/$service" \
     "$share/applications/$app.desktop" "$share/icons/hicolor/scalable/apps/$app.svg"
   [ -w /etc/udev/rules.d/60-cranked-audio.rules ] && rm -f /etc/udev/rules.d/60-cranked-audio.rules 2>/dev/null || true
@@ -55,6 +57,10 @@ fi
 install -m 0755 "$src/bin/cranked-audiod" "$bin/cranked-audiod.new" && mv -f "$bin/cranked-audiod.new" "$bin/cranked-audiod"
 install -m 0755 "$src/bin/cranked-audio" "$bin/cranked-audio.new" && mv -f "$bin/cranked-audio.new" "$bin/cranked-audio"
 install -m 0644 "$src/share/cranked-audio.svg" "$share/icons/hicolor/scalable/apps/$app.svg"
+if command -v kpackagetool6 >/dev/null; then
+  kpackagetool6 --type Plasma/Applet --upgrade "$src/plasmoid" >/dev/null 2>&1 ||
+    kpackagetool6 --type Plasma/Applet --install "$src/plasmoid" >/dev/null 2>&1 || true
+fi
 
 cat > "$share/applications/$app.desktop" << DESKTOP
 [Desktop Entry]

@@ -4,6 +4,7 @@ mod audio;
 mod buttons;
 mod config;
 mod core;
+mod dbus;
 mod desktop;
 mod duck;
 mod ha;
@@ -48,6 +49,8 @@ pub enum Event {
     ClientConnected(std::os::unix::net::UnixStream),
     ClientLine(String),
     Tray(tray::Action),
+    /// A request over the D-Bus API.
+    Remote(dbus::Request),
     AudioReady,
     AudioLost,
     UpdateCheckResult(Result<Option<updater::ReleaseInfo>, String>),
@@ -174,6 +177,7 @@ fn main() {
     let mut core = Core::new(config, &state);
     core.verbose = verbose;
     core.ha_enabled = ha_calls.is_some();
+    let api = dbus::start(events.clone());
     let tray =
         tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
     let mut tray_shows = (String::new(), Vec::<String>::new(), false);
@@ -293,6 +297,29 @@ fn main() {
                 }
                 None
             }
+            Some(Event::Remote(request)) => match request {
+                dbus::Request::SetKnob { knob, percent } if knob < cranked_protocol::KNOBS => {
+                    Some(Event::OnScreen(knob_packet(knob as u8, percent).to_vec()))
+                }
+                dbus::Request::StepKnob { knob, delta } if knob < cranked_protocol::KNOBS => {
+                    let current = i32::from(core.knob(knob).unwrap_or(0));
+                    Some(Event::OnScreen(knob_packet(knob as u8, (current + delta).clamp(0, 100) as u8).to_vec()))
+                }
+                dbus::Request::Button { button, down } if button < cranked_protocol::KNOBS => {
+                    Some(Event::OnScreen(button_packet(button as u8, down).to_vec()))
+                }
+                dbus::Request::Profile(name) => {
+                    switch_to = Some(name);
+                    None
+                }
+                dbus::Request::OpenWindow => {
+                    if clients.is_empty() {
+                        spawn_detached(&sibling("cranked-audio"), &[]);
+                    }
+                    None
+                }
+                _ => None,
+            },
             Some(Event::HaEntities(entities)) => {
                 clients.send(&ServerMessage::Entities(entities));
                 None
@@ -376,8 +403,14 @@ fn main() {
             core.ha_enabled = ha_calls.is_some();
         }
         out.extend(core.tick(now));
-        if !clients.is_empty() {
-            clients.update(&core.snapshot());
+        if !clients.is_empty() || api.is_some() {
+            let snapshot = core.snapshot();
+            if let Some((connection, state)) = &api {
+                dbus::publish(connection, state, serde_json::to_string(&snapshot).unwrap_or_default());
+            }
+            if !clients.is_empty() {
+                clients.update(&snapshot);
+            }
         }
         if let Some(tray) = &tray {
             let snapshot = core.snapshot();

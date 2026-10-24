@@ -425,7 +425,8 @@ impl Core {
             | Event::Tray(_)
             | Event::HaEntities(_)
             | Event::UpdateCheckResult(_)
-            | Event::UpdateApplyResult(_) => {}
+            | Event::UpdateApplyResult(_)
+            | Event::Remote(_) => {}
         }
         out
     }

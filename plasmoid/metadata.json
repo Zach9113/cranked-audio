@@ -1,0 +1,15 @@
+{
+    "KPlugin": {
+        "Id": "io.github.zach9113.crankedaudio",
+        "Name": "Cranked Audio",
+        "Description": "Your Cranked Audio knobs and buttons, from the panel",
+        "Icon": "io.github.zach9113.CrankedAudio",
+        "Authors": [ { "Name": "Zach9113" } ],
+        "Category": "Multimedia",
+        "License": "GPL-3.0-or-later",
+        "Version": "1.2.0",
+        "Website": "https://github.com/Zach9113/cranked-audio"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
