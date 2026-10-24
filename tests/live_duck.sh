@@ -34,13 +34,13 @@ fails=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1 ($2)"; else echo "FAIL $1: got '$2', want '$3'"; fails=$((fails + 1)); fi; }
 
 head -c $((48000 * 2 * 20)) /dev/zero > "$work/music.raw"
-# talk: 1.5 s silence, 1 s tone (440 Hz, about -12 dBFS), 6 s silence
+# talk: 0.5 s silence, a 0.3 s ping (like a notification), 1.2 s silence, 1 s tone (440 Hz, about -12 dBFS), 6 s silence
 python3 -c "
 import math, sys
 out = sys.stdout.buffer
-out.write(bytes(48000 * 2 * 3 // 2))
-out.write(b''.join(int(8000 * math.sin(2 * math.pi * 440 * i / 48000)).to_bytes(2, 'little', signed=True) for i in range(48000)))
-out.write(bytes(48000 * 2 * 6))" > "$work/talk.raw"
+tone = lambda seconds: b''.join(int(8000 * math.sin(2 * math.pi * 440 * i / 48000)).to_bytes(2, 'little', signed=True) for i in range(int(48000 * seconds)))
+silence = lambda seconds: bytes(int(48000 * seconds) * 2)
+out.write(silence(0.5) + tone(0.3) + silence(1.2) + tone(1.0) + silence(6))" > "$work/talk.raw"
 play cranked-selftest-music "$work/music.raw"
 mkfifo "$work/in"
 "$bin" --config "$work/config.toml" --no-mixer --stdin -v < "$work/in" 2> "$work/log" &
@@ -49,12 +49,12 @@ exec 3> "$work/in"
 sleep 0.5
 echo "knob 0 60" >&3; echo "knob 1 80" >&3; sleep 0.3
 play cranked-selftest-talk "$work/talk.raw"
-sleep 1.2
-check "silence on the trigger changes nothing" "$(volume_of cranked-selftest-music)" "60"
-sleep 0.9
-check "the tone lowers the music by half" "$(volume_of cranked-selftest-music)" "30"
+sleep 1.4
+check "a short ping on the trigger changes nothing" "$(volume_of cranked-selftest-music)" "60"
+sleep 1.75
+check "a longer sound lowers the music by half" "$(volume_of cranked-selftest-music)" "30"
 pid=$daemon; t0=$(awk '{print $14+$15}' /proc/$pid/stat)
-sleep 1.0
+sleep 0.5
 check "and holds it down through a short pause" "$(volume_of cranked-selftest-music)" "30"
 sleep 2.5
 check "then fades back up" "$(volume_of cranked-selftest-music)" "60"

@@ -1319,7 +1319,14 @@ mod tests {
         core.handle(Event::Stream(stream(3, "Spotify", 40.0)), start);
         let mut now = start + Duration::from_secs(1);
         core.tick(now);
+        // talking: loud reports every 200 ms (a single one, like a notification ping, lowers nothing)
         core.handle(Event::Loud(1), now);
+        assert!(set_streams(&core.tick(now + Duration::from_millis(100))).is_empty(), "not on the first sound");
+        for _ in 0..3 {
+            now += Duration::from_millis(200);
+            core.tick(now);
+            core.handle(Event::Loud(1), now);
+        }
         let mut last = Vec::new();
         for _ in 0..8 {
             now += Duration::from_millis(50);

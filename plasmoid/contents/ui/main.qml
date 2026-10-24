@@ -145,6 +145,41 @@ PlasmoidItem {
         }
         onObjectRemoved: (index, object) => root.profileActions = root.profileActions.filter(a => a !== object)
     }
+    // the widget's own right-click menu (Plasma's doesn't show over a desktop widget without a background)
+    PlasmaExtras.Menu {
+        id: rightMenu
+    }
+    Component {
+        id: menuItem
+        PlasmaExtras.MenuItem {}
+    }
+    function openMenu(item, x, y) {
+        rightMenu.clearMenuItems();
+        const add = (text, iconName, action, checked) => {
+            const entry = menuItem.createObject(rightMenu, { text: text, icon: iconName || "" });
+            if (checked !== undefined) {
+                entry.checkable = true;
+                entry.checked = checked;
+            }
+            entry.clicked.connect(action);
+            rightMenu.addMenuItem(entry);
+        };
+        add("Open Cranked Audio", "io.github.zach9113.CrankedAudio", () => root.call("OpenWindow", [], "", null));
+        add("Cranked Audio Settings…", "configure", () => root.call("OpenSettings", [], "", null));
+        if (root.snapshot && root.snapshot.profiles.length > 1) {
+            rightMenu.addSection("Profiles");
+            for (const name of root.snapshot.profiles) {
+                add(name, "", () => root.call("SetProfile", [new DBus.string(name)], "(s)", root.refresh),
+                    root.snapshot.profile === name);
+            }
+        }
+        rightMenu.addMenuItem(menuItem.createObject(rightMenu, { separator: true }));
+        const configure = Plasmoid.internalAction("configure");
+        if (configure) add("Configure Widget…", "configure", () => configure.trigger());
+        rightMenu.visualParent = item;
+        rightMenu.open(x, y);
+    }
+
     Plasmoid.contextualActions: [openAction, settingsAction]
         .concat(profileActions.length > 0 ? [profilesHeading].concat(profileActions) : [])
 
@@ -183,6 +218,12 @@ PlasmoidItem {
         Item {
             id: strip
             readonly property real pad: Math.max(1, root.unit * 0.2)
+            // right-clicks the knobs don't take (they only take the left button) land here
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.RightButton
+                onClicked: mouse => root.openMenu(this, mouse.x, mouse.y)
+            }
             Layout.preferredWidth: root.vertical ? -1 : inline.implicitWidth + pad * 2
             Layout.minimumWidth: Layout.preferredWidth
             Layout.preferredHeight: root.vertical ? inline.implicitHeight + pad * 2 : -1
@@ -235,6 +276,13 @@ PlasmoidItem {
         Layout.preferredHeight: content.implicitHeight + pad * 2 + (header && header.visible ? header.implicitHeight : 0)
         Layout.minimumWidth: Math.min(Layout.preferredWidth, root.unit * 8)
         collapseMarginsHint: true
+
+        // right-clicks the knobs don't take (they only take the left button) land here
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.RightButton
+            onClicked: mouse => root.openMenu(this, mouse.x, mouse.y)
+        }
 
         header: PlasmaExtras.PlasmoidHeading {
             visible: root.cfg.showHeader

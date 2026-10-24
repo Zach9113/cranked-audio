@@ -8,6 +8,11 @@ const FADE_UP: f64 = 0.8;
 const HOLD: Duration = Duration::from_millis(1200);
 /// Longest step one update may take, so a late first update doesn't jump straight down.
 const MAX_STEP: f64 = 0.1;
+/// Sound has to keep going this long before anything is lowered, so a notification ping or a click doesn't
+/// (talking does: the volume goes down a moment after someone starts).
+const ONSET: Duration = Duration::from_millis(600);
+/// A gap longer than this starts a new run of sound (the meter reports about every 200 ms while it's loud).
+const GAP: Duration = Duration::from_millis(500);
 
 #[derive(Debug)]
 pub struct Ducker {
@@ -15,11 +20,15 @@ pub struct Ducker {
     factor: f64,
     last_loud: Option<Instant>,
     last_update: Option<Instant>,
+    /// When the current run of sound began.
+    run_start: Option<Instant>,
+    /// The run lasted long enough: lowering until it stops for `HOLD`.
+    engaged: bool,
 }
 
 impl Default for Ducker {
     fn default() -> Self {
-        Self { factor: 1.0, last_loud: None, last_update: None }
+        Self { factor: 1.0, last_loud: None, last_update: None, run_start: None, engaged: false }
     }
 }
 
@@ -29,11 +38,19 @@ impl Ducker {
     }
 
     pub fn loud(&mut self, now: Instant) {
+        let continues = self.last_loud.is_some_and(|t| now.saturating_duration_since(t) <= GAP);
+        if !continues {
+            self.run_start = Some(now);
+        }
+        // once lowering, any sound before the hold runs out keeps it down (pauses between words)
+        if self.holding(now) || self.run_start.is_some_and(|s| now.saturating_duration_since(s) >= ONSET) {
+            self.engaged = true;
+        }
         self.last_loud = Some(now);
     }
 
     fn holding(&self, now: Instant) -> bool {
-        self.last_loud.is_some_and(|t| now.duration_since(t) < HOLD)
+        self.engaged && self.last_loud.is_some_and(|t| now.saturating_duration_since(t) < HOLD)
     }
 
     /// Something is still moving or about to (the caller should keep ticking).
@@ -46,6 +63,9 @@ impl Ducker {
         let step = self.last_update.map_or(0.0, |t| now.duration_since(t).as_secs_f64().min(MAX_STEP));
         self.last_update = Some(now);
         let before = self.factor;
+        if self.engaged && !self.holding(now) {
+            self.engaged = false;
+        }
         let low = low.clamp(0.0, 1.0);
         let range = 1.0 - low;
         self.factor = if range <= 0.0 {
@@ -72,12 +92,36 @@ mod tests {
         now
     }
 
+    /// Sound for `millis`, reported every 200 ms like the meter does; returns when the last report was.
+    fn talk(ducker: &mut Ducker, from: Instant, millis: u64) -> Instant {
+        let mut now = from;
+        for _ in 0..=millis / 200 {
+            ducker.loud(now);
+            now += Duration::from_millis(200);
+        }
+        now - Duration::from_millis(200)
+    }
+
+    #[test]
+    fn a_short_ping_lowers_nothing_but_talking_does() {
+        let start = Instant::now();
+        let mut d = Ducker::default();
+        d.update(start, 0.7);
+        let t = talk(&mut d, start, 400);
+        run(&mut d, t, 1000, 0.7);
+        assert_eq!(d.factor(), 1.0, "a notification ping");
+        let t = talk(&mut d, t + Duration::from_secs(2), 1000);
+        run(&mut d, t, 300, 0.7);
+        assert!(d.factor() < 1.0, "someone talking");
+    }
+
     #[test]
     fn fades_down_holds_and_fades_back() {
         let start = Instant::now();
         let mut d = Ducker::default();
         d.update(start, 0.7);
-        d.loud(start);
+        let start = talk(&mut d, start, 600);
+        d.update(start, 0.7);
         let t = run(&mut d, start, 100, 0.7);
         assert!(d.factor() < 1.0 && d.factor() > 0.7, "partway down after 0.1 s: {}", d.factor());
         let t = run(&mut d, t, 200, 0.7);
@@ -96,8 +140,8 @@ mod tests {
         let start = Instant::now();
         let mut d = Ducker::default();
         d.update(start, 0.5);
-        d.loud(start + Duration::from_secs(5));
-        d.update(start + Duration::from_secs(5), 0.5);
+        let t = talk(&mut d, start + Duration::from_secs(5), 600);
+        d.update(t, 0.5);
         assert!(d.factor() > 0.75, "{}", d.factor());
     }
 
@@ -105,8 +149,8 @@ mod tests {
     fn amount_off_never_lowers() {
         let start = Instant::now();
         let mut d = Ducker::default();
-        d.loud(start);
-        run(&mut d, start, 500, 1.0);
+        let t = talk(&mut d, start, 600);
+        run(&mut d, t, 500, 1.0);
         assert_eq!(d.factor(), 1.0);
     }
 }
