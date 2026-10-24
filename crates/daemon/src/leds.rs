@@ -1,5 +1,6 @@
 //! Knob LED colours (SPEC.md section 5).
 
+use cranked_ipc::settings::LedBlend;
 use cranked_protocol::{Rgb, KNOBS, LEDS_PER_KNOB};
 
 const IDLE_DIM: f64 = 0.25;
@@ -34,6 +35,24 @@ fn edge(background: Rgb, color: Rgb, amount: f64) -> (Rgb, f64) {
     (colour, EDGE_FLOOR + (1.0 - EDGE_FLOOR) * (share - 0.5) * 2.0)
 }
 
+/// The edge LED's colour and brightness for `blend`, `amount` of the way from background to level colour.
+fn edge_for(blend: LedBlend, background: Rgb, color: Rgb, amount: f64) -> (Rgb, f64) {
+    let x = amount.clamp(0.0, 1.0);
+    let mix = |w_bg: f64, w_fill: f64| {
+        let m = |b: u8, f: u8| (f64::from(b) * w_bg + f64::from(f) * w_fill).round().clamp(0.0, 255.0) as u8;
+        (m(background.0, color.0), m(background.1, color.1), m(background.2, color.2))
+    };
+    match blend {
+        LedBlend::Clean => edge(background, color, x),
+        // Turn Up's curves: the level colour comes in slowly (x^2.2) as the background goes out quickly ((1-x)^3)
+        LedBlend::Classic => (mix((1.0 - x).powi(3), x.powf(2.2)), 1.0),
+        LedBlend::Smooth => {
+            let w = x * x * (3.0 - 2.0 * x);
+            (mix(1.0 - w, w), 1.0)
+        }
+    }
+}
+
 /// Dims a colour to `factor` of its brightness, correcting each channel by `gamma` so the LED keeps its tint.
 pub fn dim(color: Rgb, factor: f64, gamma: [f64; 3]) -> Rgb {
     let factor = factor.clamp(0.0, 1.0);
@@ -42,7 +61,13 @@ pub fn dim(color: Rgb, factor: f64, gamma: [f64; 3]) -> Rgb {
     (channel(color.0, gamma[0]), channel(color.1, gamma[1]), channel(color.2, gamma[2]))
 }
 
-pub fn knob_colors(look: &KnobLook, brightness: u8, dim_idle: bool, gamma: [f64; 3]) -> [Rgb; LEDS_PER_KNOB] {
+pub fn knob_colors(
+    look: &KnobLook,
+    brightness: u8,
+    dim_idle: bool,
+    gamma: [f64; 3],
+    blend: LedBlend,
+) -> [Rgb; LEDS_PER_KNOB] {
     let Some(level) = look.level else {
         return [(0, 0, 0); LEDS_PER_KNOB];
     };
@@ -57,7 +82,7 @@ pub fn knob_colors(look: &KnobLook, brightness: u8, dim_idle: bool, gamma: [f64;
     let per_led = 100.0 / LEDS_PER_KNOB as f64;
     std::array::from_fn(|i| {
         let fill = ((level - i as f64 * per_led) / per_led).clamp(0.0, 1.0);
-        let (colour, share) = edge(look.background, look.color, fill);
+        let (colour, share) = edge_for(blend, look.background, look.color, fill);
         dim(colour, factor * share, gamma)
     })
 }
@@ -67,8 +92,9 @@ pub fn colors(
     brightness: u8,
     dim_idle: bool,
     gamma: [f64; 3],
+    blend: LedBlend,
 ) -> [[Rgb; LEDS_PER_KNOB]; KNOBS] {
-    std::array::from_fn(|k| knob_colors(&looks[k], brightness, dim_idle, gamma))
+    std::array::from_fn(|k| knob_colors(&looks[k], brightness, dim_idle, gamma, blend))
 }
 
 /// What the mixer shows while calibrating: each knob's level colour at full brightness, then dimmed to the edge
@@ -99,7 +125,22 @@ mod tests {
     const PLAIN: [f64; 3] = [1.0; 3];
 
     fn knob_colors_plain(look: &KnobLook, brightness: u8, dim_idle: bool) -> [Rgb; LEDS_PER_KNOB] {
-        knob_colors(look, brightness, dim_idle, PLAIN)
+        knob_colors(look, brightness, dim_idle, PLAIN, LedBlend::Clean)
+    }
+
+    #[test]
+    fn classic_and_smooth_fade_between_the_two_colours() {
+        let middle = |blend, level| knob_colors(&look(level), 100, true, PLAIN, blend)[1];
+        for blend in [LedBlend::Classic, LedBlend::Smooth] {
+            assert_eq!(middle(blend, 33), (0, 0, 255), "{blend:?}");
+            assert_eq!(middle(blend, 67), (255, 0, 0), "{blend:?}");
+            let half = middle(blend, 50);
+            assert!(half.0 > 0 && half.2 > 0, "{blend:?}: both colours in the mix at 50% ({half:?})");
+        }
+        // Turn Up's dips a little darker through the middle; the S-curve is an even half-and-half
+        assert!(middle(LedBlend::Classic, 50).0 < middle(LedBlend::Smooth, 50).0);
+        let even = middle(LedBlend::Smooth, 50);
+        assert!(even.0.abs_diff(128) <= 1 && even.2.abs_diff(128) <= 1 && even.1 == 0, "{even:?}");
     }
 
     /// `led` is `colour` at some brightness (never another hue).

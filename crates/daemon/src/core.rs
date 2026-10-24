@@ -775,7 +775,8 @@ impl Core {
             let colours = std::array::from_fn(|k| looks[k].color);
             led_frame(&calibration(&colours, self.config.leds.brightness, gamma))
         } else {
-            led_frame(&colors(&looks, self.config.leds.brightness, self.config.leds.dim_idle, gamma))
+            let leds = &self.config.leds;
+            led_frame(&colors(&looks, leds.brightness, leds.dim_idle, gamma, leds.blend))
         };
         let since = self.last_led_send.map(|t| now.duration_since(t));
         if self.last_frame == Some(frame) && since.is_some_and(|s| s < LED_REFRESH) {

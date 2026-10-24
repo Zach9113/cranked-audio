@@ -174,12 +174,27 @@ pub struct Leds {
     /// don't dim evenly, so a dimmed colour drifts in tint unless each channel is corrected. 1.0 = no correction;
     /// higher keeps that channel brighter when dimmed.
     pub gamma: [f64; 3],
+    /// How the LED the level is passing through shows it.
+    pub blend: LedBlend,
 }
 
 impl Default for Leds {
     fn default() -> Self {
-        Self { brightness: 80, dim_idle: true, gamma: [1.0; 3] }
+        Self { brightness: 80, dim_idle: true, gamma: [1.0; 3], blend: LedBlend::default() }
     }
+}
+
+/// How a knob's edge LED (the one the level is passing through) goes from the background colour to the level colour.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LedBlend {
+    /// Turn Up's fade: the background fades out as the level colour fades in, a little darker through the middle.
+    #[default]
+    Classic,
+    /// An even S-curve mix of the two colours.
+    Smooth,
+    /// Only the two picked colours, never a mix: the edge LED switches at its middle, dimmed near the switch.
+    Clean,
 }
 
 /// Calibration sliders go this far either way.
