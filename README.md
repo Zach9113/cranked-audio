@@ -6,9 +6,33 @@ Early development. See `PLAN.md` for where it's going and `SPEC.md` for how it b
 
 ## Install
 
+### Option 1: Quick Install (No Rust or compiler required)
+
+To install the latest prebuilt release directly to `~/.local`:
+```bash
+curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-release.sh | bash
 ```
-./install.sh               # builds, installs to ~/.local, starts it, and starts it at every login
-./install.sh --uninstall   # removes it again (your settings stay)
+
+To remove it later:
+```bash
+~/.local/bin/cranked-audio --uninstall # or run ./install.sh --uninstall
+```
+
+### Option 2: Standalone AppImage
+
+Download `CrankedAudio-x86_64.AppImage` from [Releases](https://github.com/Zach9113/cranked-audio/releases), make it executable, and run:
+```bash
+chmod +x CrankedAudio-x86_64.AppImage
+./CrankedAudio-x86_64.AppImage
+```
+
+### Option 3: Build from Source
+
+```bash
+git clone https://github.com/Zach9113/cranked-audio.git
+cd cranked-audio
+./install.sh               # builds, installs to ~/.local, and enables the login service
+./install.sh --uninstall   # removes binaries and service (your settings stay)
 ```
 
 Open **Cranked Audio** from the app menu or the tray icon. Right-click a knob or button on screen to change it.
