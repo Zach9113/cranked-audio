@@ -19,7 +19,7 @@
     <entry name="showBackground" type="Bool"><default>true</default></entry>
     <entry name="showInPanel" type="Bool"><default>true</default></entry>
     <!-- the button sits in the middle of the dial (more compact) -->
-    <entry name="buttonsInDial" type="Bool"><default>false</default></entry>
+    <entry name="buttonsInDial" type="Bool"><default>true</default></entry>
     <!-- knob numbers (from 1) to leave out, comma separated -->
     <entry name="hiddenKnobs" type="String"><default></default></entry>
     <!-- which knob scrolling over the panel icon turns (from 1) -->
