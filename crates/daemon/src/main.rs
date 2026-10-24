@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn stdin_lines_become_packets() {
-        assert_eq!(parse_line("knob 1 100"), Some(vec![0xFF, 0xFE, 0x03, 1, 0x03, 0xFF]));
+        assert_eq!(parse_line("knob 1 100"), Some(vec![0xFF, 0xFE, 0x03, 1, 0x03, 0xE8]));
         assert_eq!(parse_line("down 4"), Some(vec![0xFF, 0xFE, 0x06, 4]));
         assert_eq!(parse_line("knob 5 10"), None);
         assert_eq!(parse_line("jump 1"), None);

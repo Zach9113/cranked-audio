@@ -2,13 +2,12 @@
 
 use cranked_protocol::{Rgb, KNOBS, LEDS_PER_KNOB};
 
-const GAMMA: f64 = 2.2;
 const IDLE_DIM: f64 = 0.25;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct KnobLook {
-    /// 0..100, None = not known yet (LEDs stay dark).
-    pub level: Option<u8>,
+    /// 0..100 (fractional while easing toward a new value), None = not known yet (LEDs stay dark).
+    pub level: Option<f64>,
     pub color: Rgb,
     pub background: Rgb,
     pub muted_color: Rgb,
@@ -19,17 +18,13 @@ pub struct KnobLook {
     pub scale: f64,
 }
 
-fn to_linear(c: u8) -> f64 {
-    (f64::from(c) / 255.0).powf(GAMMA)
-}
-
-fn to_byte(linear: f64) -> u8 {
-    (linear.clamp(0.0, 1.0).powf(1.0 / GAMMA) * 255.0).round() as u8
-}
-
-/// Mix in linear light so the edge LED fades evenly instead of looking muddy.
+/// The edge LED's mix of background -> colour. An S-curve (smoothstep): it eases in and out at the LED's ends, so
+/// the LED doesn't pop the moment the level enters it, and it's exactly 50/50 at the middle, so 50% on the knob
+/// shows a clear half-and-half: one LED in the colour, one evenly mixed, one in the background.
 fn blend(from: Rgb, to: Rgb, amount: f64) -> Rgb {
-    let mix = |a: u8, b: u8| to_byte(to_linear(a) + (to_linear(b) - to_linear(a)) * amount);
+    let x = amount.clamp(0.0, 1.0);
+    let weight = x * x * (3.0 - 2.0 * x);
+    let mix = |a: u8, b: u8| (f64::from(a) * (1.0 - weight) + f64::from(b) * weight).round().clamp(0.0, 255.0) as u8;
     (mix(from.0, to.0), mix(from.1, to.1), mix(from.2, to.2))
 }
 
@@ -52,7 +47,7 @@ pub fn knob_colors(look: &KnobLook, brightness: u8, dim_idle: bool) -> [Rgb; LED
     }
     let per_led = 100.0 / LEDS_PER_KNOB as f64;
     std::array::from_fn(|i| {
-        let fill = ((f64::from(level) - i as f64 * per_led) / per_led).clamp(0.0, 1.0);
+        let fill = ((level - i as f64 * per_led) / per_led).clamp(0.0, 1.0);
         scale(blend(look.background, look.color, fill), factor)
     })
 }
@@ -67,7 +62,7 @@ mod tests {
 
     fn look(level: u8) -> KnobLook {
         KnobLook {
-            level: Some(level),
+            level: Some(f64::from(level)),
             color: (255, 0, 0),
             background: (0, 0, 255),
             muted_color: (40, 0, 0),
@@ -78,14 +73,16 @@ mod tests {
     }
 
     #[test]
-    fn fills_from_the_left_with_a_soft_edge() {
+    fn fifty_percent_is_half_and_half() {
         let leds = knob_colors(&look(50), 100, true);
-        assert_eq!(leds[0], (255, 0, 0));
-        assert_eq!(leds[2], (0, 0, 255));
-        // halfway in linear light, not a dark 50/50 byte mix
-        assert!(leds[1].0 > 150 && leds[1].2 > 150, "{:?}", leds[1]);
+        assert_eq!((leds[0], leds[2]), ((255, 0, 0), (0, 0, 255)));
+        let (r, g, b) = leds[1];
+        assert!(r.abs_diff(128) <= 1 && g == 0 && b.abs_diff(128) <= 1, "middle LED evenly mixed: {:?}", leds[1]);
         assert_eq!(knob_colors(&look(100), 100, true), [(255, 0, 0); 3]);
         assert_eq!(knob_colors(&look(0), 100, true), [(0, 0, 255); 3]);
+        // eases in: just past an LED's start it has barely changed
+        let entering = knob_colors(&look(36), 100, true)[1];
+        assert!(entering.0 < 10, "{entering:?}");
     }
 
     #[test]

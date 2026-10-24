@@ -18,7 +18,10 @@ use crate::Event;
 const SYNC_QUIET: Duration = Duration::from_millis(300);
 const SYNC_LIMIT: Duration = Duration::from_millis(2500);
 const APPLY_EVERY: Duration = Duration::from_millis(50);
-const LED_EVERY: Duration = Duration::from_millis(100);
+/// Fastest LED frame rate (25 per second): smooth enough for the easing below, a 48-byte frame takes ~4 ms.
+const LED_EVERY: Duration = Duration::from_millis(40);
+/// LEDs glide toward a new level with this time constant instead of stepping.
+const LED_EASE: f64 = 0.07;
 /// The mixer blanks its LEDs soon after a frame, so the current one is sent again this often.
 const LED_REFRESH: Duration = Duration::from_millis(250);
 /// A button's "Turning on ..." popup is followed by the result if it arrives within this time.
@@ -84,6 +87,10 @@ pub struct Core {
     last_frame: Option<[u8; 48]>,
     last_led_send: Option<Instant>,
     led_waiting: bool,
+    /// The level each knob's LEDs show right now (eases toward the real level).
+    shown: [Option<f64>; KNOBS],
+    shown_at: Option<Instant>,
+    led_animating: bool,
     streams: HashMap<u32, (Stream, Option<usize>)>,
     entities: HashMap<String, EntityState>,
     /// Knob position the light was last moved from.
@@ -129,6 +136,9 @@ impl Core {
             last_frame: None,
             last_led_send: None,
             led_waiting: false,
+            shown: [None; KNOBS],
+            shown_at: None,
+            led_animating: false,
             streams: HashMap::new(),
             entities: HashMap::new(),
             applied: [None; KNOBS],
@@ -296,10 +306,10 @@ impl Core {
 
     /// How long the caller may sleep before calling `tick`.
     pub fn next_wake(&self) -> Duration {
-        if self.sync.is_some() || self.has_pending() || self.buttons.any_down() || self.ducking {
+        if self.led_waiting || self.led_animating {
+            LED_EVERY.min(APPLY_EVERY)
+        } else if self.sync.is_some() || self.has_pending() || self.buttons.any_down() || self.ducking {
             APPLY_EVERY
-        } else if self.led_waiting {
-            LED_EVERY
         } else if self.mixer_connected && !(self.screen_off && self.touched_at.is_none_or(|t| t.elapsed() >= WAKE_FOR)) {
             LED_REFRESH
         } else {
@@ -560,7 +570,7 @@ impl Core {
             self.restored = true;
             for channel in 0..KNOBS {
                 if let (None, Some(percent)) = (self.knobs[channel], self.saved[channel]) {
-                    let raw = ((u32::from(percent) * u32::from(cranked_protocol::RAW_MAX) + 50) / 100) as u16;
+                    let raw = cranked_protocol::percent_to_raw(percent);
                     self.filter.seed(channel, raw);
                     self.set_knob(channel, percent, false);
                 }
@@ -642,12 +652,13 @@ impl Core {
             self.last_led_send = Some(now);
             return Some(Out::Leds(dark));
         }
+        self.ease_levels(now);
         let looks: [KnobLook; KNOBS] = std::array::from_fn(|channel| {
             let config = &self.channels()[channel];
             let color = |text: &str| parse_color(text).unwrap_or((0, 0, 0));
             let playing = self.streams.values().any(|(s, c)| *c == Some(channel) && !s.corked);
             KnobLook {
-                level: self.level(channel),
+                level: self.shown[channel],
                 color: color(&config.color),
                 background: color(&config.background),
                 muted_color: color(&config.muted_color),
@@ -674,6 +685,32 @@ impl Core {
         self.last_frame = Some(frame);
         self.last_led_send = Some(now);
         Some(Out::Leds(frame))
+    }
+
+    /// Moves the LEDs' shown levels toward the real ones (exponential ease); first values and big gaps at startup
+    /// snap. Sets `led_animating` while any knob is still gliding.
+    fn ease_levels(&mut self, now: Instant) {
+        // after a quiet spell, step as if one frame passed so a change still glides instead of jumping
+        let dt = self.shown_at.map_or(0.0, |t| now.saturating_duration_since(t).min(LED_EVERY).as_secs_f64());
+        self.shown_at = Some(now);
+        let alpha = 1.0 - (-dt / LED_EASE).exp();
+        let mut moving = false;
+        for channel in 0..KNOBS {
+            let target = self.level(channel).map(f64::from);
+            self.shown[channel] = match (self.shown[channel], target) {
+                (Some(shown), Some(target)) => {
+                    let next = shown + (target - shown) * alpha;
+                    if (target - next).abs() <= 0.4 {
+                        Some(target)
+                    } else {
+                        moving = true;
+                        Some(next)
+                    }
+                }
+                (_, target) => target,
+            };
+        }
+        self.led_animating = moving;
     }
 
     fn target(&self, channel: usize) -> Option<u8> {
@@ -1061,12 +1098,37 @@ mod tests {
         core.handle(packets(&[(0, 90), (0, 90)]), at);
         assert_eq!(frames(&core.tick(at)), 1, "a change shows right away");
         core.handle(packets(&[(0, 60), (0, 60)]), at);
-        assert_eq!(frames(&core.tick(at + Duration::from_millis(60))), 0, "but at most 10 frames a second");
-        assert_eq!(core.next_wake(), LED_EVERY);
+        assert_eq!(frames(&core.tick(at + LED_EVERY / 2)), 0, "but at most 25 frames a second");
+        assert!(core.next_wake() <= LED_EVERY);
         assert_eq!(frames(&core.tick(at + LED_EVERY)), 1);
         core.handle(Event::MixerLost, at);
         core.handle(packets(&[(0, 10)]), at);
         assert_eq!(frames(&core.tick(at + Duration::from_secs(1))), 0, "no mixer, no LEDs");
+    }
+
+    #[test]
+    fn leds_glide_to_a_new_level_then_settle() {
+        let start = Instant::now();
+        let mut core = synced(start);
+        let at = start + Duration::from_secs(1);
+        core.handle(packets(&[(0, 100), (0, 100)]), at);
+        core.tick(at);
+        let first = core.shown[0].unwrap();
+        assert!(first < 99.0, "doesn't jump straight there: {first}");
+        let mut t = at;
+        for _ in 0..4 {
+            t += LED_EVERY;
+            core.tick(t);
+        }
+        let later = core.shown[0].unwrap();
+        assert!(later > first && later < 100.0, "still gliding: {first} -> {later}");
+        assert_eq!(core.next_wake(), LED_EVERY, "animating at the frame rate");
+        for _ in 0..10 {
+            t += LED_EVERY;
+            core.tick(t);
+        }
+        assert_eq!(core.shown[0], Some(100.0), "settles exactly, in well under half a second");
+        assert_eq!(core.next_wake(), LED_REFRESH, "back to idle pacing");
     }
 
     fn meters(out: &[Out]) -> Vec<(u32, bool)> {

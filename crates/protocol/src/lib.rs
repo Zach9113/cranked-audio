@@ -71,7 +71,7 @@ impl Decoder {
 
 /// Encode a knob position the way the mixer reports it (used by the on-screen controls).
 pub fn knob_packet(channel: u8, percent: u8) -> [u8; 6] {
-    let raw = (u32::from(percent.min(100)) * u32::from(RAW_MAX) + 50) / 100;
+    let raw = percent_to_raw(percent);
     [0xFF, 0xFE, 0x03, channel, (raw >> 8) as u8, (raw & 0xFF) as u8]
 }
 
@@ -99,14 +99,22 @@ pub fn led_frame(colors: &[[Rgb; LEDS_PER_KNOB]; KNOBS]) -> [u8; 48] {
     frame
 }
 
-/// Raw 0..1023 to percent, with the pots' dead ends snapped to 0 and 100.
+/// The pots never quite reach their ends, so 0..100% is spread over this raw range (about 2%..98% of travel):
+/// both ends are always reachable and every step in between exists (no jump from 3% straight to 0%).
+const RAW_LOW: u16 = 20;
+const RAW_HIGH: u16 = 1000;
+
+/// Raw 0..1023 to percent.
 pub fn raw_to_percent(raw: u16) -> u8 {
-    let percent = ((u32::from(raw) * 100 + u32::from(RAW_MAX) / 2) / u32::from(RAW_MAX)) as u8;
-    match percent {
-        0..=2 => 0,
-        p if p >= 97 => 100,
-        p => p,
-    }
+    let span = u32::from(RAW_HIGH - RAW_LOW);
+    let above = u32::from(raw.clamp(RAW_LOW, RAW_HIGH) - RAW_LOW);
+    ((above * 100 + span / 2) / span) as u8
+}
+
+/// The raw reading that means `percent` (the inverse of [`raw_to_percent`]).
+pub fn percent_to_raw(percent: u8) -> u16 {
+    let span = u32::from(RAW_HIGH - RAW_LOW);
+    RAW_LOW + ((u32::from(percent.min(100)) * span + 50) / 100) as u16
 }
 
 const JUMP_CONFIRM: i16 = 25;
@@ -175,7 +183,7 @@ mod tests {
     use super::*;
 
     fn raw_for(percent: u8) -> u16 {
-        ((u32::from(percent) * 1023 + 50) / 100) as u16
+        percent_to_raw(percent)
     }
 
     #[test]
@@ -192,7 +200,7 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                Event::Knob { channel: 2, raw: 512 },
+                Event::Knob { channel: 2, raw: percent_to_raw(50) },
                 Event::ButtonDown { channel: 1 },
                 Event::ButtonUp { channel: 1 },
             ]
@@ -204,7 +212,7 @@ mod tests {
         let mut decoder = Decoder::new();
         let mut bytes = vec![0x00, 0x13, 0xFF, 0xFE, 0x42];
         bytes.extend_from_slice(&knob_packet(0, 100));
-        assert_eq!(decoder.push(&bytes), vec![Event::Knob { channel: 0, raw: 1023 }]);
+        assert_eq!(decoder.push(&bytes), vec![Event::Knob { channel: 0, raw: RAW_HIGH }]);
     }
 
     #[test]
@@ -218,10 +226,23 @@ mod tests {
     }
 
     #[test]
-    fn dead_ends_snap() {
+    fn ends_are_reachable_and_every_step_exists() {
+        assert_eq!(raw_to_percent(0), 0);
         assert_eq!(raw_to_percent(20), 0);
         assert_eq!(raw_to_percent(1000), 100);
+        assert_eq!(raw_to_percent(1023), 100);
         assert_eq!(raw_to_percent(512), 50);
+        for p in 0..=100 {
+            assert_eq!(raw_to_percent(percent_to_raw(p)), p);
+        }
+    }
+
+    #[test]
+    fn turning_down_to_zero_passes_three_two_one() {
+        let mut filter = KnobFilter::new();
+        filter.seed(0, raw_for(6));
+        let steps: Vec<_> = (0..=raw_for(6)).rev().filter_map(|raw| filter.feed(0, raw)).collect();
+        assert_eq!(steps, vec![5, 4, 3, 2, 1, 0]);
     }
 
     #[test]

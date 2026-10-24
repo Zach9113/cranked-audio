@@ -17,12 +17,12 @@ Numbers marked (measured) come from probing the real mixer or the live system in
   - Anything else: skip two bytes and resync on the next `FF FE`. Values above 1023 are corrupt (seen in the wild).
 - LED frame (outgoing, 48 bytes): `FE 05`, then for knobs 0..4, three LEDs each (left, middle, right), each as
   R G B bytes, then `FF`. The board blanks the LEDs shortly after a frame (measured), so resend the current
-  frame every 250 ms; send changes right away, but at most ~10 frames per second.
+  frame every 250 ms; send changes right away, but at most 25 frames per second.
 
 ## 2. Knob readings
 
-- percent = round(value / 1023 * 100). Readings at or below 2% count as 0%, at or above 97% as 100% (the pots never
-  quite reach their ends).
+- The pots never quite reach their ends, so 0..100% is spread over raw 20..1000 (readings below/above clamp):
+  both ends are always reachable and every 1% step exists on the way (no jump from 3% to 0%).
 - Drop readings above 1023.
 - A jump of 25 points or more from the current value is held until the next reading for that knob confirms it
   (within 3 points). A lone spike is ignored. (These spikes caused full-volume blips.)
@@ -62,8 +62,9 @@ Numbers marked (measured) come from probing the real mixer or the live system in
 
 - KDE on-screen volume popup when a knob turns (channel or playing app name + level); a text popup for button
   actions (muted/unmuted, output name, profile name). Optional.
-- LEDs per knob: fill from the left with the active colour by level, the rest in the background colour, with a
-  perceptual (gamma ~2.2) blend at the edge. Muted channel = muted colour. Global brightness. Dim to 25% when the
+- LEDs per knob: fill from the left with the active colour by level, the rest in the background colour. The edge
+  LED's mix follows an S-curve (eases in/out, exactly 50/50 in the middle), so 50% shows colour / even mix /
+  background. The shown level glides to a new value (~70 ms time constant) instead of stepping. Muted channel = muted colour. Global brightness. Dim to 25% when the
   channel has no playing streams (optional). All off while the screen is locked or the displays are asleep;
   back on with the screen or any knob/button input.
 
