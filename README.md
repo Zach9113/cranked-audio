@@ -17,6 +17,8 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
   Only playback is touched; microphones and screen sharing never are.
 - **Knob lights:** each knob fills with its own two colours, follows the level smoothly, dims when nothing is playing
   and goes dark when the screen locks. Built-in calibration keeps dimmed colours true on your LEDs.
+- **Popups where you want them:** KDE's on-screen display, the Atoll dynamic island, or standard
+  notifications (automatic picks the island when it's running).
 - **Home Assistant:** a knob can dim a light, a button can toggle anything; changes made elsewhere show up live.
 - **Profiles:** switch whole layouts (apps, colours, buttons, Auto-lower) from a button or the tray.
 - **Light on the system:** a small background service (about 10 MB, near-zero CPU when idle) talks to PipeWire

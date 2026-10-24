@@ -54,6 +54,8 @@ export global KnobSettings {
 
 export global General {
     in-out property <bool> popups;
+    // 0 automatic, 1 Atoll island, 2 KDE, 3 notifications
+    in-out property <int> popup-style;
     in-out property <float> brightness;
     in-out property <bool> dim-idle;
     // LED calibration: per-channel correction for dimming
@@ -424,6 +426,14 @@ export component GeneralPage inherits ScrollView {
             VerticalLayout {
                 spacing: 8px;
                 CheckBox { text: "Show popups for knob turns and buttons"; checked <=> General.popups; }
+                if General.popups: HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Show them in"; width: 110px; }
+                    ComboBox {
+                        model: ["Automatic", "Dynamic island (Atoll)", "KDE on-screen display", "Notifications"];
+                        current-index <=> General.popup-style;
+                    }
+                }
                 HorizontalLayout {
                     spacing: 8px;
                     Label { text: "LED brightness"; width: 110px; }

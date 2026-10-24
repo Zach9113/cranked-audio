@@ -182,6 +182,21 @@ impl Default for Leds {
 /// Calibration sliders go this far either way.
 pub const GAMMA_RANGE: (f64, f64) = (0.4, 2.5);
 
+/// Where popups for knob turns and button actions show up.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PopupStyle {
+    /// The Atoll dynamic island when it's running, else KDE's on-screen display, else notifications.
+    #[default]
+    Auto,
+    /// The Atoll dynamic island.
+    Island,
+    /// KDE Plasma's on-screen display.
+    Kde,
+    /// Standard desktop notifications (GNOME, Sway, Hyprland, ...).
+    Notifications,
+}
+
 /// Off until `url` is set. The token is a long-lived access token, kept in its own file readable only by you.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -213,8 +228,10 @@ impl Config {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
-    /// KDE on-screen popups for knob turns and button actions.
+    /// Popups for knob turns and button actions.
     pub popups: bool,
+    #[serde(default)]
+    pub popup_style: PopupStyle,
     pub leds: Leds,
     pub home_assistant: HomeAssistant,
     #[serde(rename = "profile")]
@@ -226,6 +243,7 @@ pub struct Config {
 #[serde(default)]
 struct File {
     popups: bool,
+    popup_style: PopupStyle,
     leds: Leds,
     home_assistant: HomeAssistant,
     auto_lower: AutoLower,
@@ -239,6 +257,7 @@ impl Default for File {
     fn default() -> Self {
         Self {
             popups: true,
+            popup_style: PopupStyle::default(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             auto_lower: AutoLower::default(),
@@ -291,6 +310,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             popups: true,
+            popup_style: PopupStyle::default(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             profiles: vec![Profile {
@@ -325,7 +345,13 @@ impl Config {
         if profiles.is_empty() {
             profiles = Self::default().profiles;
         }
-        let mut config = Self { popups: file.popups, leds: file.leds, home_assistant: file.home_assistant, profiles };
+        let mut config = Self {
+            popups: file.popups,
+            popup_style: file.popup_style,
+            leds: file.leds,
+            home_assistant: file.home_assistant,
+            profiles,
+        };
         config.normalize();
         Ok(config)
     }

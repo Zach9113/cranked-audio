@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cranked_ipc::settings::{Channel, Config};
+use cranked_ipc::settings::{Channel, Config, PopupStyle};
 use cranked_ipc::{Entity, Knob, ServerMessage, Snapshot};
 use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
@@ -325,6 +325,12 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
     let profile = &config.profiles[profile_index];
     let general = window.global::<General>();
     general.set_popups(config.popups);
+    general.set_popup_style(match config.popup_style {
+        PopupStyle::Auto => 0,
+        PopupStyle::Island => 1,
+        PopupStyle::Kde => 2,
+        PopupStyle::Notifications => 3,
+    });
     general.set_brightness(f32::from(config.leds.brightness));
     general.set_dim_idle(config.leds.dim_idle);
     let auto = &profile.auto_lower;
@@ -347,6 +353,12 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
 fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize) {
     let general = window.global::<General>();
     config.popups = general.get_popups();
+    config.popup_style = match general.get_popup_style() {
+        1 => PopupStyle::Island,
+        2 => PopupStyle::Kde,
+        3 => PopupStyle::Notifications,
+        _ => PopupStyle::Auto,
+    };
     config.leds.brightness = general.get_brightness().round().clamp(0.0, 100.0) as u8;
     config.leds.dim_idle = general.get_dim_idle();
     let url = general.get_ha_url().trim().to_string();

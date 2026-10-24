@@ -513,7 +513,8 @@ impl Core {
     }
 
     fn popup_text(&self, icon: &str, text: String) -> Option<Out> {
-        self.config.popups.then(|| Out::Desktop(Desktop::Text { icon: icon.into(), text }))
+        let style = self.config.popup_style;
+        self.config.popups.then(|| Out::Desktop(Desktop::Text { icon: icon.into(), text, style }))
     }
 
     fn gesture(&mut self, gesture: Gesture, now: Instant, out: &mut Vec<Out>) {
@@ -687,7 +688,7 @@ impl Core {
     fn knob_popup(&self, channel: usize) -> Option<Out> {
         let config = &self.channels()[channel];
         let percent = if config.controls_audio() { self.target(channel)? } else { self.level(channel)? };
-        Some(Out::Desktop(Desktop::Volume { percent, name: config.label(channel) }))
+        Some(Out::Desktop(Desktop::Volume { percent, name: config.label(channel), style: self.config.popup_style }))
     }
 
     /// What the knob shows: the light's brightness for a light knob, otherwise the knob position.
@@ -873,6 +874,7 @@ mod tests {
         second[1].apps = vec!["Firefox".into()];
         Config {
             popups: true,
+            popup_style: Default::default(),
             leds: Default::default(),
             home_assistant: Default::default(),
             profiles: vec![
@@ -927,7 +929,7 @@ mod tests {
         out.iter()
             .filter_map(|o| match o {
                 Out::Desktop(Desktop::Text { text, .. }) => Some(text.clone()),
-                Out::Desktop(Desktop::Volume { percent, name }) => Some(format!("{name} {percent}%")),
+                Out::Desktop(Desktop::Volume { percent, name, .. }) => Some(format!("{name} {percent}%")),
                 _ => None,
             })
             .collect()
@@ -1136,7 +1138,11 @@ mod tests {
         assert_eq!(
             press(&mut core, 4, at + Duration::from_secs(2)),
             [
-                Out::Desktop(Desktop::Text { icon: "home".into(), text: "Toggling switch.fan".into() }),
+                Out::Desktop(Desktop::Text {
+                    icon: "home".into(),
+                    text: "Toggling switch.fan".into(),
+                    style: Default::default()
+                }),
                 Out::Ha(Ha::Call { service: "toggle", entity: "switch.fan".into() })
             ]
         );

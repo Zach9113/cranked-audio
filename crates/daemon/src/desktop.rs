@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
+use cranked_ipc::settings::PopupStyle;
 use zbus::blocking::Connection;
 use zbus::zvariant::{OwnedValue, Value};
 
@@ -21,10 +22,12 @@ pub enum Command {
     Volume {
         percent: u8,
         name: String,
+        style: PopupStyle,
     },
     Text {
         icon: String,
         text: String,
+        style: PopupStyle,
     },
 }
 
@@ -93,6 +96,51 @@ fn media(bus: &Connection, key: MediaKey) -> zbus::Result<()> {
     Ok(())
 }
 
+const ATOLL: &str = "org.atoll.Atoll";
+
+fn has_owner(bus: &Connection, name: &str) -> bool {
+    bus.call_method(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        Some("org.freedesktop.DBus"),
+        "NameHasOwner",
+        &(name,),
+    )
+    .ok()
+    .and_then(|reply| reply.body().deserialize::<bool>().ok())
+    .unwrap_or(false)
+}
+
+/// The Atoll dynamic island: `showProgress(icon, percent, text)` / `showText(icon, text)` on /Atoll.
+fn island<B>(bus: &Connection, method: &str, body: &B) -> zbus::Result<()>
+where
+    B: serde::Serialize + zbus::zvariant::DynamicType,
+{
+    bus.call_method(Some(ATOLL), "/Atoll", Some(ATOLL), method, body)?;
+    Ok(())
+}
+
+/// Volume icon for a level, the way desktops pick them.
+pub fn volume_icon(percent: u8) -> &'static str {
+    match percent {
+        0 => "audio-volume-muted",
+        1..=33 => "audio-volume-low",
+        34..=66 => "audio-volume-medium",
+        _ => "audio-volume-high",
+    }
+}
+
+/// Where a popup goes first; each falls back to the next: island, KDE, notifications.
+pub fn route(style: PopupStyle, island_running: bool) -> [PopupStyle; 3] {
+    use PopupStyle::{Island, Kde, Notifications};
+    match style {
+        PopupStyle::Auto if island_running => [Island, Kde, Notifications],
+        PopupStyle::Auto | Kde => [Kde, Notifications, Notifications],
+        Island => [Island, Kde, Notifications],
+        Notifications => [Notifications, Notifications, Notifications],
+    }
+}
+
 fn osd<B>(bus: &Connection, method: &str, body: &B) -> zbus::Result<()>
 where
     B: serde::Serialize + zbus::zvariant::DynamicType,
@@ -120,22 +168,30 @@ fn notify(bus: &Connection, icon: &str, summary: &str, body: &str, value: Option
     Ok(())
 }
 
+fn popup(bus: &Connection, style: PopupStyle, volume: Option<u8>, icon: &str, text: &str) -> zbus::Result<()> {
+    let island_running = matches!(style, PopupStyle::Auto | PopupStyle::Island) && has_owner(bus, ATOLL);
+    let mut last = Ok(());
+    for target in route(style, island_running) {
+        last = match (target, volume) {
+            (PopupStyle::Island, Some(percent)) => island(bus, "showProgress", &(icon, i32::from(percent), text)),
+            (PopupStyle::Island, None) => island(bus, "showText", &(icon, text)),
+            (PopupStyle::Kde, Some(percent)) => osd(bus, "mediaPlayerVolumeChanged", &(i32::from(percent), text, icon)),
+            (PopupStyle::Kde, None) => osd(bus, "showText", &(icon, text)),
+            (_, Some(percent)) => notify(bus, icon, &format!("{text} {percent}%"), "", Some(i32::from(percent))),
+            (_, None) => notify(bus, icon, text, "", None),
+        };
+        if last.is_ok() {
+            break;
+        }
+    }
+    last
+}
+
 fn run_one(bus: &Connection, command: Command) -> zbus::Result<()> {
     match command {
         Command::Media(key) => media(bus, key),
-        Command::Volume { percent, name } => {
-            if osd(bus, "mediaPlayerVolumeChanged", &(i32::from(percent), name.as_str(), "audio-volume-high")).is_err()
-            {
-                notify(bus, "audio-volume-high", &format!("{name} {percent}%"), "", Some(i32::from(percent)))?;
-            }
-            Ok(())
-        }
-        Command::Text { icon, text } => {
-            if osd(bus, "showText", &(icon.as_str(), text.as_str())).is_err() {
-                notify(bus, &icon, &text, "", None)?;
-            }
-            Ok(())
-        }
+        Command::Volume { percent, name, style } => popup(bus, style, Some(percent), volume_icon(percent), &name),
+        Command::Text { icon, text, style } => popup(bus, style, None, &icon, &text),
     }
 }
 
@@ -241,5 +297,16 @@ mod tests {
         assert!(!monitors_asleep(&[c("connected", "On"), c("connected", "Off")]));
         assert!(monitors_asleep(&[c("connected", "Off"), c("connected", "Standby"), c("disconnected", "On")]));
         assert!(!monitors_asleep(&[c("disconnected", "Off")]), "no monitors known: don't guess");
+    }
+
+    #[test]
+    fn popups_go_where_chosen_and_fall_back() {
+        use PopupStyle::*;
+        assert_eq!(route(Auto, true)[0], Island);
+        assert_eq!(route(Auto, false)[0], Kde);
+        assert_eq!(route(Island, false), [Island, Kde, Notifications], "tries the island, then falls back");
+        assert_eq!(route(Notifications, true)[0], Notifications);
+        assert_eq!(volume_icon(0), "audio-volume-muted");
+        assert_eq!(volume_icon(50), "audio-volume-medium");
     }
 }

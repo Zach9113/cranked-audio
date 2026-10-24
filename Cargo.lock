@@ -730,7 +730,7 @@ dependencies = [
 
 [[package]]
 name = "cranked-audio"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "cranked-ipc",
  "cranked-protocol",
@@ -741,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "cranked-audiod"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "cranked-ipc",
  "cranked-protocol",
@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "cranked-ipc"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "cranked-protocol",
  "serde",
@@ -768,7 +768,7 @@ dependencies = [
 
 [[package]]
 name = "cranked-protocol"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "crc32fast"
