@@ -90,7 +90,7 @@ The Home Assistant token is kept in its own file, readable only by you.
 Cranked Audio answers on the session bus as `io.github.zach9113.CrankedAudio` (object
 `/io/github/zach9113/CrankedAudio`, interface `io.github.zach9113.CrankedAudio1`):
 `GetState`, `SetKnob(knob, percent)`, `StepKnob(knob, delta)`, `Press(button)`, `Hold(button)`, `SetProfile(name)`,
-`OpenWindow`, and a `StateChanged(json)` signal. Knobs and buttons count from 0. For example, to set the second knob
+`OpenWindow`, `OpenSettings`, and a `StateChanged(json)` signal. Knobs and buttons count from 0. For example, to set the second knob
 to 40%:
 
 ```bash

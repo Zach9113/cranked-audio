@@ -877,6 +877,13 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                 ServerMessage::MidiLearned(learned) => {
                     let _ = window.upgrade_in_event_loop(move |w| show_learned(&w, learned));
                 }
+                ServerMessage::OpenPage(page) => {
+                    let _ = window.upgrade_in_event_loop(move |w| {
+                        if page == "settings" {
+                            w.invoke_open_general();
+                        }
+                    });
+                }
                 ServerMessage::Quit => {
                     let _ = slint::quit_event_loop();
                     return;
@@ -1310,8 +1317,11 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = window.as_weak();
         std::thread::Builder::new().name("link".into()).spawn(move || run_link(link, weak)).unwrap();
     }
-    // for screenshots and tests: CRANKED_OPEN="knob 2" | "button 2" | "settings" | "leds" | "devices" opens that page once loaded
-    if let Ok(open) = std::env::var("CRANKED_OPEN") {
+    // `--page settings` (from the widget) or, for screenshots and tests, CRANKED_OPEN="knob 2" | "button 2" |
+    // "settings" | "leds" | "devices" opens that page once loaded
+    let args: Vec<String> = std::env::args().collect();
+    let page = args.iter().position(|a| a == "--page").and_then(|i| args.get(i + 1)).cloned();
+    if let Some(open) = page.or_else(|| std::env::var("CRANKED_OPEN").ok()) {
         let weak = window.as_weak();
         slint::Timer::single_shot(Duration::from_millis(1500), move || {
             let Some(w) = weak.upgrade() else { return };

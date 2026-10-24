@@ -338,6 +338,14 @@ fn main() {
                     }
                     None
                 }
+                dbus::Request::OpenSettings => {
+                    if clients.is_empty() {
+                        spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
+                    } else {
+                        clients.send(&ServerMessage::OpenPage("settings".into()));
+                    }
+                    None
+                }
                 _ => None,
             },
             Some(Event::Device(input)) => match input {

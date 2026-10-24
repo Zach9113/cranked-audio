@@ -25,6 +25,7 @@ pub enum Request {
     Button { button: usize, down: bool },
     Profile(String),
     OpenWindow,
+    OpenSettings,
 }
 
 struct Api {
@@ -87,6 +88,11 @@ impl Api {
 
     fn open_window(&self) {
         self.send(Request::OpenWindow);
+    }
+
+    /// Opens the window on its Settings page.
+    fn open_settings(&self) {
+        self.send(Request::OpenSettings);
     }
 
     /// Sent whenever the state changes, with the new JSON.

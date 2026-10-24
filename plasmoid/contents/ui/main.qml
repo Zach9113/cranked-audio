@@ -110,14 +110,43 @@ PlasmoidItem {
         onTriggered: root.refresh()
     }
 
-    // right-click menu: these, then Plasma's own (Configure Cranked Audio…)
-    Plasmoid.contextualActions: [
-        PlasmaCore.Action {
-            text: "Open Cranked Audio"
-            icon.name: "io.github.zach9113.CrankedAudio"
-            onTriggered: root.call("OpenWindow", [], "", null)
+    // right-click menu: open the app or its settings, switch profile; then Plasma's own (Configure Cranked Audio…)
+    PlasmaCore.Action {
+        id: openAction
+        text: "Open Cranked Audio"
+        icon.name: "io.github.zach9113.CrankedAudio"
+        onTriggered: root.call("OpenWindow", [], "", null)
+    }
+    PlasmaCore.Action {
+        id: settingsAction
+        text: "Cranked Audio Settings…"
+        icon.name: "configure"
+        onTriggered: root.call("OpenSettings", [], "", null)
+    }
+    PlasmaCore.Action {
+        id: profilesHeading
+        isSeparator: true
+        text: "Profiles"
+    }
+    property var profileActions: []
+    Instantiator {
+        model: root.snapshot && root.snapshot.profiles.length > 1 ? root.snapshot.profiles : []
+        delegate: PlasmaCore.Action {
+            required property string modelData
+            text: modelData
+            checkable: true
+            checked: !!root.snapshot && root.snapshot.profile === modelData
+            onTriggered: root.call("SetProfile", [new DBus.string(modelData)], "(s)", root.refresh)
         }
-    ]
+        onObjectAdded: (index, object) => {
+            const list = root.profileActions.slice();
+            list.splice(index, 0, object);
+            root.profileActions = list;
+        }
+        onObjectRemoved: (index, object) => root.profileActions = root.profileActions.filter(a => a !== object)
+    }
+    Plasmoid.contextualActions: [openAction, settingsAction]
+        .concat(profileActions.length > 0 ? [profilesHeading].concat(profileActions) : [])
 
     Plasmoid.icon: "io.github.zach9113.CrankedAudio"
     Plasmoid.title: "Cranked Audio"

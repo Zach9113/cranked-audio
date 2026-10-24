@@ -43,6 +43,8 @@ pub enum ServerMessage {
     Devices(DeviceChoices),
     /// Answer to `learn-midi`: the control that moved, if any did in time.
     MidiLearned(Option<LearnedControl>),
+    /// Show a page in the open window ("settings").
+    OpenPage(String),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
