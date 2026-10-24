@@ -36,6 +36,10 @@ const CALIBRATION_TIMEOUT: Duration = Duration::from_secs(180);
 const SEEN_APPS: usize = 200;
 /// While the screen is off, touching a knob or button lights the LEDs for this long.
 const WAKE_FOR: Duration = Duration::from_secs(30);
+/// After the mixer connects, knob readings don't move lights for this long (it sends warm-up readings).
+const LIGHTS_SETTLE: Duration = Duration::from_secs(4);
+/// A light that's off only comes on when its knob is turned up at least this far (a wobble never switches it on).
+const LIGHT_ON_MOVE: u8 = 3;
 /// Knob and light this close together move 1:1 (SPEC.md section 7).
 const PICKUP_TOLERANCE: i32 = 3;
 /// A stream more than this many points off its channel gets put back (fast guard).
@@ -116,6 +120,10 @@ pub struct Core {
     touched_at: Option<Instant>,
     /// LED calibration in progress: when it last changed, and the correction being tried.
     calibrating: Option<(Instant, [f64; 3])>,
+    /// Lights ignore the mixer's knobs until then (see LIGHTS_SETTLE).
+    lights_settle_until: Option<Instant>,
+    /// The time of the current tick.
+    now: Option<Instant>,
     pub verbose: bool,
 }
 
@@ -164,6 +172,8 @@ impl Core {
             screen_off: false,
             touched_at: None,
             calibrating: None,
+            lights_settle_until: None,
+            now: None,
             verbose: false,
         };
         core.update_holds();
@@ -621,6 +631,7 @@ impl Core {
 
     pub fn tick(&mut self, now: Instant) -> Vec<Out> {
         let mut out = Vec::new();
+        self.now = Some(now);
         if self.calibrating.is_some_and(|(at, _)| now.saturating_duration_since(at) >= CALIBRATION_TIMEOUT) {
             self.calibrate(None, now);
         }
@@ -649,6 +660,7 @@ impl Core {
             let quiet = now.duration_since(sync.last_reading) >= SYNC_QUIET;
             if (all_seen && quiet) || now.duration_since(sync.started) >= SYNC_LIMIT {
                 self.sync = None;
+                self.lights_settle_until = Some(now + LIGHTS_SETTLE);
                 for channel in 0..KNOBS {
                     if let Some(percent) = self.filter.position(channel) {
                         self.set_knob(channel, percent, false);
@@ -795,13 +807,22 @@ impl Core {
         if let Some(entity) = self.channels()[channel].light.clone() {
             let Some(knob) = self.knob(channel) else { return Vec::new() };
             let previous = self.applied[channel].replace(knob);
-            if !turned {
+            let settling = self.lights_settle_until.zip(self.now).is_some_and(|(until, now)| now < until);
+            if !turned || settling {
                 return Vec::new();
             }
             let previous = previous.unwrap_or(knob);
+            if previous == knob {
+                return Vec::new();
+            }
             let state = self.entities.get_mut(&entity);
             let light = state.as_ref().and_then(|s| s.brightness).unwrap_or(previous);
-            let percent = if previous == knob { knob } else { catch_up(light, previous, knob) };
+            // a light that's off needs a deliberate turn up; until then keep counting from where the knob was
+            if light == 0 && knob > previous && knob - previous < LIGHT_ON_MOVE {
+                self.applied[channel] = Some(previous);
+                return Vec::new();
+            }
+            let percent = catch_up(light, previous, knob);
             if let Some(state) = state {
                 state.brightness = Some(percent);
                 state.state = if percent > 0 { "on" } else { "off" }.into();
@@ -1072,7 +1093,7 @@ mod tests {
         core.handle(lamp("on", Some(80)), start);
         assert!(brightness(&core.tick(start + Duration::from_secs(1))).is_empty(), "sync never moves the lamp");
         // knob at 30, lamp at 80: turning up to 65 goes half of the remaining way
-        let at = start + Duration::from_secs(2);
+        let at = start + LIGHTS_SETTLE + Duration::from_secs(1);
         core.handle(packets(&[(4, 65), (4, 65)]), at);
         let out = core.tick(at);
         assert_eq!(brightness(&out), [90]);
@@ -1431,5 +1452,23 @@ mod tests {
         assert!(core.calibrating.is_some());
         core.tick(at + CALIBRATION_TIMEOUT);
         assert!(core.calibrating.is_none(), "ends by itself");
+    }
+
+    #[test]
+    fn lights_ignore_the_mixers_warm_up_and_never_switch_on_from_a_wobble() {
+        let start = Instant::now();
+        let mut core = synced(start);
+        core.handle(lamp("off", Some(0)), start);
+        // right after connecting, a reading moves the lamp knob: nothing is sent
+        let soon = start + Duration::from_secs(1);
+        core.handle(packets(&[(4, 34)]), soon);
+        assert!(brightness(&core.tick(soon)).is_empty(), "settling after the mixer connects");
+        // later, a 1-2% wobble on a lamp that's off never switches it on
+        let later = start + Duration::from_secs(10);
+        core.handle(packets(&[(4, 35)]), later);
+        assert!(brightness(&core.tick(later)).is_empty());
+        // but turning it up on purpose (even slowly) does
+        core.handle(packets(&[(4, 37)]), later + Duration::from_secs(1));
+        assert!(!brightness(&core.tick(later + Duration::from_secs(1))).is_empty(), "34 -> 37 counts as a turn");
     }
 }
