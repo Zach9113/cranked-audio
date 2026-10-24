@@ -19,6 +19,7 @@ KCM.SimpleKCM {
     property bool cfg_showButton
     property bool cfg_showActionLabels
     property bool cfg_showHeader
+    property bool cfg_showBackground
     property bool cfg_buttonsInDial
     property string cfg_hiddenKnobs
     property int cfg_wheelKnob
@@ -103,6 +104,11 @@ KCM.SimpleKCM {
             onToggled: page.cfg_showActionLabels = checked
         }
         QQC2.CheckBox { text: "Title and profile switcher"; checked: page.cfg_showHeader; onToggled: page.cfg_showHeader = checked }
+        QQC2.CheckBox {
+            text: "Background behind the widget (on the desktop)"
+            checked: page.cfg_showBackground
+            onToggled: page.cfg_showBackground = checked
+        }
         QQC2.CheckBox {
             text: "Buttons inside the dials (more compact)"
             enabled: page.cfg_showButton && page.cfg_style === "knobs"

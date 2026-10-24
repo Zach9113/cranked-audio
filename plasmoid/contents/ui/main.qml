@@ -95,6 +95,8 @@ PlasmoidItem {
 
     Plasmoid.icon: "io.github.zach9113.CrankedAudio"
     Plasmoid.title: "Cranked Audio"
+    // the frame Plasma draws behind a widget on the desktop; off lets the knobs float on the wallpaper
+    Plasmoid.backgroundHints: cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground
     toolTipMainText: "Cranked Audio"
     toolTipSubText: {
         if (!running || !snapshot) return "Not running";
