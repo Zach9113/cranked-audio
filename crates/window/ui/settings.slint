@@ -43,6 +43,8 @@ export global KnobSettings {
     in-out property <int> hold-kind;
     in-out property <int> hold-entity;
     in-out property <[AppRow]> app-rows;
+    // collapsed: only this knob's apps; expanded: every app
+    in-out property <bool> apps-expanded;
     callback add-app(string);
     callback toggle-app(int);
 }
@@ -178,20 +180,33 @@ export component KnobPage inherits ScrollView {
             title: "Apps on this knob";
             VerticalLayout {
                 spacing: 8px;
-                Hint {
-                    text: KnobSettings.apps.length == 0
-                        ? "Click apps to put them on this knob. Apps you've played show up here."
-                        : KnobSettings.apps.length + " on this knob. Click an app to add it or take it off.";
+                HorizontalLayout {
+                    spacing: 8px;
+                    Hint {
+                        horizontal-stretch: 1;
+                        vertical-alignment: center;
+                        text: KnobSettings.apps.length == 0
+                            ? "Click apps to put them on this knob. Apps you've played show up here."
+                            : KnobSettings.apps.length + " on this knob. Click an app to add it or take it off.";
+                    }
+                    Button {
+                        text: KnobSettings.apps-expanded ? "▴ Show only this knob's" : "▾ Show all apps (" + KnobSettings.app-rows.length + ")";
+                        clicked => { KnobSettings.apps-expanded = !KnobSettings.apps-expanded; }
+                    }
                 }
                 Rectangle {
-                    height: 260px;
+                    height: KnobSettings.apps-expanded ? 300px : min(300px, KnobSettings.apps.length * 40px + 8px);
+                    visible: KnobSettings.apps-expanded || KnobSettings.apps.length > 0;
+                    animate height { duration: 160ms; easing: ease-out; }
                     border-radius: 8px;
                     border-width: 1px;
                     border-color: #34343e;
                     background: #18181d;
                     ListView {
                         for row[i] in KnobSettings.app-rows: Rectangle {
-                            height: 40px;
+                            // collapsed lists hide everything that isn't on this knob
+                            height: row.selected || KnobSettings.apps-expanded ? 40px : 0px;
+                            visible: row.selected || KnobSettings.apps-expanded;
                             // the highlight is inset so neighbouring rows read as separate pills
                             Rectangle {
                                 x: 4px;

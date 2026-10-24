@@ -20,27 +20,59 @@ pub struct KnobLook {
 
 /// The edge LED's transition between background and active colour.
 ///
-/// Mixing two distinct colours (e.g. purple + gold, teal + crimson, amber + magenta) in RGB space
-/// produces an ugly, muddy brown or grey hybrid in the middle. We never mix the two hues:
-/// the background colour fades down toward the centre, and the active colour fades up past it.
-/// At 50%, the left LED is pure active colour, the middle LED forms a clean dark divider, and
-/// the right LED is pure background—giving a sharp, high-contrast half-and-half effect with
-/// zero muddy middle colours.
+/// Mixing two colours channel by channel goes through grey or brown (purple + gold = mud), and fading one out to
+/// black before the other comes in leaves a dark gap travelling along the knob. Instead the mix happens in OKLCH,
+/// a perceptual colour space: lightness, saturation and hue each move evenly and the hue takes the short way round
+/// the colour wheel, so the edge LED stays bright and vivid the whole way (purple to gold passes through pink and
+/// orange, not brown).
 fn blend(from: Rgb, to: Rgb, amount: f64) -> Rgb {
     let x = amount.clamp(0.0, 1.0);
+    // a black side has no hue to travel from: just fade the other colour
     if from == (0, 0, 0) {
-        return scale(to, x.powf(2.0));
+        return scale(to, x);
     }
     if to == (0, 0, 0) {
-        return scale(from, (1.0 - x).powf(2.0));
+        return scale(from, 1.0 - x);
     }
-    if x < 0.5 {
-        let w = (1.0 - 2.0 * x).powf(1.8);
-        scale(from, w)
-    } else {
-        let w = (2.0 * (x - 0.5)).powf(1.8);
-        scale(to, w)
-    }
+    let (l1, c1, h1) = oklch(from);
+    let (l2, c2, h2) = oklch(to);
+    let turn = (h2 - h1 + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI;
+    let (l, c, h) = (l1 + (l2 - l1) * x, c1 + (c2 - c1) * x, h1 + turn * x);
+    from_oklab(l, c * h.cos(), c * h.sin())
+}
+
+fn to_linear(c: u8) -> f64 {
+    let c = f64::from(c) / 255.0;
+    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+}
+
+fn to_byte(c: f64) -> u8 {
+    let c = c.clamp(0.0, 1.0);
+    let c = if c <= 0.003_130_8 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 };
+    (c * 255.0).round().clamp(0.0, 255.0) as u8
+}
+
+/// sRGB -> OKLCH (lightness, chroma, hue in radians).
+fn oklch((r, g, b): Rgb) -> (f64, f64, f64) {
+    let (r, g, b) = (to_linear(r), to_linear(g), to_linear(b));
+    let l = (0.412_221_470_8 * r + 0.536_332_536_3 * g + 0.051_445_992_9 * b).cbrt();
+    let m = (0.211_903_498_2 * r + 0.680_699_545_1 * g + 0.107_396_956_6 * b).cbrt();
+    let s = (0.088_302_461_9 * r + 0.281_718_837_6 * g + 0.629_978_700_5 * b).cbrt();
+    let lightness = 0.210_454_255_3 * l + 0.793_617_785 * m - 0.004_072_046_8 * s;
+    let a = 1.977_998_495_1 * l - 2.428_592_205 * m + 0.450_593_709_9 * s;
+    let b = 0.025_904_037_1 * l + 0.782_771_766_2 * m - 0.808_675_766 * s;
+    (lightness, a.hypot(b), b.atan2(a))
+}
+
+fn from_oklab(lightness: f64, a: f64, b: f64) -> Rgb {
+    let l = (lightness + 0.396_337_777_4 * a + 0.215_803_757_3 * b).powi(3);
+    let m = (lightness - 0.105_561_345_8 * a - 0.063_854_172_8 * b).powi(3);
+    let s = (lightness - 0.089_484_177_5 * a - 1.291_485_548 * b).powi(3);
+    (
+        to_byte(4.076_741_662_1 * l - 3.307_711_591_3 * m + 0.230_969_929_2 * s),
+        to_byte(-1.268_438_004_6 * l + 2.609_757_401_1 * m - 0.341_319_396_5 * s),
+        to_byte(-0.004_196_086_3 * l - 0.703_418_614_7 * m + 1.707_614_701 * s),
+    )
 }
 
 fn scale(color: Rgb, factor: f64) -> Rgb {
@@ -87,17 +119,31 @@ mod tests {
         }
     }
 
+    fn brightness_of(c: Rgb) -> u32 {
+        u32::from(c.0) + u32::from(c.1) + u32::from(c.2)
+    }
+
     #[test]
-    fn fifty_percent_is_half_and_half() {
-        let leds = knob_colors(&look(50), 100, true);
-        // Left is pure active color, right is pure background, middle is clean dark divider (no muddy mix)
-        assert_eq!((leds[0], leds[1], leds[2]), ((255, 0, 0), (0, 0, 0), (0, 0, 255)));
+    fn fills_from_the_left_and_the_edge_never_goes_dark_or_muddy() {
         assert_eq!(knob_colors(&look(100), 100, true), [(255, 0, 0); 3]);
         assert_eq!(knob_colors(&look(0), 100, true), [(0, 0, 255); 3]);
-        // entering from background: stays pure background hue, no green/red muddy blend
-        let entering = knob_colors(&look(36), 100, true)[1];
-        assert_eq!(entering.0, 0, "no active color bleeding into background phase");
-        assert!(entering.2 > 100, "still clearly background color");
+        let half = knob_colors(&look(50), 100, true);
+        assert_eq!((half[0], half[2]), ((255, 0, 0), (0, 0, 255)));
+        // every step of the edge LED stays bright and saturated (no dark dip, no grey)
+        for level in 34..67 {
+            let edge = knob_colors(&look(level), 100, true)[1];
+            let (hi, lo) = (edge.0.max(edge.1).max(edge.2), edge.0.min(edge.1).min(edge.2));
+            assert!(brightness_of(edge) > 150, "{level}%: {edge:?} too dark");
+            assert!(hi - lo > 120, "{level}%: {edge:?} washed out");
+        }
+    }
+
+    #[test]
+    fn exact_colours_survive_the_round_trip() {
+        for c in [(255, 0, 0), (0, 186, 20), (122, 35, 0), (92, 5, 156), (5, 194, 137)] {
+            assert_eq!(blend(c, (1, 2, 3), 0.0), c);
+            assert_eq!(blend((1, 2, 3), c, 1.0), c);
+        }
     }
 
     #[test]

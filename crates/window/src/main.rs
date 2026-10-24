@@ -244,6 +244,8 @@ fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
         e.other_knobs = other_knobs;
     });
     knob.set_app_rows(ModelRc::new(VecModel::<AppRow>::default()));
+    // collapsed shows just this knob's apps; a knob with none opens on the full list
+    knob.set_apps_expanded(channel.apps.is_empty());
     refresh_app_rows(window);
     knob.set_kind(if channel.light.is_some() { 2 } else if channel.master { 1 } else { 0 });
     knob.set_catch_all(channel.catch_all);
