@@ -13,6 +13,7 @@ mod leds;
 mod matching;
 mod serial;
 mod server;
+mod shortcuts;
 mod tray;
 mod updater;
 
@@ -185,6 +186,8 @@ fn main() {
     let api = dbus::start(events.clone());
     let device_generation = Arc::new(AtomicU64::new(0));
     devices::start(&core.config().devices, &events, &device_generation);
+    let most_knobs = |config: &Config| config.profiles.iter().map(|p| p.channels.len()).max().unwrap_or(0);
+    let mut shortcuts = shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()));
     let tray =
         tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
     let mut tray_shows = (String::new(), Vec::<String>::new(), false);
@@ -199,6 +202,7 @@ fn main() {
         let mut reload = false;
         let mut new_config: Option<Config> = None;
         let mut switch_to: Option<String> = None;
+        let mut cycle_profile = false;
         let mut restart_ha = false;
         let event = match event {
             Some(Event::ClientConnected(stream)) => {
@@ -338,6 +342,10 @@ fn main() {
                     }
                     None
                 }
+                dbus::Request::NextProfile => {
+                    cycle_profile = true;
+                    None
+                }
                 dbus::Request::OpenSettings => {
                     if clients.is_empty() {
                         spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
@@ -432,6 +440,9 @@ fn main() {
         if let Some(name) = switch_to {
             core.switch_profile(&name, &mut out);
         }
+        if cycle_profile {
+            core.cycle_profile(&mut out);
+        }
         if now.duration_since(config_checked) >= Duration::from_secs(1) {
             config_checked = now;
             let latest = modified(&config_path);
@@ -449,6 +460,9 @@ fn main() {
             let ha_changed = config.home_assistant != core.config().home_assistant
                 || config.ha_entities() != core.config().ha_entities();
             restart_ha |= ha_changed;
+            if let Some(shortcuts) = &mut shortcuts {
+                shortcuts.ensure(most_knobs(&config));
+            }
             if config.devices != core.config().devices {
                 devices::start(&config.devices, &events, &device_generation);
             }

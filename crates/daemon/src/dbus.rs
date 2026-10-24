@@ -26,6 +26,7 @@ pub enum Request {
     Profile(String),
     OpenWindow,
     OpenSettings,
+    NextProfile,
 }
 
 struct Api {

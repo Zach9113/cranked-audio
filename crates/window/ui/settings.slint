@@ -113,6 +113,7 @@ export global General {
     callback toggle-shown(int);
     callback add-knob();
     callback open-devices();
+    callback open-shortcuts();
     in property <[string]> theme-names;
     callback theme-changed(int);
     in-out property <float> brightness;
@@ -130,6 +131,8 @@ export global General {
     in-out property <bool> voice-chat;
     in-out property <int> amount-index;
     in-out property <bool> auto-dim;
+    // a mixer has been connected at some point; until then its light settings stay hidden
+    in property <bool> has-mixer: true;
     in-out property <string> ha-url;
     in-out property <string> ha-token;
     in-out property <int> profile-index;
@@ -578,13 +581,13 @@ export component GeneralPage inherits ScrollView {
                         Label { text: "By"; width: 110px; }
                         ComboBox { model: Lists.amounts; current-index <=> General.amount-index; }
                     }
-                    CheckBox { text: "Dim their knob lights too"; checked <=> General.auto-dim; }
+                    if General.has-mixer: CheckBox { text: "Dim their knob lights too"; checked <=> General.auto-dim; }
                 }
             }
         }
 
         GroupBox {
-            title: "Popups and lights";
+            title: "Popups";
             VerticalLayout {
                 spacing: 8px;
                 CheckBox { text: "Show popups for knob turns and buttons"; checked <=> General.popups; }
@@ -596,6 +599,13 @@ export component GeneralPage inherits ScrollView {
                         current-index <=> General.popup-style;
                     }
                 }
+            }
+        }
+
+        if General.has-mixer: GroupBox {
+            title: "Mixer lights";
+            VerticalLayout {
+                spacing: 8px;
                 HorizontalLayout {
                     spacing: 8px;
                     Label { text: "LED brightness"; width: 110px; }
@@ -614,6 +624,18 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button { text: "Calibrate LED colours…"; clicked => { General.open-calibration(); } }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Keyboard shortcuts";
+            VerticalLayout {
+                spacing: 8px;
+                Hint { text: "Every knob can be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window. No keys are set at first: pick your own in System Settings (on KDE Plasma)."; }
+                HorizontalLayout {
+                    alignment: start;
+                    Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
                 }
             }
         }

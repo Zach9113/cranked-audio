@@ -733,6 +733,7 @@ fn open_settings() {
 }
 
 fn show(window: &MainWindow, snapshot: &Snapshot) {
+    window.global::<General>().set_has_mixer(snapshot.mixer || snapshot.mixer_seen);
     let hidden = HIDDEN.with(|h| h.borrow().clone());
     let rows: Vec<KnobData> = snapshot
         .knobs
@@ -1029,6 +1030,15 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             }
         });
     }
+    // System Settings' shortcuts page, where the service's shortcuts are listed under Cranked Audio
+    general.on_open_shortcuts(|| {
+        let _ = Command::new("kcmshell6")
+            .arg("kcm_keys")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    });
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_open_devices(move || {
@@ -1228,6 +1238,26 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             }
         }
     };
+    // the one-time tip: shown until "Got it" leaves a marker next to the service's state
+    {
+        let marker = std::env::var_os("XDG_STATE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
+            .map(|d| d.join("cranked-audio").join("welcomed"));
+        window.set_show_welcome(marker.as_ref().is_some_and(|m| !m.exists()));
+        let weak = window.as_weak();
+        window.on_dismiss_welcome(move || {
+            if let Some(marker) = &marker {
+                if let Some(dir) = marker.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(marker, "");
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_show_welcome(false);
+            }
+        });
+    }
     window.on_add_knob(add_knob.clone());
     window.global::<General>().on_add_knob(add_knob);
     {

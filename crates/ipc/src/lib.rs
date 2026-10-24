@@ -78,6 +78,9 @@ pub struct Entity {
 pub struct Snapshot {
     /// The USB mixer is connected.
     pub mixer: bool,
+    /// A mixer has been connected at some point: its settings (lights) are worth showing.
+    #[serde(default)]
+    pub mixer_seen: bool,
     pub profile: String,
     pub profiles: Vec<String>,
     /// Apps playing sound right now (for picking a knob's apps).

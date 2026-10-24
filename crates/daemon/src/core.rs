@@ -115,6 +115,7 @@ pub struct Core {
     saved: [Option<u8>; MAX],
     /// Apps seen playing (for the window's app list), newest last.
     seen_apps: Vec<String>,
+    mixer_seen: bool,
     restored: bool,
     moved_at: Option<Instant>,
     screen_off: bool,
@@ -168,6 +169,7 @@ impl Core {
             ha_enabled: false,
             saved,
             seen_apps,
+            mixer_seen: state.mixer_seen,
             restored: false,
             moved_at: None,
             screen_off: false,
@@ -313,6 +315,7 @@ impl Core {
         known_apps.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
         cranked_ipc::Snapshot {
             mixer: self.mixer_connected,
+            mixer_seen: self.mixer_seen,
             profile: self.config.profiles[self.profile].name.clone(),
             profiles: self.config.profiles.iter().map(|p| p.name.clone()).collect(),
             playing,
@@ -357,6 +360,10 @@ impl Core {
                 self.restored = true;
                 self.mixer = Decoder::new();
                 self.mixer_connected = true;
+                if !self.mixer_seen {
+                    self.mixer_seen = true;
+                    out.push(Out::SaveState(self.state()));
+                }
                 self.last_frame = None;
                 self.sync = Some(StartupSync { started: now, last_reading: now, seen: [false; KNOBS] });
             }
@@ -533,7 +540,12 @@ impl Core {
 
     fn state(&self) -> State {
         let knobs = (0..MAX).filter_map(|i| Some(((i + 1).to_string(), self.knobs[i]?))).collect();
-        State { profile: self.config.profiles[self.profile].name.clone(), knobs, apps: self.seen_apps.clone() }
+        State {
+            profile: self.config.profiles[self.profile].name.clone(),
+            knobs,
+            apps: self.seen_apps.clone(),
+            mixer_seen: self.mixer_seen,
+        }
     }
 
     fn set_knob(&mut self, channel: usize, percent: u8, popup: bool) {
@@ -624,6 +636,11 @@ impl Core {
                 self.use_profile(index, out);
             }
         }
+    }
+
+    /// Switches to the next profile (a shortcut), like a Next profile button.
+    pub fn cycle_profile(&mut self, out: &mut Vec<Out>) {
+        self.next_profile(out);
     }
 
     fn next_profile(&mut self, out: &mut Vec<Out>) {

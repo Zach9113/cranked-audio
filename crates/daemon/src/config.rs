@@ -36,6 +36,9 @@ pub struct State {
     pub knobs: std::collections::BTreeMap<String, u8>,
     /// App names seen playing, newest last (offered when picking a knob's apps).
     pub apps: Vec<String>,
+    /// A mixer has been connected at some point (until then its settings stay out of the way).
+    #[serde(default)]
+    pub mixer_seen: bool,
 }
 
 impl State {

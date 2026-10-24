@@ -511,6 +511,9 @@ export component MainWindow inherits Window {
     callback save();
     callback back();
     callback add-knob();
+    // the one-time tip for new users
+    in property <bool> show-welcome;
+    callback dismiss-welcome();
     // how big the window wants to be for its contents (the window code resizes to it when the knobs or look change)
     out property <length> wanted-width: max(self.min-width, page-layout.preferred-width);
     out property <length> wanted-height: page-layout.preferred-height;
@@ -568,6 +571,32 @@ export component MainWindow inherits Window {
                 text: "Save";
                 primary: true;
                 clicked => { root.save(); }
+            }
+        }
+
+        if root.page == 0 && root.show-welcome: Rectangle {
+            background: Palette.card;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Palette.edge;
+            HorizontalLayout {
+                padding: 10px;
+                spacing: 12px;
+                Text {
+                    text: "New here? Drag or scroll a knob to turn it. Right-click a knob to pick its apps, or its button to pick what it does.";
+                    color: Palette.text-dim;
+                    font-size: 13px;
+                    wrap: word-wrap;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    // never widens the window: it wraps to whatever the knobs leave
+                    min-width: 0px;
+                    preferred-width: 0px;
+                }
+                Button {
+                    text: "Got it";
+                    clicked => { root.dismiss-welcome(); }
+                }
             }
         }
 
