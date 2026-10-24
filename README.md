@@ -78,6 +78,13 @@ cargo test && tests/live.sh && tests/live_ha.sh && tests/live_duck.sh
 
 `SPEC.md` describes how everything behaves; `PLAN.md` is the roadmap.
 
+## Made with AI
+
+Cranked Audio was built with heavy use of AI coding assistants: most of the code, tests and documentation were
+written by Claude (Anthropic, through Claude Code), with some work by Gemini (Google), under the direction of
+Zach9113, who designed the features, made the decisions, and tested everything on real hardware. Commits that AI
+helped write carry a `Co-Authored-By` line. Bug reports and reviews from humans are very welcome.
+
 ## License
 
 Copyright (C) 2026 Zach9113. Free software under the GNU General Public License, version 3 or later; see `LICENSE`.
