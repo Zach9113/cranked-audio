@@ -414,6 +414,11 @@ impl Core {
                 if !self.streams.contains_key(&index) {
                     self.remember_app(&stream);
                 }
+                if let Some(c) = channel {
+                    let volume = stream.volume.round().clamp(0.0, 100.0) as u8;
+                    let knob = self.channels()[c].knob_for(volume);
+                    self.adopt(c, knob);
+                }
                 self.streams.insert(index, (stream, channel));
                 self.sync_meter(index, &mut out);
             }
@@ -443,6 +448,13 @@ impl Core {
             }
             Event::HaFailed => out.extend(self.popup_text("dialog-warning", "Home Assistant didn't respond".into())),
             Event::AudioReady => {}
+            Event::OutputVolume(percent) => {
+                for channel in 0..self.count() {
+                    if self.channels()[channel].master {
+                        self.adopt(channel, percent);
+                    }
+                }
+            }
             Event::AudioLost => {
                 self.streams.clear();
                 self.metered.clear();
@@ -545,6 +557,16 @@ impl Core {
             knobs,
             apps: self.seen_apps.clone(),
             mixer_seen: self.mixer_seen,
+        }
+    }
+
+    /// Without a mixer, a knob nobody has turned yet (and with no saved position) shows the volume its sound is
+    /// already at, instead of nothing; nothing is changed until it's turned.
+    fn adopt(&mut self, channel: usize, percent: u8) {
+        let untouched = channel < self.count() && self.knobs[channel].is_none() && self.saved[channel].is_none();
+        if untouched && !self.mixer_connected && self.channels()[channel].light.is_none() {
+            self.knobs[channel] = Some(percent);
+            self.filter.seed(channel, cranked_protocol::percent_to_raw(percent));
         }
     }
 
@@ -1439,6 +1461,25 @@ mod tests {
         core.tick(start + SYNC_QUIET);
         core.tick(start + NO_MIXER_AFTER);
         assert_eq!(core.knob(1), Some(70));
+    }
+
+    #[test]
+    fn without_a_mixer_untouched_knobs_show_the_volume_already_playing() {
+        let start = Instant::now();
+        let mut state = State::default();
+        state.knobs.insert("1".into(), 30);
+        let mut core = Core::starting_at(config(), &state, start);
+        let out = core.handle(Event::Stream(stream(1, "Spotify", 40.0)), start);
+        assert!(set_streams(&out).is_empty(), "nothing changes");
+        assert_eq!(core.knob(1), Some(40));
+        core.handle(Event::Stream(stream(2, "Vesktop", 40.0)), start);
+        assert_eq!(core.knob(2), Some(50), "40% is halfway through Vesktop's 20..60 range");
+        core.handle(Event::Stream(stream(3, "Firefox", 90.0)), start);
+        assert_eq!(core.knob(0), None, "a saved position wins (it comes back once it's clear there's no mixer)");
+        core.handle(Event::OutputVolume(70), start);
+        assert_eq!(core.knob(4), None, "a light knob shows the light, not the output");
+        core.tick(start + NO_MIXER_AFTER);
+        assert_eq!(core.knob(0), Some(30));
     }
 
     #[test]

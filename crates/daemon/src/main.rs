@@ -59,6 +59,8 @@ pub enum Event {
     MidiLearned(Option<devices::Learned>),
     AudioReady,
     AudioLost,
+    /// The default output's volume when audio connected.
+    OutputVolume(u8),
     UpdateCheckResult(Result<Option<updater::ReleaseInfo>, String>),
     UpdateApplyResult(Result<(), String>),
 }

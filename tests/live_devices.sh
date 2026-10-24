@@ -79,12 +79,13 @@ daemon=$!
 # the service looks for devices every 3 s; give it time to find and take over the keyboard knob
 sleep 4.5
 
-echo KEY_VOLUMEUP >&3; echo KEY_VOLUMEUP >&3; echo KEY_VOLUMEUP >&3; sleep 0.6
-check "keyboard knob turns its knob up (3 x 5%)" "$(stream kb)" "15"
-echo KEY_VOLUMEDOWN >&3; sleep 0.5
-check "and down" "$(stream kb)" "10"
+# the knob starts where its stream already is (100%), like any untouched knob without a mixer
+echo KEY_VOLUMEDOWN >&3; echo KEY_VOLUMEDOWN >&3; echo KEY_VOLUMEDOWN >&3; sleep 0.6
+check "keyboard knob turns its knob down (3 x 5% from 100)" "$(stream kb)" "85"
+echo KEY_VOLUMEUP >&3; sleep 0.5
+check "and up" "$(stream kb)" "90"
 echo KEY_MUTE >&3; sleep 0.6
-check "pressing it is the knob's button (mute)" "$(stream kb)" "10 muted"
+check "pressing it is the knob's button (mute)" "$(stream kb)" "90 muted"
 after=$(system_volume)
 check "the system volume didn't move (the knob is taken over)" "$after" "$before"
 [ "$after" != "$before" ] && pactl set-sink-volume @DEFAULT_SINK@ "$before"

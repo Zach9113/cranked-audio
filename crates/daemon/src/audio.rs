@@ -189,6 +189,16 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
         let events = events.clone();
         introspect.get_sink_input_info_list(move |result| send_stream(&events, result));
     }
+    // the output's volume, so a System knob without a mixer starts where it is
+    {
+        let events = events.clone();
+        introspect.get_sink_info_by_name("@DEFAULT_SINK@", move |result| {
+            if let ListResult::Item(sink) = result {
+                let percent = volume_to_percent(sink.volume.avg()).round().clamp(0.0, 100.0) as u8;
+                let _ = events.send(Event::OutputVolume(percent));
+            }
+        });
+    }
     mainloop.unlock();
     let _ = events.send(Event::AudioReady);
 

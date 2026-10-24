@@ -90,6 +90,16 @@ impl Channel {
         low + ((span * u32::from(knob.min(100)) + 50) / 100) as u8
     }
 
+    /// The knob position that gives `volume` (the other way round from `volume_for`), clamped to the range.
+    pub fn knob_for(&self, volume: u8) -> u8 {
+        let (low, high) = (self.min.min(self.max), self.max.max(self.min));
+        if high == low {
+            return 100;
+        }
+        let span = u32::from(high - low);
+        ((u32::from(volume.clamp(low, high) - low) * 100 + span / 2) / span) as u8
+    }
+
     pub fn controls_audio(&self) -> bool {
         self.light.is_none() && (self.master || self.catch_all || !self.apps.is_empty())
     }
@@ -553,6 +563,9 @@ mod tests {
         assert_eq!(channel.volume_for(0), 10);
         assert_eq!(channel.volume_for(50), 45);
         assert_eq!(channel.volume_for(100), 80);
+        assert_eq!(channel.knob_for(45), 50);
+        assert_eq!(channel.knob_for(5), 0);
+        assert_eq!(channel.knob_for(100), 100);
     }
 
     #[test]
