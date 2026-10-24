@@ -1,0 +1,15 @@
+[package]
+name = "cranked-ipc"
+description = "What the Cranked Audio service and window say to each other"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+cranked-protocol = { path = "../protocol" }
+serde = { version = "1", features = ["derive"] }
+toml = "1"
+
+[dev-dependencies]
+serde_json = "1"

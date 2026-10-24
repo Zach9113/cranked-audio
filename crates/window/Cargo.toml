@@ -1,0 +1,16 @@
+[package]
+name = "cranked-audio"
+description = "Cranked Audio window: on-screen knobs and buttons"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+cranked-ipc = { path = "../ipc" }
+cranked-protocol = { path = "../protocol" }
+serde_json = "1"
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit-wayland", "backend-winit-x11", "renderer-software"] }
+
+[build-dependencies]
+slint-build = "1.18"

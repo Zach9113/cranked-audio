@@ -1,0 +1,9 @@
+[package]
+name = "cranked-protocol"
+description = "Packet format and knob filtering for 5-knob USB serial mixers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]

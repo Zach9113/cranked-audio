@@ -1,0 +1,19 @@
+[package]
+name = "cranked-audiod"
+description = "Cranked Audio background service: hardware and on-screen knobs for per-app volume"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+cranked-protocol = { path = "../protocol" }
+cranked-ipc = { path = "../ipc" }
+libpulse-binding = "2.30"
+serialport = { version = "4.10", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+ureq = "3"
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }

@@ -1,0 +1,381 @@
+import { Button, CheckBox, ComboBox, LineEdit, SpinBox, Slider, ScrollView, GroupBox } from "std-widgets.slint";
+
+// Choices the pages offer, filled in by the window from the service.
+export global Lists {
+    in property <[string]> knob-names;
+    in property <[string]> playing;
+    in property <[string]> actions;
+    // Home Assistant: "(none)" first, then friendly names; the window maps the index back to an entity id.
+    in property <[string]> lights;
+    in property <[string]> toggles;
+    in property <[string]> profiles;
+    in property <[string]> amounts;
+    in property <[color]> swatches;
+    in property <[string]> swatch-hex;
+    in property <bool> home-assistant;
+    pure callback parse-color(string) -> color;
+}
+
+// The knob (and its button) being edited.
+export global KnobSettings {
+    in-out property <int> index;
+    in-out property <string> name;
+    in-out property <[string]> apps;
+    // 0 = apps, 1 = output volume, 2 = Home Assistant light
+    in-out property <int> kind;
+    in-out property <bool> catch-all;
+    in-out property <int> light-index;
+    in-out property <int> min;
+    in-out property <int> max;
+    in-out property <string> color;
+    in-out property <string> background;
+    in-out property <string> muted-color;
+    in-out property <int> press-kind;
+    in-out property <int> press-entity;
+    in-out property <int> hold-kind;
+    in-out property <int> hold-entity;
+    callback add-app(string);
+    callback remove-app(int);
+}
+
+export global General {
+    in-out property <bool> popups;
+    in-out property <float> brightness;
+    in-out property <bool> dim-idle;
+    in-out property <bool> auto-enabled;
+    in-out property <[bool]> lower;
+    in-out property <[bool]> triggers;
+    in-out property <bool> voice-chat;
+    in-out property <int> amount-index;
+    in-out property <bool> auto-dim;
+    in-out property <string> ha-url;
+    in-out property <string> ha-token;
+    in-out property <int> profile-index;
+    in-out property <string> profile-name;
+    callback toggle-lower(int);
+    callback toggle-trigger(int);
+    callback switch-profile(int);
+    callback new-profile();
+    callback rename-profile(string);
+    callback delete-profile();
+    callback edit-file();
+}
+
+component Label inherits Text {
+    color: #c4c4ce;
+    vertical-alignment: center;
+}
+
+component Hint inherits Text {
+    color: #8e8e9a;
+    font-size: 12px;
+    wrap: word-wrap;
+}
+
+component ColorPicker inherits VerticalLayout {
+    in property <string> label;
+    in-out property <string> value;
+    spacing: 6px;
+    HorizontalLayout {
+        spacing: 8px;
+        Label { text: root.label; width: 110px; }
+        Rectangle {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: #55555f;
+            background: Lists.parse-color(root.value);
+        }
+        LineEdit {
+            text <=> root.value;
+            width: 110px;
+        }
+    }
+    HorizontalLayout {
+        spacing: 4px;
+        padding-left: 118px;
+        alignment: start;
+        for swatch[i] in Lists.swatches: Rectangle {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            background: swatch;
+            border-width: Lists.swatch-hex[i] == root.value ? 2px : 0px;
+            border-color: #ffffff;
+            TouchArea {
+                clicked => { root.value = Lists.swatch-hex[i]; }
+            }
+        }
+    }
+}
+
+component ActionPicker inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <int> kind;
+    in-out property <int> entity;
+    spacing: 8px;
+    Label { text: root.label; width: 110px; }
+    ComboBox {
+        model: Lists.actions;
+        current-index <=> root.kind;
+        width: 230px;
+    }
+    // the last two actions are Home Assistant toggle / turn off
+    if root.kind >= Lists.actions.length - 2: ComboBox {
+        model: Lists.toggles;
+        current-index <=> root.entity;
+        horizontal-stretch: 1;
+    }
+}
+
+export component KnobPage inherits ScrollView {
+    VerticalLayout {
+        padding: 4px;
+        spacing: 14px;
+        alignment: start;
+
+        GroupBox {
+            title: "Knob";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Name"; width: 110px; }
+                    LineEdit { text <=> KnobSettings.name; placeholder-text: "Knob " + (KnobSettings.index + 1); }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Controls"; width: 110px; }
+                    ComboBox {
+                        model: Lists.home-assistant
+                            ? ["Apps", "Output volume (everything)", "A Home Assistant light"]
+                            : ["Apps", "Output volume (everything)"];
+                        current-index <=> KnobSettings.kind;
+                    }
+                }
+            }
+        }
+
+        if KnobSettings.kind == 0: GroupBox {
+            title: "Apps on this knob";
+            VerticalLayout {
+                spacing: 8px;
+                for app[i] in KnobSettings.apps: HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: app; horizontal-stretch: 1; }
+                    Button {
+                        text: "Remove";
+                        clicked => { KnobSettings.remove-app(i); }
+                    }
+                }
+                if KnobSettings.apps.length == 0: Hint { text: "No apps yet."; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    playing := ComboBox {
+                        model: Lists.playing;
+                        horizontal-stretch: 1;
+                    }
+                    Button {
+                        text: "Add playing app";
+                        enabled: Lists.playing.length > 0;
+                        clicked => { KnobSettings.add-app(playing.current-value); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    typed := LineEdit {
+                        placeholder-text: "Or type an app or program name";
+                        horizontal-stretch: 1;
+                        accepted(text) => {
+                            KnobSettings.add-app(text);
+                            self.text = "";
+                        }
+                    }
+                    Button {
+                        text: "Add";
+                        clicked => {
+                            KnobSettings.add-app(typed.text);
+                            typed.text = "";
+                        }
+                    }
+                }
+                CheckBox {
+                    text: "Also every app no other knob has";
+                    checked <=> KnobSettings.catch-all;
+                }
+                Hint { text: "Voice chat and system sounds are never caught by \"every app\"."; }
+            }
+        }
+
+        if KnobSettings.kind == 2: GroupBox {
+            title: "Home Assistant light";
+            VerticalLayout {
+                spacing: 8px;
+                ComboBox {
+                    model: Lists.lights;
+                    current-index <=> KnobSettings.light-index;
+                }
+                Hint { text: "The knob dims this light; all the way down turns it off."; }
+            }
+        }
+
+        if KnobSettings.kind != 2: GroupBox {
+            title: "Volume range";
+            HorizontalLayout {
+                spacing: 8px;
+                Label { text: "From"; }
+                SpinBox { minimum: 0; maximum: 100; value <=> KnobSettings.min; }
+                Label { text: "% to"; }
+                SpinBox { minimum: 0; maximum: 100; value <=> KnobSettings.max; }
+                Label { text: "%"; }
+            }
+        }
+
+        GroupBox {
+            title: "Lights";
+            VerticalLayout {
+                spacing: 12px;
+                ColorPicker { label: "Level"; value <=> KnobSettings.color; }
+                ColorPicker { label: "Background"; value <=> KnobSettings.background; }
+                ColorPicker { label: "Muted"; value <=> KnobSettings.muted-color; }
+            }
+        }
+    }
+}
+
+export component ButtonPage inherits VerticalLayout {
+    spacing: 14px;
+    alignment: start;
+    GroupBox {
+        title: "Button";
+        VerticalLayout {
+            spacing: 12px;
+            ActionPicker { label: "Press"; kind <=> KnobSettings.press-kind; entity <=> KnobSettings.press-entity; }
+            ActionPicker { label: "Hold (½ s)"; kind <=> KnobSettings.hold-kind; entity <=> KnobSettings.hold-entity; }
+            Hint {
+                text: Lists.home-assistant
+                    ? "Holding fires as soon as half a second has passed. \"Mute this knob\" also mutes apps that start later."
+                    : "Holding fires as soon as half a second has passed. Set up Home Assistant in Settings to control lights and switches.";
+            }
+        }
+    }
+}
+
+export component GeneralPage inherits ScrollView {
+    VerticalLayout {
+        padding: 4px;
+        spacing: 14px;
+        alignment: start;
+
+        GroupBox {
+            title: "Profiles";
+            VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Active"; width: 110px; }
+                    ComboBox {
+                        model: Lists.profiles;
+                        current-index <=> General.profile-index;
+                        selected => { General.switch-profile(self.current-index); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Name"; width: 110px; }
+                    LineEdit { text <=> General.profile-name; }
+                    Button { text: "Rename"; clicked => { General.rename-profile(General.profile-name); } }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    padding-left: 118px;
+                    alignment: start;
+                    Button { text: "New profile (copy of this one)"; clicked => { General.new-profile(); } }
+                    Button { text: "Delete"; enabled: Lists.profiles.length > 1; clicked => { General.delete-profile(); } }
+                }
+                Hint { text: "A profile is the whole layout: apps, names, colours, buttons and Auto-lower. A button can cycle through them."; }
+            }
+        }
+
+        GroupBox {
+            title: "Auto-lower";
+            VerticalLayout {
+                spacing: 8px;
+                CheckBox { text: "Turn some knobs down while others play"; checked <=> General.auto-enabled; }
+                if General.auto-enabled: VerticalLayout {
+                    spacing: 8px;
+                    Label { text: "Turn these down:"; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        for name[i] in Lists.knob-names: CheckBox {
+                            text: name;
+                            checked: General.lower[i];
+                            toggled => { General.toggle-lower(i); }
+                        }
+                    }
+                    Label { text: "While these play:"; }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        for name[i] in Lists.knob-names: CheckBox {
+                            text: name;
+                            checked: General.triggers[i];
+                            toggled => { General.toggle-trigger(i); }
+                        }
+                    }
+                    CheckBox { text: "Or anyone talks in voice chat (Discord, Steam, TeamSpeak, …)"; checked <=> General.voice-chat; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Label { text: "By"; width: 110px; }
+                        ComboBox { model: Lists.amounts; current-index <=> General.amount-index; }
+                    }
+                    CheckBox { text: "Dim their knob lights too"; checked <=> General.auto-dim; }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Popups and lights";
+            VerticalLayout {
+                spacing: 8px;
+                CheckBox { text: "Show popups for knob turns and buttons"; checked <=> General.popups; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "LED brightness"; width: 110px; }
+                    Slider { minimum: 0; maximum: 100; value <=> General.brightness; }
+                    Label { text: round(General.brightness) + "%"; width: 44px; }
+                }
+                CheckBox { text: "Dim a knob's lights when nothing on it is playing"; checked <=> General.dim-idle; }
+            }
+        }
+
+        GroupBox {
+            title: "Home Assistant";
+            VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Address"; width: 110px; }
+                    LineEdit { text <=> General.ha-url; placeholder-text: "http://homeassistant.local:8123"; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Access token"; width: 110px; }
+                    LineEdit {
+                        text <=> General.ha-token;
+                        input-type: password;
+                        placeholder-text: Lists.home-assistant ? "saved (type to replace)" : "long-lived access token";
+                    }
+                }
+                Hint { text: "Create a token in Home Assistant under your profile → Security → Long-lived access tokens. It's stored in a file only you can read."; }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            Button { text: "Open the settings file"; clicked => { General.edit-file(); } }
+        }
+    }
+}

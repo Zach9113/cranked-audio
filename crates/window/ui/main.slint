@@ -1,0 +1,325 @@
+import { Button } from "std-widgets.slint";
+import { KnobPage, ButtonPage, GeneralPage, Lists, KnobSettings, General } from "settings.slint";
+export { Lists, KnobSettings, General }
+
+export struct KnobData {
+    name: string,
+    // 0..100, -1 while unknown
+    level: int,
+    // dial arcs as SVG path commands (viewbox 100 x 100)
+    fill-arc: string,
+    rest-arc: string,
+    // solid colours worked out by the window (no transparency: partial repaints would stack it up)
+    fill-color: color,
+    rest-color: color,
+    muted: bool,
+    lowered: bool,
+    source: string,
+    press: string,
+    hold: string,
+    held: bool,
+    // button icon as SVG path commands (viewbox 24 x 24): filled shapes and lines
+    icon-fill: string,
+    icon-lines: string,
+}
+
+component Dial inherits Rectangle {
+    in property <KnobData> data;
+    callback set(int);
+    callback step(int);
+    callback settings();
+    width: 128px;
+    height: 128px;
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: data.rest-arc;
+        stroke: data.rest-color;
+        stroke-width: 9px;
+    }
+
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: data.fill-arc;
+        stroke: data.fill-color;
+        stroke-width: 9px;
+    }
+
+    Rectangle {
+        width: 90px;
+        height: 90px;
+        border-radius: 45px;
+        background: area.pressed ? #34343e : (area.has-hover ? #2f2f38 : #2a2a32);
+    }
+
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: data.level < 0 ? "–" : data.level + "%";
+            horizontal-alignment: center;
+            font-size: 24px;
+            font-weight: 700;
+            color: data.muted ? #8a8a96 : #f4f4f6;
+        }
+        if data.muted || data.lowered: Text {
+            text: data.muted ? "muted" : "lowered";
+            horizontal-alignment: center;
+            font-size: 12px;
+            color: data.muted ? #e07a6a : #e0b050;
+        }
+    }
+
+    area := TouchArea {
+        property <int> start-level;
+        property <length> start-y;
+        property <bool> dragging;
+        mouse-cursor: ns-resize;
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
+                root.settings();
+            } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                self.start-level = max(data.level, 0);
+                self.start-y = self.mouse-y;
+                self.dragging = true;
+            } else if (event.button == PointerEventButton.left && event.kind == PointerEventKind.up) {
+                self.dragging = false;
+            }
+        }
+        moved => {
+            if (self.pressed && self.dragging) {
+                root.set(clamp(self.start-level + round((self.start-y - self.mouse-y) / 2px), 0, 100));
+            }
+        }
+        scroll-event(event) => {
+            if (event.delta-y == 0 && event.delta-x == 0) {
+                return reject;
+            }
+            root.step((event.delta-y > 0 || event.delta-x > 0 ? 1 : -1) * (event.modifiers.shift ? 5 : 1));
+            accept
+        }
+    }
+}
+
+component KnobButton inherits Rectangle {
+    in property <KnobData> data;
+    callback press(bool);
+    callback settings();
+    width: 92px;
+    height: 92px;
+    border-radius: 18px;
+    border-width: 1px;
+    border-color: data.held ? #e0a040 : #3a3a44;
+    background: data.held ? #4a3818 : (touch.has-hover ? #30303a : #26262e);
+
+    Path {
+        width: 44px;
+        height: 44px;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: data.icon-fill;
+        fill: data.held ? #ffd38a : #e6e6ec;
+    }
+
+    Path {
+        width: 44px;
+        height: 44px;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: data.icon-lines;
+        stroke: data.held ? #ffd38a : #e6e6ec;
+        stroke-width: 3.5px;
+    }
+
+    touch := TouchArea {
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.left) {
+                if (event.kind == PointerEventKind.down) {
+                    root.press(true);
+                } else if (event.kind == PointerEventKind.up) {
+                    root.press(false);
+                }
+            } else if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
+                root.settings();
+            }
+        }
+    }
+}
+
+component KnobColumn inherits Rectangle {
+    in property <KnobData> data;
+    callback set(int);
+    callback step(int);
+    callback press(bool);
+    callback knob-settings();
+    callback button-settings();
+    border-radius: 16px;
+    background: #1b1b21;
+    min-width: 152px;
+    // equal columns whatever the labels say
+    preferred-width: 152px;
+    horizontal-stretch: 1;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 10px;
+        alignment: start;
+
+        Text {
+            text: data.name;
+            horizontal-alignment: center;
+            font-size: 17px;
+            font-weight: 700;
+            color: name-area.has-hover ? #ffffff : #f0f0f4;
+            overflow: elide;
+            name-area := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.knob-settings(); }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            Dial {
+                data: data;
+                set(v) => { root.set(v); }
+                step(d) => { root.step(d); }
+                settings => { root.knob-settings(); }
+            }
+        }
+
+        Text {
+            text: data.source;
+            horizontal-alignment: center;
+            font-size: 13px;
+            color: #a8a8b4;
+            overflow: elide;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            padding-top: 6px;
+            KnobButton {
+                data: data;
+                press(down) => { root.press(down); }
+                settings => { root.button-settings(); }
+            }
+        }
+
+        Text {
+            text: "Press: " + data.press;
+            horizontal-alignment: center;
+            font-size: 12px;
+            color: #c4c4ce;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: "Hold: " + data.hold;
+            horizontal-alignment: center;
+            font-size: 12px;
+            color: #8e8e9a;
+            wrap: word-wrap;
+        }
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "Cranked Audio";
+    icon: @image-url("../../../data/cranked-audio.svg");
+    preferred-width: 1000px;
+    preferred-height: 600px;
+    min-width: 860px;
+    min-height: 520px;
+    background: #121216;
+    default-font-size: 14px;
+
+    in property <[KnobData]> knobs;
+    in property <string> status;
+    in property <bool> ok;
+    in property <string> profile;
+    // 0 = knobs, 1 = knob settings, 2 = button settings, 3 = settings
+    in-out property <int> page;
+
+    callback knob-set(int, int);
+    callback knob-step(int, int);
+    callback button(int, bool);
+    callback open-knob(int);
+    callback open-button(int);
+    callback open-general();
+    callback save();
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            spacing: 14px;
+            if root.page != 0: Button {
+                text: "‹ Back";
+                clicked => { root.page = 0; }
+            }
+            Text {
+                text: root.page == 0 ? "Cranked Audio"
+                    : root.page == 1 ? (KnobSettings.name == "" ? "Knob " + (KnobSettings.index + 1) : KnobSettings.name)
+                    : root.page == 2 ? "Button " + (KnobSettings.index + 1)
+                    : "Settings";
+                font-size: 22px;
+                font-weight: 800;
+                color: #f4f4f6;
+                vertical-alignment: center;
+            }
+            if root.page == 0: Text {
+                text: root.profile;
+                font-size: 14px;
+                color: #8e8e9a;
+                vertical-alignment: center;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            if root.page == 0: Rectangle {
+                width: 10px;
+                height: 10px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 5px;
+                background: root.ok ? #5cc878 : #e0a040;
+            }
+            if root.page == 0: Text {
+                text: root.status;
+                font-size: 14px;
+                color: #c4c4ce;
+                vertical-alignment: center;
+            }
+            if root.page == 0: Button {
+                text: "Settings";
+                clicked => { root.open-general(); }
+            }
+            if root.page != 0: Button {
+                text: "Save";
+                primary: true;
+                clicked => { root.save(); }
+            }
+        }
+
+        if root.page == 0: HorizontalLayout {
+            spacing: 12px;
+            for knob[index] in root.knobs: KnobColumn {
+                data: knob;
+                set(v) => { root.knob-set(index, v); }
+                step(d) => { root.knob-step(index, d); }
+                press(down) => { root.button(index, down); }
+                knob-settings => { root.open-knob(index); }
+                button-settings => { root.open-button(index); }
+            }
+        }
+        if root.page == 1: KnobPage { }
+        if root.page == 2: ButtonPage { }
+        if root.page == 3: GeneralPage { }
+    }
+}
