@@ -18,14 +18,29 @@ pub struct KnobLook {
     pub scale: f64,
 }
 
-/// The edge LED's mix of background -> colour. An S-curve (smoothstep): it eases in and out at the LED's ends, so
-/// the LED doesn't pop the moment the level enters it, and it's exactly 50/50 at the middle, so 50% on the knob
-/// shows a clear half-and-half: one LED in the colour, one evenly mixed, one in the background.
+/// The edge LED's transition between background and active colour.
+///
+/// Mixing two distinct colours (e.g. purple + gold, teal + crimson, amber + magenta) in RGB space
+/// produces an ugly, muddy brown or grey hybrid in the middle. We never mix the two hues:
+/// the background colour fades down toward the centre, and the active colour fades up past it.
+/// At 50%, the left LED is pure active colour, the middle LED forms a clean dark divider, and
+/// the right LED is pure background—giving a sharp, high-contrast half-and-half effect with
+/// zero muddy middle colours.
 fn blend(from: Rgb, to: Rgb, amount: f64) -> Rgb {
     let x = amount.clamp(0.0, 1.0);
-    let weight = x * x * (3.0 - 2.0 * x);
-    let mix = |a: u8, b: u8| (f64::from(a) * (1.0 - weight) + f64::from(b) * weight).round().clamp(0.0, 255.0) as u8;
-    (mix(from.0, to.0), mix(from.1, to.1), mix(from.2, to.2))
+    if from == (0, 0, 0) {
+        return scale(to, x.powf(2.0));
+    }
+    if to == (0, 0, 0) {
+        return scale(from, (1.0 - x).powf(2.0));
+    }
+    if x < 0.5 {
+        let w = (1.0 - 2.0 * x).powf(1.8);
+        scale(from, w)
+    } else {
+        let w = (2.0 * (x - 0.5)).powf(1.8);
+        scale(to, w)
+    }
 }
 
 fn scale(color: Rgb, factor: f64) -> Rgb {
@@ -75,14 +90,14 @@ mod tests {
     #[test]
     fn fifty_percent_is_half_and_half() {
         let leds = knob_colors(&look(50), 100, true);
-        assert_eq!((leds[0], leds[2]), ((255, 0, 0), (0, 0, 255)));
-        let (r, g, b) = leds[1];
-        assert!(r.abs_diff(128) <= 1 && g == 0 && b.abs_diff(128) <= 1, "middle LED evenly mixed: {:?}", leds[1]);
+        // Left is pure active color, right is pure background, middle is clean dark divider (no muddy mix)
+        assert_eq!((leds[0], leds[1], leds[2]), ((255, 0, 0), (0, 0, 0), (0, 0, 255)));
         assert_eq!(knob_colors(&look(100), 100, true), [(255, 0, 0); 3]);
         assert_eq!(knob_colors(&look(0), 100, true), [(0, 0, 255); 3]);
-        // eases in: just past an LED's start it has barely changed
+        // entering from background: stays pure background hue, no green/red muddy blend
         let entering = knob_colors(&look(36), 100, true)[1];
-        assert!(entering.0 < 10, "{entering:?}");
+        assert_eq!(entering.0, 0, "no active color bleeding into background phase");
+        assert!(entering.2 > 100, "still clearly background color");
     }
 
     #[test]
