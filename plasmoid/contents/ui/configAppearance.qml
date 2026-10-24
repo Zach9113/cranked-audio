@@ -20,6 +20,7 @@ KCM.SimpleKCM {
     property bool cfg_showActionLabels
     property bool cfg_showHeader
     property bool cfg_showBackground
+    property bool cfg_showInPanel
     property bool cfg_buttonsInDial
     property string cfg_hiddenKnobs
     property int cfg_wheelKnob
@@ -104,6 +105,11 @@ KCM.SimpleKCM {
             onToggled: page.cfg_showActionLabels = checked
         }
         QQC2.CheckBox { text: "Title and profile switcher"; checked: page.cfg_showHeader; onToggled: page.cfg_showHeader = checked }
+        QQC2.CheckBox {
+            text: "In a panel: show the knobs right in the panel (not an icon)"
+            checked: page.cfg_showInPanel
+            onToggled: page.cfg_showInPanel = checked
+        }
         QQC2.CheckBox {
             text: "Background behind the widget (on the desktop)"
             checked: page.cfg_showBackground

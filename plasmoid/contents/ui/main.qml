@@ -24,7 +24,16 @@ PlasmoidItem {
     property bool running: false
 
     readonly property var cfg: Plasmoid.configuration
-    readonly property real unit: Kirigami.Units.gridUnit * cfg.scale / 100
+    // "Show the knobs right in the panel": the knobs replace the icon and size themselves to the panel's thickness
+    readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+    readonly property bool inPanel: cfg.showInPanel
+        && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
+    property real panelThickness: 0
+    // the knobs' size across the panel per unit, measured (it's proportional to the unit)
+    property real acrossPerUnit: 0
+    readonly property real unit: inPanel && panelThickness > 0 && acrossPerUnit > 0
+        ? Math.max(3, panelThickness / acrossPerUnit)
+        : Kirigami.Units.gridUnit * cfg.scale / 100
     readonly property var hiddenKnobs: String(cfg.hiddenKnobs).split(",").map(s => parseInt(s)).filter(n => !isNaN(n))
     // the knobs to show, each with its index in the service
     readonly property var shownKnobs: running && snapshot
@@ -104,7 +113,43 @@ PlasmoidItem {
         return levels.join("\n") + "\nProfile: " + snapshot.profile;
     }
 
-    compactRepresentation: MouseArea {
+    compactRepresentation: inPanel ? panelKnobs : panelIcon
+
+    // in the panel: the knobs themselves
+    Component {
+        id: panelKnobs
+        Item {
+            id: strip
+            readonly property real pad: Math.max(1, root.unit * 0.2)
+            Layout.preferredWidth: root.vertical ? -1 : inline.implicitWidth + pad * 2
+            Layout.minimumWidth: Layout.preferredWidth
+            Layout.preferredHeight: root.vertical ? inline.implicitHeight + pad * 2 : -1
+            Layout.minimumHeight: Layout.preferredHeight
+            onWidthChanged: if (root.vertical) root.panelThickness = width
+            onHeightChanged: if (!root.vertical) root.panelThickness = height
+            Component.onCompleted: root.panelThickness = root.vertical ? width : height
+            Loader {
+                id: inline
+                x: strip.pad
+                y: strip.pad
+                width: root.vertical ? strip.width - strip.pad * 2 : implicitWidth
+                height: root.vertical ? implicitHeight : strip.height - strip.pad * 2
+                sourceComponent: knobsView
+                function measure() {
+                    const across = (root.vertical ? implicitWidth : implicitHeight) + strip.pad * 2;
+                    const k = across / root.unit;
+                    // only real changes (a setting), not rounding, so the size settles
+                    if (k > 0 && Math.abs(k - root.acrossPerUnit) > 0.03 * k) root.acrossPerUnit = k;
+                }
+                onImplicitHeightChanged: measure()
+                onImplicitWidthChanged: measure()
+            }
+        }
+    }
+
+    Component {
+        id: panelIcon
+        MouseArea {
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
         onClicked: mouse => {
@@ -120,6 +165,7 @@ PlasmoidItem {
             anchors.fill: parent
             source: Plasmoid.icon
             active: parent.containsMouse
+        }
         }
     }
 
@@ -174,10 +220,18 @@ PlasmoidItem {
             }
         }
 
-        Item {
+        Loader {
             id: content
             anchors.fill: parent
             anchors.margins: full.pad
+            sourceComponent: knobsView
+        }
+    }
+
+    // the knobs, sliders or faders (in the popup, on the desktop or in the panel)
+    Component {
+        id: knobsView
+        Item {
             // all knobs side by side when there's room; the Flow wraps them when there isn't
             readonly property real allColumns: root.shownKnobs.length * (root.unit * 6.4 + root.unit * 0.5) - root.unit * 0.5
             readonly property real allFaders: root.shownKnobs.length * (root.unit * 4.2 + root.unit * 0.4) - root.unit * 0.4
