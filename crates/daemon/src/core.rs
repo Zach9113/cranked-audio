@@ -136,7 +136,7 @@ impl Core {
     pub fn starting_at(config: Config, state: &State, started: Instant) -> Self {
         let profile = config.profile_index(&state.profile);
         let saved = std::array::from_fn(|i| state.knobs.get(&(i + 1).to_string()).map(|p| (*p).min(100)));
-        let seen_apps = state.apps.clone();
+        let seen_apps = state.apps.iter().filter(|n| !n.starts_with("cranked-selftest")).cloned().collect();
         let mut core = Self {
             config,
             profile,
@@ -459,7 +459,8 @@ impl Core {
             return;
         }
         let name = if stream.app_name.is_empty() { stream.binary.clone() } else { stream.app_name.clone() };
-        if name.trim().is_empty() {
+        // the live tests' throwaway streams
+        if name.trim().is_empty() || name.starts_with("cranked-selftest") {
             return;
         }
         let before = self.seen_apps.len();
@@ -516,6 +517,17 @@ impl Core {
                 }
             }
             Input::Knob { .. } => {}
+        }
+    }
+
+    /// Knobs from `first` on that aren't known yet start where they were saved (lights are left alone).
+    fn restore_saved(&mut self, first: usize) {
+        for channel in first..self.count() {
+            if let (None, Some(percent)) = (self.knobs[channel], self.saved[channel]) {
+                let raw = cranked_protocol::percent_to_raw(percent);
+                self.filter.seed(channel, raw);
+                self.set_knob(channel, percent, false);
+            }
         }
     }
 
@@ -655,13 +667,7 @@ impl Core {
         }
         if !self.restored && !self.mixer_connected && now.duration_since(self.started) >= NO_MIXER_AFTER {
             self.restored = true;
-            for channel in 0..self.count() {
-                if let (None, Some(percent)) = (self.knobs[channel], self.saved[channel]) {
-                    let raw = cranked_protocol::percent_to_raw(percent);
-                    self.filter.seed(channel, raw);
-                    self.set_knob(channel, percent, false);
-                }
-            }
+            self.restore_saved(0);
             if self.verbose {
                 eprintln!("no mixer: knobs start at {:?}", self.knobs);
             }
@@ -682,6 +688,8 @@ impl Core {
                         self.set_knob(channel, percent, false);
                     }
                 }
+                // knobs past the mixer's (on screen, keyboard knobs...) start where they were
+                self.restore_saved(KNOBS);
                 if self.verbose {
                     eprintln!("startup sync done: {:?}", self.knobs);
                 }
@@ -1407,6 +1415,25 @@ mod tests {
         core.tick(start + SYNC_QUIET);
         core.tick(start + NO_MIXER_AFTER);
         assert_eq!(core.knob(1), Some(70));
+    }
+
+    #[test]
+    fn knobs_past_the_mixer_start_where_they_were() {
+        let start = Instant::now();
+        let mut config = config();
+        for name in ["Keyboard", "Extra"] {
+            config.profiles[0].channels.push(Channel { name: name.into(), ..Channel::default() });
+        }
+        let mut state = State::default();
+        state.knobs.insert("2".into(), 40);
+        state.knobs.insert("6".into(), 60);
+        let mut core = Core::starting_at(config, &state, start);
+        core.handle(Event::MixerConnected, start);
+        core.handle(packets(&[(0, 50), (1, 70), (2, 50), (3, 70), (4, 30)]), start);
+        core.tick(start + SYNC_QUIET);
+        assert_eq!(core.knob(1), Some(70), "the mixer's own knobs follow the mixer");
+        assert_eq!(core.knob(5), Some(60), "knob 6 remembered");
+        assert_eq!(core.knob(6), None, "never saved: still unknown");
     }
 
     #[test]
