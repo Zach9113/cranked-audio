@@ -17,7 +17,7 @@
     <entry name="showActionLabels" type="Bool"><default>false</default></entry>
     <entry name="showHeader" type="Bool"><default>true</default></entry>
     <entry name="showBackground" type="Bool"><default>true</default></entry>
-    <entry name="showInPanel" type="Bool"><default>false</default></entry>
+    <entry name="showInPanel" type="Bool"><default>true</default></entry>
     <!-- the button sits in the middle of the dial (more compact) -->
     <entry name="buttonsInDial" type="Bool"><default>false</default></entry>
     <!-- knob numbers (from 1) to leave out, comma separated -->

@@ -24,11 +24,14 @@ PlasmoidItem {
     property bool running: false
 
     readonly property var cfg: Plasmoid.configuration
-    // "Show the knobs right in the panel": the knobs replace the icon and size themselves to the panel's thickness
+    // "Show the knobs right in the panel" (on by default): in a panel thick enough for them, the knobs replace the
+    // icon and size themselves to the panel's thickness; a thin panel (a taskbar) keeps the icon
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
+    readonly property real roomyPanel: Kirigami.Units.gridUnit * 3.5
+    property real panelThickness: 0
     readonly property bool inPanel: cfg.showInPanel
         && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
-    property real panelThickness: 0
+        && panelThickness >= roomyPanel
     // the knobs' size across the panel per unit, measured (it's proportional to the unit)
     property real acrossPerUnit: 0
     readonly property real unit: inPanel && panelThickness > 0 && acrossPerUnit > 0
@@ -115,7 +118,16 @@ PlasmoidItem {
 
     // Plasma builds this once, so it switches between the icon and the knobs itself
     compactRepresentation: Loader {
+        id: compact
         sourceComponent: root.inPanel ? panelKnobs : panelIcon
+        // the panel's thickness, measured after the layout settles (Qt.callLater), never in the middle of it
+        function thickness() {
+            const across = root.vertical ? width : height;
+            if (across > 0 && Math.abs(across - root.panelThickness) >= 1) root.panelThickness = across;
+        }
+        onWidthChanged: Qt.callLater(thickness)
+        onHeightChanged: Qt.callLater(thickness)
+        Component.onCompleted: Qt.callLater(thickness)
         Layout.preferredWidth: item ? item.Layout.preferredWidth : -1
         Layout.minimumWidth: item ? item.Layout.minimumWidth : -1
         Layout.preferredHeight: item ? item.Layout.preferredHeight : -1
@@ -132,14 +144,6 @@ PlasmoidItem {
             Layout.minimumWidth: Layout.preferredWidth
             Layout.preferredHeight: root.vertical ? inline.implicitHeight + pad * 2 : -1
             Layout.minimumHeight: Layout.preferredHeight
-            // measured after the layout settles (Qt.callLater), never in the middle of it
-            function thickness() {
-                const across = root.vertical ? width : height;
-                if (across > 0 && Math.abs(across - root.panelThickness) >= 1) root.panelThickness = across;
-            }
-            onWidthChanged: Qt.callLater(thickness)
-            onHeightChanged: Qt.callLater(thickness)
-            Component.onCompleted: Qt.callLater(thickness)
             Loader {
                 id: inline
                 x: strip.pad
