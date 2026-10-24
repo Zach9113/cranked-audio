@@ -243,6 +243,7 @@ fn main() {
                     }
                     tray::Action::Quit => {
                         eprintln!("quit from the tray");
+                        clients.send(&ServerMessage::Quit);
                         leds.send(&led_frame(&[[(0, 0, 0); cranked_protocol::LEDS_PER_KNOB]; cranked_protocol::KNOBS]));
                         let _ = std::fs::remove_file(cranked_ipc::socket_path());
                         std::process::exit(0);

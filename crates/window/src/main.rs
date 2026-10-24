@@ -342,16 +342,29 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
     let mut started = false;
     loop {
         let stream = match UnixStream::connect(cranked_ipc::socket_path()) {
-            Ok(stream) => stream,
+            Ok(stream) => {
+                started = true;
+                stream
+            }
             Err(_) => {
                 if !started {
                     started = true;
                     set_status(&window, "Starting the service…");
-                    let _ = Command::new(sibling("cranked-audiod"))
-                        .stdin(Stdio::null())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn();
+                    let started_unit = std::env::var_os("CRANKED_SOCKET").is_none()
+                        && Command::new("systemctl")
+                            .args(["--user", "start", "cranked-audio.service"])
+                            .stdin(Stdio::null())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .is_ok_and(|s| s.success());
+                    if !started_unit {
+                        let _ = Command::new(sibling("cranked-audiod"))
+                            .stdin(Stdio::null())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn();
+                    }
                 } else {
                     set_status(&window, "Service not running");
                 }
@@ -389,6 +402,10 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                         let (light, press, hold) = selected_entities(&w);
                         fill_entity_lists(&w, &entities, light.as_deref(), press.as_deref(), hold.as_deref());
                     });
+                }
+                ServerMessage::Quit => {
+                    let _ = slint::quit_event_loop();
+                    return;
                 }
             }
         }

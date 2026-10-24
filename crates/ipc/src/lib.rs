@@ -30,6 +30,7 @@ pub enum ServerMessage {
     Snapshot(Snapshot),
     Config(settings::Config),
     Entities(Vec<Entity>),
+    Quit,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
