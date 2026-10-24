@@ -1138,7 +1138,8 @@ mod tests {
         assert_eq!(core.next_wake(), LED_REFRESH);
         core.handle(packets(&[(0, 90), (0, 90)]), at);
         assert_eq!(frames(&core.tick(at)), 1, "a change shows right away");
-        core.handle(packets(&[(0, 60), (0, 60)]), at);
+        // a big move, so the LEDs really change (small moves inside one LED's third don't)
+        core.handle(packets(&[(0, 10), (0, 10)]), at);
         assert_eq!(frames(&core.tick(at + LED_EVERY / 2)), 0, "but at most 25 frames a second");
         assert!(core.next_wake() <= LED_EVERY);
         assert_eq!(frames(&core.tick(at + LED_EVERY)), 1);

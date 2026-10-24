@@ -18,22 +18,17 @@ pub struct KnobLook {
     pub scale: f64,
 }
 
-/// How dim the edge LED gets when the level sits exactly at its middle (half one colour, half the other).
-const EDGE_FLOOR: f64 = 0.6;
-
 /// The edge LED's colour as the level moves through it.
 ///
-/// Only ever the two colours the user picked (mixing them, in any colour space, shows hues that were never chosen):
-/// the LED shows whichever colour covers more of its share of the dial, and its brightness says how much: full when
-/// that colour fills it, down to `EDGE_FLOOR` when the boundary sits right in its middle. So the boundary still
-/// glides along the knob, never through black. With a black background the active colour simply fades in.
+/// Only ever one of the two picked colours, always at full brightness: the background colour until the level
+/// reaches the LED's middle, then the level colour. Mixing the two shows hues that were never chosen, and dimming
+/// shifts the tint (an LED's red, green and blue don't fade evenly), so neither happens here.
 fn blend(from: Rgb, to: Rgb, amount: f64) -> Rgb {
-    let x = amount.clamp(0.0, 1.0);
-    if from == (0, 0, 0) {
-        return scale(to, x);
+    if amount >= 0.5 {
+        to
+    } else {
+        from
     }
-    let (colour, share) = if x >= 0.5 { (to, x) } else { (from, 1.0 - x) };
-    scale(colour, EDGE_FLOOR + (1.0 - EDGE_FLOOR) * (share - 0.5) * 2.0)
 }
 
 fn scale(color: Rgb, factor: f64) -> Rgb {
@@ -80,41 +75,26 @@ mod tests {
         }
     }
 
-    /// `led` is `colour` at some brightness (never another hue).
-    fn is_shade_of(led: Rgb, colour: Rgb) -> bool {
-        let f = |c: u8| f64::from(c);
-        let k = f(led.0.max(led.1).max(led.2)) / f(colour.0.max(colour.1).max(colour.2));
-        (f(led.0) - f(colour.0) * k).abs() <= 1.0 && (f(led.1) - f(colour.1) * k).abs() <= 1.0 && (f(led.2) - f(colour.2) * k).abs() <= 1.0
-    }
-
     #[test]
-    fn only_the_two_chosen_colours_ever_show() {
+    fn only_the_two_chosen_colours_at_full_brightness() {
         assert_eq!(knob_colors(&look(100), 100, true), [(255, 0, 0); 3]);
         assert_eq!(knob_colors(&look(0), 100, true), [(0, 0, 255); 3]);
         for level in 0..=100 {
             for led in knob_colors(&look(level), 100, true) {
-                assert!(is_shade_of(led, (255, 0, 0)) || is_shade_of(led, (0, 0, 255)), "{level}%: {led:?} is a new hue");
-                assert!(led.0.max(led.2) >= 150, "{level}%: {led:?} too dark");
+                assert!(led == (255, 0, 0) || led == (0, 0, 255), "{level}%: {led:?}");
             }
         }
+        assert_eq!(knob_colors(&look(49), 100, true)[1], (0, 0, 255));
+        assert_eq!(knob_colors(&look(51), 100, true)[1], (255, 0, 0));
     }
 
     #[test]
-    fn the_edge_led_dims_toward_the_boundary_and_switches_there() {
-        let edge = |level| knob_colors(&look(level), 100, true)[1];
-        assert_eq!(edge(33), (0, 0, 255), "not reached yet: all background");
-        assert!(edge(45).2 < 255 && edge(45).0 == 0, "background, dimming as the level arrives");
-        assert!(edge(55).0 < 255 && edge(55).2 == 0, "past the middle: level colour, still dimmed");
-        assert_eq!(edge(67), (255, 0, 0), "filled");
-        assert!(edge(50).0 >= 150 || edge(50).2 >= 150, "never dark at the boundary");
-    }
-
-    #[test]
-    fn a_black_background_fades_the_one_colour_in() {
-        let mut lamp = look(50);
+    fn a_black_background_switches_cleanly_too() {
+        let mut lamp = look(45);
         lamp.background = (0, 0, 0);
-        let edge = knob_colors(&lamp, 100, true)[1];
-        assert!(edge.1 == 0 && edge.2 == 0 && (120..=135).contains(&edge.0), "only red, about half: {edge:?}");
+        assert_eq!(knob_colors(&lamp, 100, true)[1], (0, 0, 0));
+        lamp.level = Some(55.0);
+        assert_eq!(knob_colors(&lamp, 100, true)[1], (255, 0, 0));
     }
 
     #[test]
