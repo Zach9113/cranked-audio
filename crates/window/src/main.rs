@@ -64,6 +64,79 @@ thread_local! {
     static THEME: RefCell<themes::Theme> = RefCell::new(themes::named("cranked"));
 }
 
+thread_local! {
+    // knob numbers (from 1) the window leaves out (Settings > Look)
+    static HIDDEN: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Shows the window the first time there's something in it, so it opens at the size its contents want
+/// (compositors don't let a window that's already up resize itself).
+fn open_window(window: &MainWindow) {
+    if !window.window().is_visible() {
+        let _ = window.show();
+    }
+}
+
+/// Resizes the window to what its contents want (after the knobs arrive or the look changes); later the user's own
+/// resizing is left alone.
+fn fit_window(window: &MainWindow) {
+    let weak = window.as_weak();
+    // after the layout has taken the new contents into account
+    slint::Timer::single_shot(Duration::from_millis(30), move || {
+        let Some(w) = weak.upgrade() else { return };
+        if w.get_page() == 0 {
+            w.window().set_size(slint::LogicalSize::new(w.get_wanted_width(), w.get_wanted_height()));
+        }
+    });
+}
+
+/// The Look settings as the Settings page has them.
+fn look_from(general: &General) -> cranked_ipc::settings::Look {
+    cranked_ipc::settings::Look {
+        style: match general.get_look_style() {
+            1 => "sliders",
+            2 => "faders",
+            _ => "knobs",
+        }
+        .into(),
+        scale: general.get_look_scale().round().clamp(30.0, 160.0) as u8,
+        show_name: general.get_look_show_name(),
+        show_percent: general.get_look_show_percent(),
+        show_source: general.get_look_show_source(),
+        show_button: general.get_look_show_button(),
+        show_action_labels: general.get_look_show_action_labels(),
+        buttons_in_dial: general.get_look_buttons_in_dial(),
+        show_header: general.get_look_show_header(),
+        hidden_knobs: general
+            .get_look_shown()
+            .iter()
+            .enumerate()
+            .filter(|(_, shown)| !shown)
+            .map(|(i, _)| i + 1)
+            .collect(),
+    }
+}
+
+/// Applies the window's Look settings (size, style, what shows, which knobs).
+fn apply_look(window: &MainWindow, look: &cranked_ipc::settings::Look) {
+    let l = window.global::<Look>();
+    l.set_scale(f32::from(look.scale.clamp(30, 160)) / 100.0);
+    l.set_style(match look.style.as_str() {
+        "sliders" => 1,
+        "faders" => 2,
+        _ => 0,
+    });
+    l.set_show_name(look.show_name);
+    l.set_show_percent(look.show_percent);
+    l.set_show_source(look.show_source);
+    l.set_show_button(look.show_button);
+    l.set_show_action_labels(look.show_action_labels);
+    l.set_buttons_in_dial(look.buttons_in_dial);
+    l.set_show_header(look.show_header);
+    HIDDEN.with(|h| *h.borrow_mut() = look.hidden_knobs.clone());
+    fit_window(window);
+}
+
 fn current_theme() -> themes::Theme {
     THEME.with(|t| *t.borrow())
 }
@@ -113,11 +186,12 @@ fn mix(color: Color, under: Color, amount: f32) -> Color {
     )
 }
 
-fn row(knob: &Knob) -> KnobData {
+fn row(index: usize, knob: &Knob) -> KnobData {
     let level = knob.level.map_or(-1, i32::from);
     let split = ARC_START + ARC_SWEEP * f64::from(level.max(0)) / 100.0;
     let (icon_fill, icon_lines) = icon(&knob.press);
     KnobData {
+        index: index as i32,
         name: knob.name.as_str().into(),
         level,
         fill_arc: arc(ARC_START, split).into(),
@@ -366,6 +440,24 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
     let profile = &config.profiles[profile_index];
     let general = window.global::<General>();
     general.set_popups(config.popups);
+    let look = &config.look;
+    general.set_look_style(match look.style.as_str() {
+        "sliders" => 1,
+        "faders" => 2,
+        _ => 0,
+    });
+    general.set_look_scale(f32::from(look.scale));
+    general.set_look_show_name(look.show_name);
+    general.set_look_show_percent(look.show_percent);
+    general.set_look_show_source(look.show_source);
+    general.set_look_show_button(look.show_button);
+    general.set_look_show_action_labels(look.show_action_labels);
+    general.set_look_buttons_in_dial(look.buttons_in_dial);
+    general.set_look_show_header(look.show_header);
+    let profile_channels = config.profiles.get(profile_index).map_or(0, |p| p.channels.len());
+    general.set_look_shown(ModelRc::new(VecModel::from(
+        (1..=profile_channels).map(|k| !look.hidden_knobs.contains(&k)).collect::<Vec<bool>>(),
+    )));
     general.set_theme_index(themes::NAMES.iter().position(|(n, _)| *n == config.theme).unwrap_or(0) as i32);
     general.set_popup_style(match config.popup_style {
         PopupStyle::Auto => 0,
@@ -395,6 +487,7 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
 fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize) {
     let general = window.global::<General>();
     config.popups = general.get_popups();
+    config.look = look_from(&general);
     config.theme =
         themes::NAMES.get(general.get_theme_index().max(0) as usize).map_or("cranked", |(n, _)| n).to_string();
     config.popup_style = match general.get_popup_style() {
@@ -452,17 +545,27 @@ fn open_settings() {
 }
 
 fn show(window: &MainWindow, snapshot: &Snapshot) {
-    let rows = window.get_knobs();
-    let Some(model) = rows.as_any().downcast_ref::<VecModel<KnobData>>() else { return };
-    for (i, knob) in snapshot.knobs.iter().enumerate() {
-        let data = row(knob);
-        if i < model.row_count() {
-            // update in place so a knob being dragged keeps its touch state
-            if model.row_data(i).as_ref() != Some(&data) {
-                model.set_row_data(i, data);
+    let hidden = HIDDEN.with(|h| h.borrow().clone());
+    let rows: Vec<KnobData> = snapshot
+        .knobs
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !hidden.contains(&(i + 1)))
+        .map(|(i, knob)| row(i, knob))
+        .collect();
+    let model = window.get_knobs();
+    match model.as_any().downcast_ref::<VecModel<KnobData>>() {
+        // same knobs: update in place so a knob being dragged keeps its touch state
+        Some(model) if model.row_count() == rows.len() => {
+            for (i, data) in rows.into_iter().enumerate() {
+                if model.row_data(i).as_ref() != Some(&data) {
+                    model.set_row_data(i, data);
+                }
             }
-        } else {
-            model.push(data);
+        }
+        _ => {
+            window.set_knobs(ModelRc::new(VecModel::from(rows)));
+            fit_window(window);
         }
     }
     window.set_profile(snapshot.profile.as_str().into());
@@ -538,7 +641,7 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                     });
                 }
                 ServerMessage::Config(config) => {
-                    let theme = config.theme.clone();
+                    let (theme, look) = (config.theme.clone(), config.look.clone());
                     let snapshot = link
                         .lock()
                         .map(|mut link| {
@@ -548,10 +651,13 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                         .ok();
                     let _ = window.upgrade_in_event_loop(move |w| {
                         apply_theme(&w, &theme);
+                        apply_look(&w, &look);
                         // redraw the dials in the new colours
                         if let Some(snapshot) = snapshot {
                             show(&w, &snapshot);
                         }
+                        // knobs and look are both in: now the window opens at the right size
+                        open_window(&w);
                     });
                 }
                 ServerMessage::Entities(entities) => {
@@ -682,8 +788,26 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     general.on_edit_file(open_settings);
     general.set_theme_names(strings(themes::NAMES.iter().map(|(_, label)| *label)));
     {
-        // picking a theme previews it right away; Back puts the saved one back
+        // picking a theme or a look option previews it right away; Back puts the saved ones back
         let weak = window.as_weak();
+        let weak_shown = window.as_weak();
+        let weak_look = window.as_weak();
+        let link_look = Arc::clone(link);
+        general.on_look_changed(move || {
+            let Some(w) = weak_look.upgrade() else { return };
+            apply_look(&w, &look_from(&w.global::<General>()));
+            if let Ok(link) = link_look.lock() {
+                show(&w, &link.snapshot);
+            }
+        });
+        general.on_toggle_shown(move |index| {
+            let Some(w) = weak_shown.upgrade() else { return };
+            let model = w.global::<General>().get_look_shown();
+            if let Some(value) = model.row_data(index as usize) {
+                model.set_row_data(index as usize, !value);
+            }
+            w.global::<General>().invoke_look_changed();
+        });
         general.on_theme_changed(move |index| {
             let Some(w) = weak.upgrade() else { return };
             if let Some((name, _)) = themes::NAMES.get(index.max(0) as usize) {
@@ -725,6 +849,9 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                 // leaving Settings without saving: back to the saved theme
                 let theme = link.config.as_ref().map_or("cranked".to_string(), |c| c.theme.clone());
                 apply_theme(&w, &theme);
+                let look = link.config.as_ref().map(|c| c.look.clone()).unwrap_or_default();
+                apply_look(&w, &look);
+                show(&w, &link.snapshot);
             }
             if w.get_page() == 4 {
                 // leave the pattern; nothing saved
@@ -965,7 +1092,18 @@ fn main() -> Result<(), slint::PlatformError> {
             }
         });
     }
-    window.run()
+    // opens when the knobs arrive (see open_window); if the service doesn't answer soon, open anyway
+    let weak = window.as_weak();
+    slint::Timer::single_shot(Duration::from_millis(1200), move || {
+        if let Some(w) = weak.upgrade() {
+            open_window(&w);
+        }
+    });
+    window.window().on_close_requested(|| {
+        let _ = slint::quit_event_loop();
+        slint::CloseRequestResponse::HideWindow
+    });
+    slint::run_event_loop_until_quit()
 }
 
 #[cfg(test)]
@@ -994,10 +1132,10 @@ mod tests {
         let panel = themes::named("cranked").card;
         assert_eq!(mix(Color::from_rgb_u8(200, 0, 100), panel, 1.0), Color::from_rgb_u8(200, 0, 100));
         let knob = Knob { color: "#00FF00".into(), background: "#B80045".into(), ..Knob::default() };
-        let data = row(&knob);
+        let data = row(0, &knob);
         assert_eq!(data.rest_color.alpha(), 255);
         assert_eq!(data.rest_color, mix(Color::from_rgb_u8(0xB8, 0, 0x45), panel, 0.55));
-        let dark = row(&Knob { background: "#000000".into(), ..knob });
+        let dark = row(0, &Knob { background: "#000000".into(), ..knob });
         assert_eq!(dark.rest_color, themes::named("cranked").track);
     }
 }

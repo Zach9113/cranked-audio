@@ -197,6 +197,44 @@ pub enum PopupStyle {
     Notifications,
 }
 
+/// How the window lays out the knobs (the panel widget has the same options in its own settings).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Look {
+    /// "knobs" (dials), "sliders" (a compact list) or "faders" (vertical, like a mixing desk)
+    pub style: String,
+    /// size in percent (30..160)
+    pub scale: u8,
+    pub show_name: bool,
+    pub show_percent: bool,
+    pub show_source: bool,
+    pub show_button: bool,
+    pub show_action_labels: bool,
+    /// the button sits in the middle of the dial instead of under it (more compact)
+    pub buttons_in_dial: bool,
+    /// the window's title bar (name, profile, status, Settings) and the hint line
+    pub show_header: bool,
+    /// knob numbers (from 1) left out of the window
+    pub hidden_knobs: Vec<usize>,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Self {
+            style: "knobs".into(),
+            scale: 100,
+            show_name: true,
+            show_percent: true,
+            show_source: true,
+            show_button: true,
+            show_action_labels: true,
+            buttons_in_dial: false,
+            show_header: true,
+            hidden_knobs: Vec::new(),
+        }
+    }
+}
+
 fn default_theme() -> String {
     "cranked".into()
 }
@@ -239,6 +277,8 @@ pub struct Config {
     /// The window's look: "cranked", "midnight", "graphite", "light" or "system" (your desktop's colours).
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default)]
+    pub look: Look,
     pub leds: Leds,
     pub home_assistant: HomeAssistant,
     #[serde(rename = "profile")]
@@ -253,6 +293,7 @@ struct File {
     popup_style: PopupStyle,
     #[serde(default = "default_theme")]
     theme: String,
+    look: Look,
     leds: Leds,
     home_assistant: HomeAssistant,
     auto_lower: AutoLower,
@@ -268,6 +309,7 @@ impl Default for File {
             popups: true,
             popup_style: PopupStyle::default(),
             theme: default_theme(),
+            look: Look::default(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             auto_lower: AutoLower::default(),
@@ -322,6 +364,7 @@ impl Default for Config {
             popups: true,
             popup_style: PopupStyle::default(),
             theme: default_theme(),
+            look: Look::default(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             profiles: vec![Profile {
@@ -360,6 +403,7 @@ impl Config {
             popups: file.popups,
             popup_style: file.popup_style,
             theme: file.theme,
+            look: file.look,
             leds: file.leds,
             home_assistant: file.home_assistant,
             profiles,

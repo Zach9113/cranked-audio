@@ -26,6 +26,20 @@ export global Palette {
     in-out property <color> held-text: #ffd38a;
 }
 
+// How the window lays out the knobs (Settings > Look; the same options as the panel widget).
+export global Look {
+    in-out property <float> scale: 1.0;
+    // 0 knobs (dials), 1 sliders (compact list), 2 faders (vertical, like a mixing desk)
+    in-out property <int> style;
+    in-out property <bool> show-name: true;
+    in-out property <bool> show-percent: true;
+    in-out property <bool> show-source: true;
+    in-out property <bool> show-button: true;
+    in-out property <bool> show-action-labels: true;
+    in-out property <bool> buttons-in-dial;
+    in-out property <bool> show-header: true;
+}
+
 export struct AppRow {
     name: string,
     selected: bool,
@@ -83,6 +97,19 @@ export global General {
     // 0 automatic, 1 Atoll island, 2 KDE, 3 notifications
     in-out property <int> popup-style;
     in-out property <int> theme-index;
+    // Look (the window's layout), previewed live
+    in-out property <int> look-style;
+    in-out property <float> look-scale: 100;
+    in-out property <bool> look-show-name: true;
+    in-out property <bool> look-show-percent: true;
+    in-out property <bool> look-show-source: true;
+    in-out property <bool> look-show-button: true;
+    in-out property <bool> look-show-action-labels: true;
+    in-out property <bool> look-buttons-in-dial;
+    in-out property <bool> look-show-header: true;
+    in-out property <[bool]> look-shown;
+    callback look-changed();
+    callback toggle-shown(int);
     in property <[string]> theme-names;
     callback theme-changed(int);
     in-out property <float> brightness;
@@ -391,6 +418,62 @@ export component GeneralPage inherits ScrollView {
                     model: General.theme-names;
                     current-index <=> General.theme-index;
                     selected => { General.theme-changed(self.current-index); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Label { text: "Style"; width: 110px; }
+                ComboBox {
+                    model: ["Knobs (dials)", "Sliders (compact list)", "Faders (like a mixing desk)"];
+                    current-index <=> General.look-style;
+                    selected => { General.look-changed(); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                Label { text: "Size"; width: 110px; }
+                Slider {
+                    minimum: 30;
+                    maximum: 160;
+                    value <=> General.look-scale;
+                    released => { General.look-changed(); }
+                }
+                Label { text: round(General.look-scale) + "%"; width: 44px; }
+            }
+            Label { text: "Show:"; }
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: start;
+                CheckBox { text: "Names"; checked <=> General.look-show-name; toggled => { General.look-changed(); } }
+                CheckBox { text: "Percentages"; checked <=> General.look-show-percent; toggled => { General.look-changed(); } }
+                CheckBox { text: "What's playing"; checked <=> General.look-show-source; toggled => { General.look-changed(); } }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: start;
+                CheckBox { text: "Buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
+                CheckBox {
+                    text: "What the buttons do";
+                    enabled: General.look-show-button;
+                    checked <=> General.look-show-action-labels;
+                    toggled => { General.look-changed(); }
+                }
+                CheckBox { text: "Title bar"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
+                CheckBox {
+                    text: "Buttons inside the dials";
+                    enabled: General.look-show-button && General.look-style == 0;
+                    checked <=> General.look-buttons-in-dial;
+                    toggled => { General.look-changed(); }
+                }
+            }
+            Label { text: "Knobs in the window:"; }
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: start;
+                for name[i] in Lists.knob-names: CheckBox {
+                    text: name;
+                    checked: General.look-shown[i];
+                    toggled => { General.toggle-shown(i); }
                 }
             }
         }

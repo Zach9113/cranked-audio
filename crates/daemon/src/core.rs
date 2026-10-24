@@ -877,6 +877,7 @@ mod tests {
             popups: true,
             popup_style: Default::default(),
             theme: "cranked".into(),
+            look: Default::default(),
             leds: Default::default(),
             home_assistant: Default::default(),
             profiles: vec![

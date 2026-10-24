@@ -1,9 +1,12 @@
-import { Button } from "std-widgets.slint";
-import { Palette, KnobPage, ButtonPage, GeneralPage, CalibrationPage, Lists, KnobSettings, General } from "settings.slint";
-export { Lists, KnobSettings, General, Palette }
+import { Button, Slider } from "std-widgets.slint";
+
+import { Palette, Look, KnobPage, ButtonPage, GeneralPage, CalibrationPage, Lists, KnobSettings, General } from "settings.slint";
+export { Lists, KnobSettings, General, Palette, Look }
 export { Palette as StdPalette } from "std-widgets.slint";
 
 export struct KnobData {
+    // the knob's number in the service (counting from 0), even when other knobs are hidden
+    index: int,
     name: string,
     // 0..100, -1 while unknown
     level: int,
@@ -24,13 +27,59 @@ export struct KnobData {
     icon-lines: string,
 }
 
+// The button's icon, drawn from its path commands.
+component ButtonIcon inherits Rectangle {
+    in property <KnobData> data;
+    in property <length> size;
+    width: self.size;
+    height: self.size;
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: data.icon-fill;
+        fill: data.held ? Palette.held-text : Palette.text;
+    }
+    Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        commands: data.icon-lines;
+        stroke: data.held ? Palette.held-text : Palette.text;
+        stroke-width: 3.5px * Look.scale;
+    }
+}
+
+// Sends the knob's button down/up (the service tells a press from a hold) and right-clicks to its settings.
+component ButtonArea inherits TouchArea {
+    callback press(bool);
+    callback settings();
+    pointer-event(event) => {
+        if (event.button == PointerEventButton.left) {
+            if (event.kind == PointerEventKind.down) {
+                root.press(true);
+            } else if (event.kind == PointerEventKind.up) {
+                root.press(false);
+            }
+        } else if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
+            root.settings();
+        }
+    }
+}
+
 component Dial inherits Rectangle {
     in property <KnobData> data;
     callback set(int);
     callback step(int);
     callback settings();
-    width: 128px;
-    height: 128px;
+    callback press(bool);
+    callback button-settings();
+    // the button lives in the middle of the dial
+    property <bool> button-inside: Look.buttons-in-dial && Look.show-button && (data.press != "Nothing" || data.hold != "Nothing");
+    width: 128px * Look.scale;
+    height: 128px * Look.scale;
 
     Path {
         width: 100%;
@@ -39,7 +88,7 @@ component Dial inherits Rectangle {
         viewbox-height: 100;
         commands: data.rest-arc;
         stroke: data.rest-color;
-        stroke-width: 9px;
+        stroke-width: 9px * Look.scale;
     }
 
     Path {
@@ -49,33 +98,10 @@ component Dial inherits Rectangle {
         viewbox-height: 100;
         commands: data.fill-arc;
         stroke: data.fill-color;
-        stroke-width: 9px;
+        stroke-width: 9px * Look.scale;
     }
 
-    Rectangle {
-        width: 90px;
-        height: 90px;
-        border-radius: 45px;
-        background: area.pressed ? Palette.track : (area.has-hover ? Palette.centre-hover : Palette.centre);
-    }
-
-    VerticalLayout {
-        alignment: center;
-        Text {
-            text: data.level < 0 ? "–" : data.level + "%";
-            horizontal-alignment: center;
-            font-size: 24px;
-            font-weight: 700;
-            color: data.muted ? Palette.faint : Palette.text;
-        }
-        if data.muted || data.lowered: Text {
-            text: data.muted ? "muted" : "lowered";
-            horizontal-alignment: center;
-            font-size: 12px;
-            color: data.muted ? #e07a6a : #e0b050;
-        }
-    }
-
+    // turning: drag up/down anywhere on the dial (or scroll); with the button inside, the middle is the button
     area := TouchArea {
         property <int> start-level;
         property <length> start-y;
@@ -105,50 +131,75 @@ component Dial inherits Rectangle {
             accept
         }
     }
+
+    centre := Rectangle {
+        width: 90px * Look.scale;
+        height: 90px * Look.scale;
+        border-radius: self.width / 2;
+        border-width: root.button-inside ? 1px : 0px;
+        border-color: data.held ? Palette.held-edge : Palette.edge;
+        background: root.button-inside
+            ? (data.held ? Palette.held : (inside.has-hover ? Palette.centre-hover : Palette.centre))
+            : (area.pressed ? Palette.track : (area.has-hover ? Palette.centre-hover : Palette.centre));
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px * Look.scale;
+        if root.button-inside: HorizontalLayout {
+            alignment: center;
+            ButtonIcon {
+                data: data;
+                size: (Look.show-percent ? 34px : 44px) * Look.scale;
+            }
+        }
+        if Look.show-percent || !root.button-inside: Text {
+            text: data.level < 0 ? "–" : data.level + "%";
+            horizontal-alignment: center;
+            font-size: (root.button-inside ? 13px : 24px) * Look.scale;
+            font-weight: 700;
+            color: data.muted ? Palette.faint : Palette.text;
+        }
+        if data.muted || data.lowered: Text {
+            text: data.muted ? "muted" : "lowered";
+            horizontal-alignment: center;
+            font-size: 12px * Look.scale;
+            color: data.muted ? #e07a6a : #e0b050;
+        }
+    }
+
+    // always there (so its hover state can be read), but only active with the button inside
+    inside := ButtonArea {
+        enabled: root.button-inside;
+        x: centre.x;
+        y: centre.y;
+        width: centre.width;
+        height: centre.height;
+        mouse-cursor: pointer;
+        press(down) => { root.press(down); }
+        settings => { root.button-settings(); }
+    }
 }
 
 component KnobButton inherits Rectangle {
     in property <KnobData> data;
     callback press(bool);
     callback settings();
-    width: 92px;
-    height: 92px;
-    border-radius: 18px;
+    width: 92px * Look.scale;
+    height: 92px * Look.scale;
+    border-radius: 18px * Look.scale;
     border-width: 1px;
     border-color: data.held ? Palette.held-edge : Palette.edge;
     background: data.held ? Palette.held : (touch.has-hover ? Palette.button-hover : Palette.button);
 
-    Path {
-        width: 44px;
-        height: 44px;
-        viewbox-width: 24;
-        viewbox-height: 24;
-        commands: data.icon-fill;
-        fill: data.held ? Palette.held-text : Palette.text;
+    ButtonIcon {
+        data: data;
+        size: 44px * Look.scale;
     }
 
-    Path {
-        width: 44px;
-        height: 44px;
-        viewbox-width: 24;
-        viewbox-height: 24;
-        commands: data.icon-lines;
-        stroke: data.held ? Palette.held-text : Palette.text;
-        stroke-width: 3.5px;
-    }
-
-    touch := TouchArea {
-        pointer-event(event) => {
-            if (event.button == PointerEventButton.left) {
-                if (event.kind == PointerEventKind.down) {
-                    root.press(true);
-                } else if (event.kind == PointerEventKind.up) {
-                    root.press(false);
-                }
-            } else if (event.button == PointerEventButton.right && event.kind == PointerEventKind.up) {
-                root.settings();
-            }
-        }
+    touch := ButtonArea {
+        press(down) => { root.press(down); }
+        settings => { root.settings(); }
     }
 }
 
@@ -159,22 +210,24 @@ component KnobColumn inherits Rectangle {
     callback press(bool);
     callback knob-settings();
     callback button-settings();
-    border-radius: 16px;
+    property <bool> has-button: data.press != "Nothing" || data.hold != "Nothing";
+    border-radius: 16px * Look.scale;
     background: Palette.card;
-    min-width: 152px;
+    min-width: 152px * Look.scale;
     // equal columns whatever the labels say
-    preferred-width: 152px;
+    preferred-width: 152px * Look.scale;
     horizontal-stretch: 1;
+    vertical-stretch: 0;
 
     VerticalLayout {
-        padding: 12px;
-        spacing: 10px;
+        padding: 12px * Look.scale;
+        spacing: 10px * Look.scale;
         alignment: start;
 
-        Text {
+        if Look.show-name: Text {
             text: data.name;
             horizontal-alignment: center;
-            font-size: 17px;
+            font-size: 17px * Look.scale;
             font-weight: 700;
             color: name-area.has-hover ? Palette.text-strong : Palette.text;
             overflow: elide;
@@ -191,20 +244,22 @@ component KnobColumn inherits Rectangle {
                 set(v) => { root.set(v); }
                 step(d) => { root.step(d); }
                 settings => { root.knob-settings(); }
+                press(down) => { root.press(down); }
+                button-settings => { root.button-settings(); }
             }
         }
 
-        Text {
+        if Look.show-source: Text {
             text: data.source;
             horizontal-alignment: center;
-            font-size: 13px;
+            font-size: 13px * Look.scale;
             color: Palette.subtle;
             overflow: elide;
         }
 
-        HorizontalLayout {
+        if Look.show-button && !Look.buttons-in-dial && root.has-button: HorizontalLayout {
             alignment: center;
-            padding-top: 6px;
+            padding-top: 6px * Look.scale;
             KnobButton {
                 data: data;
                 press(down) => { root.press(down); }
@@ -212,20 +267,191 @@ component KnobColumn inherits Rectangle {
             }
         }
 
-        Text {
+        if Look.show-button && Look.show-action-labels && root.has-button: Text {
             text: "Press: " + data.press;
             horizontal-alignment: center;
-            font-size: 12px;
+            font-size: 12px * Look.scale;
             color: Palette.text-dim;
             wrap: word-wrap;
         }
 
-        Text {
+        if Look.show-button && Look.show-action-labels && root.has-button: Text {
             text: "Hold: " + data.hold;
             horizontal-alignment: center;
-            font-size: 12px;
+            font-size: 12px * Look.scale;
             color: Palette.faint;
             wrap: word-wrap;
+        }
+    }
+}
+
+// The "sliders" style: one compact row per knob.
+component KnobRow inherits Rectangle {
+    in property <KnobData> data;
+    callback set(int);
+    callback press(bool);
+    callback knob-settings();
+    callback button-settings();
+    property <bool> has-button: data.press != "Nothing" || data.hold != "Nothing";
+    height: 56px * Look.scale;
+    border-radius: 12px * Look.scale;
+    background: Palette.card;
+
+    HorizontalLayout {
+        padding-left: 12px * Look.scale;
+        padding-right: 12px * Look.scale;
+        spacing: 12px * Look.scale;
+
+        Rectangle {
+            width: 5px * Look.scale;
+            height: 70%;
+            y: (parent.height - self.height) / 2;
+            border-radius: self.width / 2;
+            background: data.fill-color;
+        }
+
+        if Look.show-name || Look.show-source: VerticalLayout {
+            width: 170px * Look.scale;
+            alignment: center;
+            if Look.show-name: Text {
+                text: data.name;
+                font-size: 15px * Look.scale;
+                font-weight: 700;
+                color: Palette.text;
+                overflow: elide;
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.knob-settings(); }
+                }
+            }
+            if Look.show-source: Text {
+                text: data.muted ? "muted" : data.lowered ? data.source + " · lowered" : data.source;
+                font-size: 12px * Look.scale;
+                color: Palette.subtle;
+                overflow: elide;
+            }
+        }
+
+        Slider {
+            minimum: 0;
+            maximum: 100;
+            value: max(data.level, 0);
+            changed(v) => { root.set(round(v)); }
+        }
+
+        if Look.show-percent: Text {
+            width: 48px * Look.scale;
+            text: data.level < 0 ? "–" : data.level + "%";
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            font-size: 15px * Look.scale;
+            color: Palette.text;
+        }
+
+        if Look.show-button && root.has-button: Rectangle {
+            width: 40px * Look.scale;
+            height: 40px * Look.scale;
+            y: (parent.height - self.height) / 2;
+            border-radius: 10px * Look.scale;
+            border-width: 1px;
+            border-color: data.held ? Palette.held-edge : Palette.edge;
+            background: data.held ? Palette.held : (row-touch.has-hover ? Palette.button-hover : Palette.button);
+            ButtonIcon {
+                data: data;
+                size: 22px * Look.scale;
+            }
+            row-touch := ButtonArea {
+                press(down) => { root.press(down); }
+                settings => { root.button-settings(); }
+            }
+        }
+    }
+}
+
+// The "faders" style: a vertical fader per knob, like a mixing desk.
+component FaderColumn inherits Rectangle {
+    in property <KnobData> data;
+    callback set(int);
+    callback press(bool);
+    callback knob-settings();
+    callback button-settings();
+    property <bool> has-button: data.press != "Nothing" || data.hold != "Nothing";
+    border-radius: 14px * Look.scale;
+    background: Palette.card;
+    width: 96px * Look.scale;
+
+    VerticalLayout {
+        padding: 10px * Look.scale;
+        spacing: 8px * Look.scale;
+        alignment: start;
+
+        if Look.show-name: Text {
+            text: data.name;
+            horizontal-alignment: center;
+            font-size: 14px * Look.scale;
+            font-weight: 700;
+            color: Palette.text;
+            overflow: elide;
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.knob-settings(); }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 6px * Look.scale;
+            // the knob's colour, like its LEDs
+            Rectangle {
+                width: 4px * Look.scale;
+                border-radius: self.width / 2;
+                background: data.fill-color;
+            }
+            Slider {
+                orientation: vertical;
+                height: 190px * Look.scale;
+                minimum: 0;
+                maximum: 100;
+                // a vertical slider counts from the top; turn it so up is louder
+                value: 100 - max(data.level, 0);
+                changed(v) => { root.set(round(100 - v)); }
+            }
+        }
+
+        if Look.show-percent: Text {
+            text: data.level < 0 ? "–" : data.level + "%";
+            horizontal-alignment: center;
+            font-size: 15px * Look.scale;
+            font-weight: 700;
+            color: data.muted ? Palette.faint : Palette.text;
+        }
+
+        if Look.show-source: Text {
+            text: data.muted ? "muted" : data.lowered ? "lowered" : data.source;
+            horizontal-alignment: center;
+            font-size: 11px * Look.scale;
+            color: data.muted ? #e07a6a : data.lowered ? #e0b050 : Palette.subtle;
+            overflow: elide;
+        }
+
+        if Look.show-button && root.has-button: HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 46px * Look.scale;
+                height: 46px * Look.scale;
+                border-radius: 12px * Look.scale;
+                border-width: 1px;
+                border-color: data.held ? Palette.held-edge : Palette.edge;
+                background: data.held ? Palette.held : (fader-touch.has-hover ? Palette.button-hover : Palette.button);
+                ButtonIcon {
+                    data: data;
+                    size: 24px * Look.scale;
+                }
+                fader-touch := ButtonArea {
+                    press(down) => { root.press(down); }
+                    settings => { root.button-settings(); }
+                }
+            }
         }
     }
 }
@@ -233,10 +459,10 @@ component KnobColumn inherits Rectangle {
 export component MainWindow inherits Window {
     title: "Cranked Audio";
     icon: @image-url("../../../data/cranked-audio.svg");
-    preferred-width: 1000px;
-    preferred-height: 600px;
-    min-width: 860px;
-    min-height: 520px;
+    // the window's size follows its contents, so a small look makes a small window
+    min-width: Look.style == 1 ? 380px * Look.scale + 140px
+        : Look.style == 2 ? max(160px, root.knobs.length * (96px * Look.scale + 10px * Look.scale) + 36px * Look.scale)
+        : max(160px, root.knobs.length * (152px * Look.scale + 12px * Look.scale) + 36px * Look.scale);
     background: Palette.background;
     default-font-size: 14px;
 
@@ -244,7 +470,7 @@ export component MainWindow inherits Window {
     in property <string> status;
     in property <bool> ok;
     in property <string> profile;
-    // 0 = knobs, 1 = knob settings, 2 = button settings, 3 = settings
+    // 0 = knobs, 1 = knob settings, 2 = button settings, 3 = settings, 4 = LED calibration
     in-out property <int> page;
 
     callback knob-set(int, int);
@@ -255,13 +481,16 @@ export component MainWindow inherits Window {
     callback open-general();
     callback save();
     callback back();
+    // how big the window wants to be for its contents (the window code resizes to it when the knobs or look change)
+    out property <length> wanted-width: max(self.min-width, page-layout.preferred-width);
+    out property <length> wanted-height: page-layout.preferred-height;
 
-    VerticalLayout {
-        padding: 18px;
-        spacing: 16px;
+    page-layout := VerticalLayout {
+        padding: 18px * min(1, Look.scale + 0.2);
+        spacing: 16px * min(1, Look.scale + 0.2);
 
-        HorizontalLayout {
-            spacing: 14px;
+        if root.page != 0 || Look.show-header: HorizontalLayout {
+            spacing: 14px * min(1, Look.scale + 0.2);
             if root.page != 0: Button {
                 text: "‹ Back";
                 clicked => { root.back(); }
@@ -272,14 +501,15 @@ export component MainWindow inherits Window {
                     : root.page == 2 ? "Button " + (KnobSettings.index + 1)
                     : root.page == 4 ? "LED colours"
                     : "Settings";
-                font-size: 22px;
+                // the title scales on the knobs page; settings pages stay readable
+                font-size: root.page == 0 ? 22px * max(0.65, Look.scale) : 22px;
                 font-weight: 800;
                 color: Palette.text;
                 vertical-alignment: center;
             }
             if root.page == 0: Text {
                 text: root.profile;
-                font-size: 14px;
+                font-size: 14px * max(0.75, Look.scale);
                 color: Palette.faint;
                 vertical-alignment: center;
             }
@@ -295,7 +525,7 @@ export component MainWindow inherits Window {
             }
             if root.page == 0: Text {
                 text: root.status;
-                font-size: 14px;
+                font-size: 14px * max(0.75, Look.scale);
                 color: Palette.text-dim;
                 vertical-alignment: center;
             }
@@ -310,26 +540,73 @@ export component MainWindow inherits Window {
             }
         }
 
-        if root.page == 0: HorizontalLayout {
-            spacing: 12px;
-            for knob[index] in root.knobs: KnobColumn {
+        if root.page == 0 && Look.style == 0: HorizontalLayout {
+            spacing: 12px * Look.scale;
+            alignment: Look.scale < 0.95 ? center : stretch;
+            for knob in root.knobs: KnobColumn {
                 data: knob;
-                set(v) => { root.knob-set(index, v); }
-                step(d) => { root.knob-step(index, d); }
-                press(down) => { root.button(index, down); }
-                knob-settings => { root.open-knob(index); }
-                button-settings => { root.open-button(index); }
+                set(v) => { root.knob-set(knob.index, v); }
+                step(d) => { root.knob-step(knob.index, d); }
+                press(down) => { root.button(knob.index, down); }
+                knob-settings => { root.open-knob(knob.index); }
+                button-settings => { root.open-button(knob.index); }
             }
         }
-        if root.page == 0: Text {
+        if root.page == 0 && Look.style == 2: HorizontalLayout {
+            spacing: 10px * Look.scale;
+            alignment: center;
+            for knob in root.knobs: FaderColumn {
+                data: knob;
+                set(v) => { root.knob-set(knob.index, v); }
+                press(down) => { root.button(knob.index, down); }
+                knob-settings => { root.open-knob(knob.index); }
+                button-settings => { root.open-button(knob.index); }
+            }
+        }
+        if root.page == 0 && Look.style == 1: VerticalLayout {
+            spacing: 8px * Look.scale;
+            alignment: start;
+            for knob in root.knobs: KnobRow {
+                data: knob;
+                set(v) => { root.knob-set(knob.index, v); }
+                press(down) => { root.button(knob.index, down); }
+                knob-settings => { root.open-knob(knob.index); }
+                button-settings => { root.open-button(knob.index); }
+            }
+        }
+        if root.page == 0 && Look.show-header: Text {
             text: "Turn a knob by dragging or scrolling it. Right-click a knob or button to change what it does.";
-            font-size: 12px;
+            font-size: 12px * max(0.8, Look.scale);
             color: Palette.hint;
             horizontal-alignment: center;
+            wrap: word-wrap;
         }
+        // extra height goes here, so the knob cards keep their own size
+        if root.page == 0: Rectangle { vertical-stretch: 1; }
         if root.page == 1: KnobPage { }
         if root.page == 2: ButtonPage { }
         if root.page == 3: GeneralPage { }
         if root.page == 4: CalibrationPage { }
+    }
+
+    // without the title bar, a small gear in the corner still gets to Settings
+    if root.page == 0 && !Look.show-header: Rectangle {
+        x: parent.width - self.width - 4px;
+        y: 4px;
+        width: 22px;
+        height: 22px;
+        border-radius: 11px;
+        background: gear.has-hover ? Palette.button-hover : transparent;
+        Text {
+            text: "⚙";
+            font-size: 14px;
+            color: gear.has-hover ? Palette.text : Palette.faint;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        gear := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { root.open-general(); }
+        }
     }
 }
