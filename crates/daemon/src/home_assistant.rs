@@ -27,7 +27,7 @@ pub enum Command {
     Brightness { entity: String, percent: u8 },
     /// `toggle` or `turn_off` on any entity; scenes and scripts are turned on instead.
     Call { service: &'static str, entity: String },
-    /// Answer with `Event::HaEntities`: everything a knob or button can use.
+    /// Answer with `Event::HomeAssistantEntities`: everything a knob or button can use.
     ListEntities,
 }
 
@@ -151,14 +151,14 @@ pub fn run_calls(settings: Settings, commands: Receiver<Command>, events: Sender
             }
             Ok(Command::ListEntities) => match list_entities(&agent, &settings) {
                 Ok(entities) => {
-                    let _ = events.send(Event::HaEntities(entities));
+                    let _ = events.send(Event::HomeAssistantEntities(entities));
                 }
                 Err(e) => eprintln!("home assistant: can't list entities ({e})"),
             },
             Ok(command) => {
                 if let Err(e) = call(&agent, &settings, &command) {
                     eprintln!("home assistant: {e}");
-                    let _ = events.send(Event::HaFailed);
+                    let _ = events.send(Event::HomeAssistantFailed);
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -175,7 +175,7 @@ pub fn run_calls(settings: Settings, commands: Receiver<Command>, events: Sender
             last_sent.insert(entity.clone(), now);
             if let Err(e) = call(&agent, &settings, &Command::Brightness { entity, percent }) {
                 eprintln!("home assistant: {e}");
-                let _ = events.send(Event::HaFailed);
+                let _ = events.send(Event::HomeAssistantFailed);
             }
         }
     }
@@ -303,7 +303,7 @@ pub fn run_states(
                 }
                 for entity in &watched {
                     if let Some(state) = get_state(&poller, &settings, entity) {
-                        if events.send(Event::HaState(state)).is_err() {
+                        if events.send(Event::HomeAssistantState(state)).is_err() {
                             return;
                         }
                     }
@@ -326,7 +326,7 @@ pub fn run_states(
                     waiting_for_pong = false;
                     if message["type"] == "event" && message["id"] == 1 {
                         for state in apply_update(&mut known, &message["event"]) {
-                            if events.send(Event::HaState(state)).is_err() {
+                            if events.send(Event::HomeAssistantState(state)).is_err() {
                                 return;
                             }
                         }
@@ -399,6 +399,9 @@ mod tests {
     #[test]
     fn websocket_addresses() {
         assert_eq!(websocket_url("http://192.0.2.1:8123"), "ws://192.0.2.1:8123/api/websocket");
-        assert_eq!(websocket_url("https://ha.example.org/"), "wss://ha.example.org/api/websocket");
+        assert_eq!(
+            websocket_url("https://home-assistant.example.org/"),
+            "wss://home-assistant.example.org/api/websocket"
+        );
     }
 }

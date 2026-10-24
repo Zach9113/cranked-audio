@@ -11,7 +11,7 @@ use crate::buttons::{Buttons, Gesture};
 use crate::config::{parse_color, Action, AutoLower, Channel, Config, State};
 use crate::desktop::{Command as Desktop, MediaKey};
 use crate::duck::Ducker;
-use crate::ha::{Command as Ha, EntityState};
+use crate::home_assistant::{Command as HomeAssistant, EntityState};
 use crate::leds::{calibration, colors, KnobLook};
 use crate::matching::{channel_for, Stream};
 use crate::Event;
@@ -52,7 +52,7 @@ pub enum Out {
     Desktop(Desktop),
     Leds([u8; 48]),
     SaveState(State),
-    Ha(Ha),
+    HomeAssistant(HomeAssistant),
 }
 
 /// The light's new brightness when its knob moves from `previous` to `knob`. If the light was changed elsewhere,
@@ -111,7 +111,7 @@ pub struct Core {
     metered: HashMap<u32, u32>,
     started: Instant,
     /// Home Assistant is set up (shown in the window).
-    pub ha_enabled: bool,
+    pub home_assistant_enabled: bool,
     saved: [Option<u8>; MAX],
     /// Apps seen playing (for the window's app list), newest last.
     seen_apps: Vec<String>,
@@ -166,7 +166,7 @@ impl Core {
             ducking: false,
             metered: HashMap::new(),
             started,
-            ha_enabled: false,
+            home_assistant_enabled: false,
             saved,
             seen_apps,
             mixer_seen: state.mixer_seen,
@@ -320,7 +320,7 @@ impl Core {
             profiles: self.config.profiles.iter().map(|p| p.name.clone()).collect(),
             playing,
             known_apps,
-            home_assistant: self.ha_enabled,
+            home_assistant: self.home_assistant_enabled,
             knobs,
             version: format!("v{}", env!("CARGO_PKG_VERSION")),
         }
@@ -436,17 +436,19 @@ impl Core {
                 let text = name.unwrap_or_else(|| "No other output".into());
                 out.extend(self.popup_text("audio-card", text));
             }
-            Event::HaState(state) => {
+            Event::HomeAssistantState(state) => {
                 if self.awaiting.remove(&state.entity).is_some_and(|asked| now.duration_since(asked) < RESULT_WITHIN) {
                     let word = if state.is_on() { "on" } else { "off" };
                     out.extend(self.popup_text("home", format!("{} {word}", state.name)));
                 }
                 if self.verbose && self.entities.get(&state.entity) != Some(&state) {
-                    eprintln!("ha: {} is {} {:?}", state.entity, state.state, state.brightness);
+                    eprintln!("home assistant: {} is {} {:?}", state.entity, state.state, state.brightness);
                 }
                 self.entities.insert(state.entity.clone(), state);
             }
-            Event::HaFailed => out.extend(self.popup_text("dialog-warning", "Home Assistant didn't respond".into())),
+            Event::HomeAssistantFailed => {
+                out.extend(self.popup_text("dialog-warning", "Home Assistant didn't respond".into()))
+            }
             Event::AudioReady => {}
             Event::OutputVolume(percent) => {
                 for channel in 0..self.count() {
@@ -462,7 +464,7 @@ impl Core {
             Event::ClientConnected(_)
             | Event::ClientLine(_)
             | Event::Tray(_)
-            | Event::HaEntities(_)
+            | Event::HomeAssistantEntities(_)
             | Event::UpdateCheckResult(_)
             | Event::UpdateApplyResult(_)
             | Event::Remote(_)
@@ -605,12 +607,12 @@ impl Core {
             Action::Previous => out.push(Out::Desktop(Desktop::Media(MediaKey::Previous))),
             Action::SwitchOutput => out.push(Out::Audio(Audio::SwitchOutput)),
             Action::NextProfile => self.next_profile(out),
-            Action::HaToggle(entity) => self.ha_button("toggle", entity, now, out),
-            Action::HaOff(entity) => self.ha_button("turn_off", entity, now, out),
+            Action::HomeAssistantToggle(entity) => self.home_assistant_button("toggle", entity, now, out),
+            Action::HomeAssistantOff(entity) => self.home_assistant_button("turn_off", entity, now, out),
         }
     }
 
-    fn ha_button(&mut self, service: &'static str, entity: String, now: Instant, out: &mut Vec<Out>) {
+    fn home_assistant_button(&mut self, service: &'static str, entity: String, now: Instant, out: &mut Vec<Out>) {
         let known = self.entities.get(&entity);
         let name = known.map_or_else(|| entity.clone(), |s| s.name.clone());
         let text = match (service, known.map(EntityState::is_on)) {
@@ -620,7 +622,7 @@ impl Core {
         };
         out.extend(self.popup_text("home", text));
         self.awaiting.insert(entity.clone(), now);
-        out.push(Out::Ha(Ha::Call { service, entity }));
+        out.push(Out::HomeAssistant(HomeAssistant::Call { service, entity }));
     }
 
     fn mute_commands(&self, channel: usize, mute: bool) -> Vec<Out> {
@@ -881,7 +883,7 @@ impl Core {
             state.brightness = Some(percent);
             state.state = if percent > 0 { "on" } else { "off" }.into();
         }
-        vec![Out::Ha(Ha::Brightness { entity, percent })]
+        vec![Out::HomeAssistant(HomeAssistant::Brightness { entity, percent })]
     }
 
     /// `turned`: the user moved the knob (startup sync and profile switches never move lights).
@@ -964,8 +966,8 @@ mod tests {
             Channel {
                 light: Some("light.desk_lamp".into()),
                 master: true,
-                press: Action::HaToggle("switch.fan".into()),
-                hold: Action::HaOff("light.desk_lamp".into()),
+                press: Action::HomeAssistantToggle("switch.fan".into()),
+                hold: Action::HomeAssistantOff("light.desk_lamp".into()),
                 ..Channel::default()
             },
         ]
@@ -1138,7 +1140,7 @@ mod tests {
     }
 
     fn lamp(state: &str, brightness: Option<u8>) -> Event {
-        Event::HaState(EntityState {
+        Event::HomeAssistantState(EntityState {
             entity: "light.desk_lamp".into(),
             name: "Desk Lamp".into(),
             state: state.into(),
@@ -1149,7 +1151,7 @@ mod tests {
     fn brightness(out: &[Out]) -> Vec<u8> {
         out.iter()
             .filter_map(|o| match o {
-                Out::Ha(Ha::Brightness { percent, .. }) => Some(*percent),
+                Out::HomeAssistant(HomeAssistant::Brightness { percent, .. }) => Some(*percent),
                 _ => None,
             })
             .collect()
@@ -1187,7 +1189,7 @@ mod tests {
     }
 
     #[test]
-    fn ha_buttons_say_what_they_do_then_the_result() {
+    fn home_assistant_buttons_say_what_they_do_then_the_result() {
         let start = Instant::now();
         let mut core = synced(start);
         core.handle(lamp("on", Some(40)), start);
@@ -1195,10 +1197,13 @@ mod tests {
         core.handle(Event::Bytes(button_packet(4, true).to_vec()), at);
         let out = core.tick(at + Duration::from_millis(600));
         assert_eq!(popups(&out), ["Turning off Desk Lamp"]);
-        assert!(out.contains(&Out::Ha(Ha::Call { service: "turn_off", entity: "light.desk_lamp".into() })));
+        assert!(out.contains(&Out::HomeAssistant(HomeAssistant::Call {
+            service: "turn_off",
+            entity: "light.desk_lamp".into()
+        })));
         assert_eq!(popups(&core.handle(lamp("off", Some(0)), at + Duration::from_secs(1))), ["Desk Lamp off"]);
         assert!(popups(&core.handle(lamp("on", Some(50)), at + Duration::from_secs(2))).is_empty(), "only once");
-        assert_eq!(popups(&core.handle(Event::HaFailed, at)), ["Home Assistant didn't respond"]);
+        assert_eq!(popups(&core.handle(Event::HomeAssistantFailed, at)), ["Home Assistant didn't respond"]);
     }
 
     #[test]
@@ -1249,7 +1254,7 @@ mod tests {
                     text: "Toggling switch.fan".into(),
                     style: Default::default()
                 }),
-                Out::Ha(Ha::Call { service: "toggle", entity: "switch.fan".into() })
+                Out::HomeAssistant(HomeAssistant::Call { service: "toggle", entity: "switch.fan".into() })
             ]
         );
         let out = core.handle(Event::OutputSwitched(Some("LG Speakers".into())), at);

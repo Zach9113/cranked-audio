@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# End-to-end Home Assistant check against tests/fake_ha.py (no real Home Assistant, no mixer, no audio).
-# Usage: tests/live_ha.sh [path/to/cranked-audiod]
+# End-to-end Home Assistant check against tests/fake_home_assistant.py (no real Home Assistant, no mixer, no audio).
+# Usage: tests/live_home_assistant.sh [path/to/cranked-audiod]
 set -u
 bin=${1:-target/release/cranked-audiod}
 here=$(dirname "$0")
@@ -19,7 +19,7 @@ press = { ha_toggle = "switch.test_plug" }
 hold = "none"
 TOML
 touch "$work/calls"
-python3 "$here/fake_ha.py" "$port" "$(cat "$work/ha-token")" "$work/calls" &
+python3 "$here/fake_home_assistant.py" "$port" "$(cat "$work/ha-token")" "$work/calls" &
 fake=$!
 sleep 0.5
 fails=0

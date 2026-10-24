@@ -24,14 +24,14 @@ pub fn action_index(action: &Action) -> usize {
         Action::Previous => 4,
         Action::SwitchOutput => 5,
         Action::NextProfile => 6,
-        Action::HaToggle(_) => 7,
-        Action::HaOff(_) => 8,
+        Action::HomeAssistantToggle(_) => 7,
+        Action::HomeAssistantOff(_) => 8,
     }
 }
 
 pub fn action_entity(action: &Action) -> Option<&str> {
     match action {
-        Action::HaToggle(entity) | Action::HaOff(entity) => Some(entity),
+        Action::HomeAssistantToggle(entity) | Action::HomeAssistantOff(entity) => Some(entity),
         _ => None,
     }
 }
@@ -45,8 +45,8 @@ pub fn action_from(index: usize, entity: Option<String>) -> Action {
         (4, _) => Action::Previous,
         (5, _) => Action::SwitchOutput,
         (6, _) => Action::NextProfile,
-        (7, Some(entity)) => Action::HaToggle(entity),
-        (8, Some(entity)) => Action::HaOff(entity),
+        (7, Some(entity)) => Action::HomeAssistantToggle(entity),
+        (8, Some(entity)) => Action::HomeAssistantOff(entity),
         _ => Action::None,
     }
 }
@@ -251,8 +251,8 @@ mod tests {
             Action::Previous,
             Action::SwitchOutput,
             Action::NextProfile,
-            Action::HaToggle("switch.coffee_maker".into()),
-            Action::HaOff("light.desk_lamp".into()),
+            Action::HomeAssistantToggle("switch.coffee_maker".into()),
+            Action::HomeAssistantOff("light.desk_lamp".into()),
         ] {
             let back = action_from(action_index(&action), action_entity(&action).map(String::from));
             assert_eq!(back, action);

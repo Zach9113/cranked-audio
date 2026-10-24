@@ -7,7 +7,7 @@ pub use cranked_ipc::settings::*;
 use serde::{Deserialize, Serialize};
 
 /// The Home Assistant address and token, when it's set up. Warns about a token others can read.
-pub fn ha_settings(config: &Config, config_path: &Path) -> Option<crate::ha::Settings> {
+pub fn home_assistant_settings(config: &Config, config_path: &Path) -> Option<crate::home_assistant::Settings> {
     let url = config.home_assistant.url.as_deref()?.trim().trim_end_matches('/').to_string();
     if url.is_empty() {
         return None;
@@ -24,7 +24,7 @@ pub fn ha_settings(config: &Config, config_path: &Path) -> Option<crate::ha::Set
     if std::fs::metadata(&token_path).is_ok_and(|m| m.permissions().mode() & 0o077 != 0) {
         eprintln!("home assistant: {} is readable by other users; run chmod 600 on it", token_path.display());
     }
-    Some(crate::ha::Settings { url, token })
+    Some(crate::home_assistant::Settings { url, token })
 }
 
 /// What the app remembers between runs.

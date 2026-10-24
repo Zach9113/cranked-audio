@@ -20,8 +20,11 @@ pub enum Action {
     Previous,
     SwitchOutput,
     NextProfile,
-    HaToggle(String),
-    HaOff(String),
+    // Keep the existing configuration and IPC representation.
+    #[serde(rename = "ha_toggle")]
+    HomeAssistantToggle(String),
+    #[serde(rename = "ha_off")]
+    HomeAssistantOff(String),
 }
 
 impl Action {
@@ -35,8 +38,8 @@ impl Action {
             Action::Previous => "Previous".into(),
             Action::SwitchOutput => "Switch output".into(),
             Action::NextProfile => "Next profile".into(),
-            Action::HaToggle(entity) => format!("Toggle {}", name_of(entity)),
-            Action::HaOff(entity) => format!("Turn off {}", name_of(entity)),
+            Action::HomeAssistantToggle(entity) => format!("Toggle {}", name_of(entity)),
+            Action::HomeAssistantOff(entity) => format!("Turn off {}", name_of(entity)),
         }
     }
 }
@@ -342,12 +345,12 @@ pub struct HomeAssistant {
 
 impl Config {
     /// Every Home Assistant entity any profile uses (lights on knobs, entities on buttons).
-    pub fn ha_entities(&self) -> Vec<String> {
+    pub fn home_assistant_entities(&self) -> Vec<String> {
         let mut entities: Vec<String> = Vec::new();
         for channel in self.profiles.iter().flat_map(|p| &p.channels) {
             let actions = [&channel.press, &channel.hold];
             let from_buttons = actions.into_iter().filter_map(|a| match a {
-                Action::HaToggle(e) | Action::HaOff(e) => Some(e.clone()),
+                Action::HomeAssistantToggle(e) | Action::HomeAssistantOff(e) => Some(e.clone()),
                 _ => None,
             });
             for entity in channel.light.iter().cloned().chain(from_buttons) {
@@ -596,7 +599,7 @@ mod tests {
         assert_eq!(config.profiles.len(), 2);
         assert_eq!(config.profiles[0].name, "Default");
         assert_eq!(config.profiles[0].channels.len(), 1, "as many knobs as the file lists");
-        assert_eq!(config.profiles[0].channels[0].press, Action::HaToggle("switch.fan".into()));
+        assert_eq!(config.profiles[0].channels[0].press, Action::HomeAssistantToggle("switch.fan".into()));
         assert_eq!(config.profiles[0].channels[0].hold, Action::None);
         assert_eq!(config.profiles[1].channels[0].press, Action::NextProfile);
         assert_eq!(config.profiles[1].channels[0].hold, Action::Mute);
@@ -605,11 +608,27 @@ mod tests {
     }
 
     #[test]
+    fn home_assistant_actions_preserve_serialized_names() {
+        for (action, wire_name) in [
+            (Action::HomeAssistantToggle("switch.fan".into()), "ha_toggle"),
+            (Action::HomeAssistantOff("light.desk_lamp".into()), "ha_off"),
+        ] {
+            let entity = match &action {
+                Action::HomeAssistantToggle(entity) | Action::HomeAssistantOff(entity) => entity,
+                _ => unreachable!(),
+            };
+            let json = serde_json::json!({ wire_name: entity });
+            assert_eq!(serde_json::to_value(&action).unwrap(), json);
+            assert_eq!(serde_json::from_value::<Action>(json).unwrap(), action);
+        }
+    }
+
+    #[test]
     fn home_assistant_entities_are_collected_once() {
         let config = Config::parse(
             r##"
             [home_assistant]
-            url = "http://ha.local:8123/"
+            url = "http://home-assistant.local:8123/"
             [[channel]]
             light = "light.desk_lamp"
             press = { ha_toggle = "switch.coffee_maker" }
@@ -617,8 +636,8 @@ mod tests {
             "##,
         )
         .unwrap();
-        assert_eq!(config.ha_entities(), ["light.desk_lamp", "switch.coffee_maker"]);
-        assert!(Config::default().ha_entities().is_empty());
+        assert_eq!(config.home_assistant_entities(), ["light.desk_lamp", "switch.coffee_maker"]);
+        assert!(Config::default().home_assistant_entities().is_empty());
     }
 
     #[test]
@@ -646,7 +665,7 @@ mod tests {
         let mut config = Config::parse(
             r##"
             [home_assistant]
-            url = "http://ha.local:8123"
+            url = "http://home-assistant.local:8123"
             [auto_lower]
             enabled = true
             lower = [1]
