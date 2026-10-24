@@ -1,7 +1,6 @@
 //! Home Assistant (SPEC.md section 7): service calls out, live entity state in.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
@@ -186,63 +185,158 @@ pub fn run_calls(settings: Settings, commands: Receiver<Command>, events: Sender
     }
 }
 
-/// Keeps `watched` entities' state current: the live event stream, with polling while it's down.
-/// Stops once `generation` moves past `mine` (new settings started a replacement).
+/// Home Assistant's compact entity updates (`subscribe_entities`): `a` = full states, `c` = changes with `+`
+/// (new values) and `-` (removed attributes), `r` = removed entities. Keeps `known` current and returns the
+/// entities that changed, as ordinary states.
+pub fn apply_update(known: &mut HashMap<String, (String, serde_json::Map<String, Value>)>, event: &Value) -> Vec<EntityState> {
+    let mut changed = Vec::new();
+    if let Some(added) = event.get("a").and_then(Value::as_object) {
+        for (id, full) in added {
+            let state = full.get("s").and_then(Value::as_str).unwrap_or_default().to_string();
+            let attributes = full.get("a").and_then(Value::as_object).cloned().unwrap_or_default();
+            known.insert(id.clone(), (state, attributes));
+            changed.push(id.clone());
+        }
+    }
+    if let Some(changes) = event.get("c").and_then(Value::as_object) {
+        for (id, change) in changes {
+            let entry = known.entry(id.clone()).or_default();
+            if let Some(plus) = change.get("+") {
+                if let Some(state) = plus.get("s").and_then(Value::as_str) {
+                    entry.0 = state.to_string();
+                }
+                if let Some(attributes) = plus.get("a").and_then(Value::as_object) {
+                    entry.1.extend(attributes.clone());
+                }
+            }
+            if let Some(gone) = change.pointer("/-/a").and_then(Value::as_array) {
+                for name in gone.iter().filter_map(Value::as_str) {
+                    entry.1.remove(name);
+                }
+            }
+            changed.push(id.clone());
+        }
+    }
+    changed.sort();
+    changed.dedup();
+    changed
+        .iter()
+        .filter_map(|id| {
+            let (state, attributes) = known.get(id)?;
+            parse_state(&json!({ "entity_id": id, "state": state, "attributes": attributes }))
+        })
+        .collect()
+}
+
+/// `http://host:8123` -> `ws://host:8123/api/websocket` (https -> wss).
+pub fn websocket_url(base: &str) -> String {
+    let rest = base.strip_prefix("https://").map(|r| format!("wss://{r}"));
+    let url = rest.unwrap_or_else(|| format!("ws://{}", base.strip_prefix("http://").unwrap_or(base)));
+    format!("{}/api/websocket", url.trim_end_matches('/'))
+}
+
+type Socket = tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>;
+
+/// A quiet connection gets a ping after this long; no answer within the same time means it's dead.
+const PING_AFTER: Duration = Duration::from_secs(30);
+
+fn read_json(socket: &mut Socket) -> Result<Option<Value>, String> {
+    match socket.read() {
+        Ok(tungstenite::Message::Text(text)) => Ok(serde_json::from_str(text.as_str()).ok()),
+        Ok(_) => Ok(None),
+        Err(tungstenite::Error::Io(e)) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+            Err("timeout".into())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn send_json(socket: &mut Socket, value: Value) -> Result<(), String> {
+    socket.send(tungstenite::Message::text(value.to_string())).map_err(|e| e.to_string())
+}
+
+/// Connects, signs in and subscribes to just the watched entities.
+fn subscribe(settings: &Settings, watched: &[String]) -> Result<Socket, String> {
+    let (mut socket, _) = tungstenite::connect(websocket_url(&settings.url)).map_err(|e| e.to_string())?;
+    let tcp = match socket.get_ref() {
+        tungstenite::stream::MaybeTlsStream::Plain(tcp) => tcp,
+        tungstenite::stream::MaybeTlsStream::Rustls(tls) => tls.get_ref(),
+        _ => return Err("unsupported connection".into()),
+    };
+    tcp.set_read_timeout(Some(PING_AFTER)).map_err(|e| e.to_string())?;
+    let _ = read_json(&mut socket)?; // auth_required
+    send_json(&mut socket, json!({ "type": "auth", "access_token": settings.token }))?;
+    match read_json(&mut socket)? {
+        Some(reply) if reply["type"] == "auth_ok" => {}
+        _ => return Err("Home Assistant didn't accept the token".into()),
+    }
+    send_json(&mut socket, json!({ "id": 1, "type": "subscribe_entities", "entity_ids": watched }))?;
+    Ok(socket)
+}
+
+/// Keeps `watched` entities' state current over Home Assistant's WebSocket (only those entities, with pings to notice
+/// a dead connection); polls while it can't connect. Stops once `generation` moves past `mine`.
 pub fn run_states(settings: Settings, watched: Vec<String>, events: Sender<Event>, generation: Arc<AtomicU64>, mine: u64) {
-    let current = || generation.load(Ordering::Relaxed) == mine;
     if watched.is_empty() {
         return;
     }
+    let current = || generation.load(Ordering::Relaxed) == mine;
     let poller = agent(Some(Duration::from_secs(10)));
-    // no overall timeout for the stream; HA sends a few events a second on a typical install
-    let streamer: Agent =
-        Agent::config_builder().timeout_recv_body(Some(Duration::from_secs(120))).http_status_as_error(true).build().into();
-    let markers: Vec<String> = watched.iter().map(|e| format!("\"{e}\"")).collect();
-    let mut last_poll: Option<Instant> = None;
+    let mut reported = false;
     while current() {
-        if last_poll.is_none_or(|t| t.elapsed() >= POLL_EVERY) {
-            last_poll = Some(Instant::now());
-            for entity in &watched {
-                if let Some(state) = get_state(&poller, &settings, entity) {
-                    if events.send(Event::HaState(state)).is_err() {
-                        return;
+        let mut socket = match subscribe(&settings, &watched) {
+            Ok(socket) => socket,
+            Err(e) => {
+                if !reported {
+                    eprintln!("home assistant: live updates unavailable ({e}); checking every {} s", POLL_EVERY.as_secs());
+                    reported = true;
+                }
+                for entity in &watched {
+                    if let Some(state) = get_state(&poller, &settings, entity) {
+                        if events.send(Event::HaState(state)).is_err() {
+                            return;
+                        }
                     }
                 }
-            }
-        }
-        let response = streamer
-            .get(format!("{}/api/stream?restrict=state_changed", settings.url))
-            .header("Authorization", format!("Bearer {}", settings.token))
-            .call();
-        let response = match response {
-            Ok(response) => response,
-            Err(e) => {
-                eprintln!("home assistant: live updates unavailable ({e}); polling");
                 std::thread::sleep(POLL_EVERY);
                 continue;
             }
         };
         eprintln!("home assistant: live updates connected");
-        let reader = BufReader::new(response.into_body().into_reader());
-        for line in reader.lines() {
-            let Ok(line) = line else { break };
+        reported = false;
+        let mut known = HashMap::new();
+        let (mut next_id, mut waiting_for_pong) = (2u64, false);
+        let reason = loop {
             if !current() {
+                let _ = socket.close(None);
                 return;
             }
-            let Some(data) = line.strip_prefix("data: ") else { continue };
-            // most events are about other entities; skip them without parsing
-            if !markers.iter().any(|m| data.contains(m.as_str())) {
-                continue;
-            }
-            let Ok(event) = serde_json::from_str::<Value>(data) else { continue };
-            if let Some(state) = event.pointer("/data/new_state").and_then(parse_state) {
-                if events.send(Event::HaState(state)).is_err() {
-                    return;
+            match read_json(&mut socket) {
+                Ok(Some(message)) => {
+                    waiting_for_pong = false;
+                    if message["type"] == "event" && message["id"] == 1 {
+                        for state in apply_update(&mut known, &message["event"]) {
+                            if events.send(Event::HaState(state)).is_err() {
+                                return;
+                            }
+                        }
+                    } else if message["type"] == "result" && message["success"] == false {
+                        break format!("subscription refused: {}", message["error"]["message"]);
+                    }
                 }
+                Ok(None) => {}
+                Err(e) if e == "timeout" && !waiting_for_pong => {
+                    waiting_for_pong = true;
+                    if let Err(e) = send_json(&mut socket, json!({ "id": next_id, "type": "ping" })) {
+                        break e;
+                    }
+                    next_id += 1;
+                }
+                Err(e) if e == "timeout" => break "no answer to a ping".into(),
+                Err(e) => break e,
             }
-        }
-        eprintln!("home assistant: live updates dropped; reconnecting");
-        last_poll = None;
+        };
+        eprintln!("home assistant: live updates dropped ({reason}); reconnecting");
         std::thread::sleep(Duration::from_secs(2));
     }
 }
@@ -271,5 +365,22 @@ mod tests {
         assert_eq!(service_for("scene.movie", "toggle"), ("scene".into(), "turn_on".into()));
         assert_eq!(service_for("script.bedtime", "turn_off"), ("script".into(), "turn_on".into()));
         assert_eq!(service_for("group.lights", "toggle"), ("homeassistant".into(), "toggle".into()));
+    }
+
+    #[test]
+    fn compact_updates_keep_state_and_attributes() {
+        let mut known = HashMap::new();
+        let added = apply_update(&mut known, &json!({"a": {"light.desk_lamp": {"s": "on", "a": {"brightness": 89, "friendly_name": "Desk Lamp"}, "c": "x", "lc": 1.0}}}));
+        assert_eq!((added[0].name.as_str(), added[0].brightness), ("Desk Lamp", Some(35)));
+        let dimmed = apply_update(&mut known, &json!({"c": {"light.desk_lamp": {"+": {"a": {"brightness": 255}, "c": "y"}}}}));
+        assert_eq!(dimmed[0].brightness, Some(100), "attributes change without a state change");
+        let off = apply_update(&mut known, &json!({"c": {"light.desk_lamp": {"+": {"s": "off"}, "-": {"a": ["brightness"]}}}}));
+        assert_eq!((off[0].state.as_str(), off[0].brightness, off[0].name.as_str()), ("off", Some(0), "Desk Lamp"));
+    }
+
+    #[test]
+    fn websocket_addresses() {
+        assert_eq!(websocket_url("http://192.0.2.1:8123"), "ws://192.0.2.1:8123/api/websocket");
+        assert_eq!(websocket_url("https://ha.example.org/"), "wss://ha.example.org/api/websocket");
     }
 }

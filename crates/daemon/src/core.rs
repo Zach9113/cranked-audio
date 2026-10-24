@@ -27,6 +27,8 @@ const RESULT_WITHIN: Duration = Duration::from_secs(10);
 const NO_MIXER_AFTER: Duration = Duration::from_secs(4);
 /// Knob positions are saved once they've been still this long.
 const SAVE_AFTER: Duration = Duration::from_secs(2);
+/// While the screen is off, touching a knob or button lights the LEDs for this long.
+const WAKE_FOR: Duration = Duration::from_secs(30);
 /// Knob and light this close together move 1:1 (SPEC.md section 7).
 const PICKUP_TOLERANCE: i32 = 3;
 /// A stream more than this many points off its channel gets put back (fast guard).
@@ -97,6 +99,8 @@ pub struct Core {
     saved: [Option<u8>; KNOBS],
     restored: bool,
     moved_at: Option<Instant>,
+    screen_off: bool,
+    touched_at: Option<Instant>,
     pub verbose: bool,
 }
 
@@ -137,6 +141,8 @@ impl Core {
             saved,
             restored: false,
             moved_at: None,
+            screen_off: false,
+            touched_at: None,
             verbose: false,
         };
         core.update_holds();
@@ -294,7 +300,7 @@ impl Core {
             APPLY_EVERY
         } else if self.led_waiting {
             LED_EVERY
-        } else if self.mixer_connected {
+        } else if self.mixer_connected && !(self.screen_off && self.touched_at.is_none_or(|t| t.elapsed() >= WAKE_FOR)) {
             LED_REFRESH
         } else {
             Duration::from_secs(1)
@@ -314,6 +320,12 @@ impl Core {
             Event::MixerLost => {
                 self.mixer_connected = false;
                 self.sync = None;
+            }
+            Event::ScreenOff(off) => {
+                self.screen_off = off;
+                if self.verbose {
+                    eprintln!("screen {}", if off { "off: LEDs dark" } else { "on" });
+                }
             }
             Event::Bytes(bytes) => {
                 for input in self.mixer.push(&bytes) {
@@ -383,7 +395,15 @@ impl Core {
         out
     }
 
+    /// LEDs stay dark while the screen is off, unless the mixer was just touched.
+    fn leds_dark(&self, now: Instant) -> bool {
+        self.screen_off && !self.touched_at.is_some_and(|t| now.saturating_duration_since(t) < WAKE_FOR)
+    }
+
     fn mixer_input(&mut self, input: Input, now: Instant, out: &mut Vec<Out>) {
+        if self.sync.is_none() {
+            self.touched_at = Some(now);
+        }
         let Input::Knob { channel, raw } = input else {
             return self.button_input(input, now, out);
         };
@@ -610,6 +630,17 @@ impl Core {
     fn leds(&mut self, now: Instant) -> Option<Out> {
         if !self.mixer_connected || self.sync.is_some() {
             return None;
+        }
+        if self.leds_dark(now) {
+            // the board blanks its LEDs by itself shortly after the last frame; one dark frame makes it immediate
+            let dark = led_frame(&[[(0, 0, 0); cranked_protocol::LEDS_PER_KNOB]; KNOBS]);
+            self.led_waiting = false;
+            if self.last_frame == Some(dark) {
+                return None;
+            }
+            self.last_frame = Some(dark);
+            self.last_led_send = Some(now);
+            return Some(Out::Leds(dark));
         }
         let looks: [KnobLook; KNOBS] = std::array::from_fn(|channel| {
             let config = &self.channels()[channel];
@@ -1183,5 +1214,26 @@ mod tests {
         });
         assert_eq!(saved(&core.tick(Instant::now())), None, "not while moving");
         assert_eq!(saved(&core.tick(Instant::now() + SAVE_AFTER)), Some(Some(66)));
+    }
+
+    #[test]
+    fn leds_go_dark_with_the_screen_and_wake_on_touch() {
+        let start = Instant::now();
+        let mut core = synced(start);
+        let frames = |out: &[Out]| out.iter().filter_map(|o| match o { Out::Leds(f) => Some(*f), _ => None }).collect::<Vec<_>>();
+        let at = start + Duration::from_secs(1);
+        core.handle(Event::ScreenOff(true), at);
+        let dark = frames(&core.tick(at));
+        assert_eq!(dark.len(), 1);
+        assert!(dark[0][2..47].iter().all(|b| *b == 0), "one all-dark frame");
+        assert!(frames(&core.tick(at + Duration::from_secs(1))).is_empty(), "then nothing: no refresh while dark");
+        assert_eq!(core.next_wake(), Duration::from_secs(1), "no 4-a-second wakeups overnight");
+        let touch = at + Duration::from_secs(2);
+        core.handle(packets(&[(0, 60)]), touch);
+        let lit = frames(&core.tick(touch));
+        assert!(lit.len() == 1 && lit[0][2..47].iter().any(|b| *b != 0), "touching the mixer lights it");
+        assert_eq!(frames(&core.tick(touch + WAKE_FOR)).len(), 1, "dark again after a while");
+        core.handle(Event::ScreenOff(false), touch + WAKE_FOR);
+        assert!(frames(&core.tick(touch + WAKE_FOR + Duration::from_millis(300)))[0][2..47].iter().any(|b| *b != 0));
     }
 }

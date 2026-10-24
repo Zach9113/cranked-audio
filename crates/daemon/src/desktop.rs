@@ -1,6 +1,7 @@
 //! Session D-Bus: media players (MPRIS) and KDE's on-screen popups.
 
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
+use std::time::Duration;
 
 use zbus::blocking::Connection;
 use zbus::zvariant::OwnedValue;
@@ -118,6 +119,58 @@ pub fn run(commands: Receiver<Command>) {
     }
 }
 
+/// How often the screen watcher looks (two tiny reads: one D-Bus call, one file per monitor).
+const SCREEN_EVERY: Duration = Duration::from_secs(2);
+
+/// Every connected monitor is powered down (`dpms` lines from /sys/class/drm/*/), or there are none.
+pub fn monitors_asleep(connectors: &[(String, String)]) -> bool {
+    let connected: Vec<&String> = connectors.iter().filter(|(status, _)| status == "connected").map(|(_, dpms)| dpms).collect();
+    !connected.is_empty() && connected.iter().all(|dpms| dpms.as_str() != "On")
+}
+
+fn read_connectors() -> Vec<(String, String)> {
+    let Ok(entries) = std::fs::read_dir("/sys/class/drm") else { return Vec::new() };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let dir = e.path();
+            let status = std::fs::read_to_string(dir.join("status")).ok()?;
+            let dpms = std::fs::read_to_string(dir.join("dpms")).ok()?;
+            Some((status.trim().to_string(), dpms.trim().to_string()))
+        })
+        .collect()
+}
+
+fn screen_locked(bus: &Connection) -> Option<bool> {
+    let reply = bus
+        .call_method(
+            Some("org.freedesktop.ScreenSaver"),
+            "/org/freedesktop/ScreenSaver",
+            Some("org.freedesktop.ScreenSaver"),
+            "GetActive",
+            &(),
+        )
+        .ok()?;
+    reply.body().deserialize().ok()
+}
+
+/// Reports `Event::ScreenOff(true)` while the screen is locked or all monitors sleep, `false` when it's back.
+pub fn watch_screen(events: Sender<crate::Event>) {
+    let bus = Connection::session().ok();
+    let mut last = None;
+    loop {
+        let locked = bus.as_ref().and_then(screen_locked).unwrap_or(false);
+        let off = locked || monitors_asleep(&read_connectors());
+        if last != Some(off) {
+            last = Some(off);
+            if events.send(crate::Event::ScreenOff(off)).is_err() {
+                return;
+            }
+        }
+        std::thread::sleep(SCREEN_EVERY);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,5 +191,13 @@ mod tests {
         let status = |n: &str| Some(if n.ends_with("spotify") { "Playing" } else { "Paused" }.to_string());
         assert_eq!(pick_player(&all, status).as_deref(), Some("org.mpris.MediaPlayer2.spotify"));
         assert_eq!(pick_player(&names(&["org.kde.kwin"]), |_| None), None);
+    }
+
+    #[test]
+    fn monitors_asleep_only_when_every_connected_one_is_off() {
+        let c = |status: &str, dpms: &str| (status.to_string(), dpms.to_string());
+        assert!(!monitors_asleep(&[c("connected", "On"), c("connected", "Off")]));
+        assert!(monitors_asleep(&[c("connected", "Off"), c("connected", "Standby"), c("disconnected", "On")]));
+        assert!(!monitors_asleep(&[c("disconnected", "Off")]), "no monitors known: don't guess");
     }
 }

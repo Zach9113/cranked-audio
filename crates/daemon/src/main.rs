@@ -38,6 +38,8 @@ pub enum Event {
     OutputSwitched(Option<String>),
     HaState(ha::EntityState),
     HaFailed,
+    /// The screen is locked or every monitor sleeps (true), or it's back (false).
+    ScreenOff(bool),
     HaEntities(Vec<cranked_ipc::Entity>),
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
@@ -123,6 +125,10 @@ fn main() {
     };
     let mut ha_calls = start_ha(&config);
     std::thread::Builder::new().name("desktop".into()).spawn(move || desktop::run(desktop_inbox)).unwrap();
+    {
+        let events = events.clone();
+        std::thread::Builder::new().name("screen".into()).spawn(move || desktop::watch_screen(events)).unwrap();
+    }
     {
         let events = events.clone();
         std::thread::Builder::new().name("audio".into()).spawn(move || audio::run(audio_inbox, events)).unwrap();
