@@ -6,22 +6,37 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serialport::TTYPort;
+use serialport::{SerialPortType, TTYPort};
 
 use crate::Event;
 
 const BY_ID: &str = "/dev/serial/by-id";
-const NAME_PREFIX: &str = "usb-1a86_USB_Single_Serial_";
+const NAME_PREFIX: &str = "usb-1a86_USB_";
+const WCH_VID: u16 = 0x1a86;
 
 pub fn find_port() -> Option<PathBuf> {
-    let mut found: Vec<PathBuf> = std::fs::read_dir(BY_ID)
-        .ok()?
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_name().to_string_lossy().starts_with(NAME_PREFIX))
-        .map(|entry| entry.path())
-        .collect();
-    found.sort();
-    found.into_iter().next()
+    if let Ok(entries) = std::fs::read_dir(BY_ID) {
+        let mut found: Vec<PathBuf> = entries
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(NAME_PREFIX))
+            .map(|entry| entry.path())
+            .collect();
+        found.sort();
+        if let Some(port) = found.into_iter().next() {
+            return Some(port);
+        }
+    }
+    // fallback for environments without /dev/serial/by-id: match QinHeng (WCH) USB vendor ID
+    if let Ok(ports) = serialport::available_ports() {
+        for port in ports {
+            if let SerialPortType::UsbPort(info) = port.port_type {
+                if info.vid == WCH_VID {
+                    return Some(PathBuf::from(port.port_name));
+                }
+            }
+        }
+    }
+    None
 }
 
 fn open(path: &Path) -> serialport::Result<TTYPort> {
@@ -68,8 +83,15 @@ pub fn run(events: Sender<Event>, writer: Writer) {
         let mut port = match open(&path) {
             Ok(port) => port,
             Err(e) => {
-                // most likely another program has it; don't keep resetting the board by retrying fast
-                eprintln!("mixer: can't open {}: {e}; trying again in 30 s", path.display());
+                if matches!(e.kind(), serialport::ErrorKind::Io(ErrorKind::PermissionDenied)) {
+                    eprintln!(
+                        "mixer: permission denied on {}. Add your user to group 'uucp' (Arch) or 'dialout' (Ubuntu/Debian/Fedora)",
+                        path.display()
+                    );
+                } else {
+                    // most likely another program has it; don't keep resetting the board by retrying fast
+                    eprintln!("mixer: can't open {}: {e}; trying again in 30 s", path.display());
+                }
                 std::thread::sleep(Duration::from_secs(30));
                 continue;
             }

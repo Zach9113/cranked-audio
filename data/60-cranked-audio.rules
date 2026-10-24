@@ -1,0 +1,2 @@
+# Cranked Audio: grant access to 5-knob USB mixer (CH343/CH340) for active desktop users
+KERNEL=="ttyACM[0-9]*|ttyUSB[0-9]*", SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", TAG+="uaccess"

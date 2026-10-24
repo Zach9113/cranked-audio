@@ -5,9 +5,9 @@ Numbers marked (measured) come from probing the real mixer or the live system in
 
 ## 1. Mixer hardware
 
-- USB serial (CH343 chip, shows up as `/dev/serial/by-id/usb-1a86_USB_Single_Serial_<serial>-if00`), 115200 baud.
-  Find it by that by-id pattern; `ttyACMn` numbering is unreliable because monitors with USB hubs also create
-  ttyACM devices. Open it exclusively.
+- USB serial (CH343 chip, shows up as `/dev/serial/by-id/usb-1a86_USB_*` or USB vendor `1a86`), 115200 baud.
+  Find it by that by-id pattern or vendor ID; `ttyACMn` numbering is unreliable because monitors with USB hubs
+  also create ttyACM devices. Open it exclusively.
 - Opening the port resets the board (measured). For about 3 s after opening, the board reports every knob ramping
   from 0 up to its real position, then it only reports **changes**.
 - Incoming packets all start with `FF FE`, then a type byte:
@@ -60,8 +60,9 @@ Numbers marked (measured) come from probing the real mixer or the live system in
 
 ## 5. Feedback
 
-- KDE on-screen volume popup when a knob turns (channel or playing app name + level); a text popup for button
-  actions (muted/unmuted, output name, profile name). Optional.
+- On-screen volume popup when a knob turns (channel or playing app name + level); a text popup for button
+  actions (muted/unmuted, output name, profile name). Uses KDE's OSD when on Plasma, falls back to standard
+  freedesktop notifications on GNOME, Sway, Hyprland, etc. Optional.
 - LEDs per knob: fill from the left with the active colour by level, the rest in the background colour. The edge
   LED's mix follows an S-curve (eases in/out, exactly 50/50 in the middle), so 50% shows colour / even mix /
   background. The shown level glides to a new value (~70 ms time constant) instead of stepping. Muted channel = muted colour. Global brightness. Dim to 25% when the

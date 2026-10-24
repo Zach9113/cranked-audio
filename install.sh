@@ -17,6 +17,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   systemctl --user disable --now "$service" 2>/dev/null || true
   rm -f "$bin/cranked-audiod" "$bin/cranked-audio" "$units/$service" \
     "$share/applications/$app.desktop" "$share/icons/hicolor/scalable/apps/$app.svg"
+  [ -w /etc/udev/rules.d/60-cranked-audio.rules ] && rm -f /etc/udev/rules.d/60-cranked-audio.rules 2>/dev/null || true
   systemctl --user daemon-reload
   echo "Removed. Your settings are still in ~/.config/cranked-audio."
   exit 0
@@ -25,6 +26,11 @@ fi
 (cd "$root" && RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=. --remap-path-prefix=$HOME=~" cargo build --release --locked)
 
 install -d "$bin" "$share/applications" "$share/icons/hicolor/scalable/apps" "$units"
+# udev rule for mixer permissions without requiring group changes (installed if writable)
+if [ -w /etc/udev/rules.d ]; then
+  install -m 0644 "$root/data/60-cranked-audio.rules" /etc/udev/rules.d/60-cranked-audio.rules
+  command -v udevadm >/dev/null && udevadm control --reload 2>/dev/null || true
+fi
 # replace the binaries without disturbing a running copy (it keeps its old file until it restarts)
 install -m 0755 "$root/target/release/cranked-audiod" "$bin/cranked-audiod.new" && mv -f "$bin/cranked-audiod.new" "$bin/cranked-audiod"
 install -m 0755 "$root/target/release/cranked-audio" "$bin/cranked-audio.new" && mv -f "$bin/cranked-audio.new" "$bin/cranked-audio"

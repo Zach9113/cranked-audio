@@ -1,10 +1,11 @@
 //! Session D-Bus: media players (MPRIS) and KDE's on-screen popups.
 
+use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
 use zbus::blocking::Connection;
-use zbus::zvariant::OwnedValue;
+use zbus::zvariant::{OwnedValue, Value};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaKey {
@@ -88,13 +89,40 @@ where
     Ok(())
 }
 
+/// Fallback for non-KDE environments (GNOME, Sway, Hyprland, XFCE): standard freedesktop notifications.
+fn notify(bus: &Connection, icon: &str, summary: &str, body: &str, value: Option<i32>) -> zbus::Result<()> {
+    let mut hints = HashMap::<&str, Value>::new();
+    hints.insert("transient", Value::from(true));
+    if let Some(val) = value {
+        hints.insert("value", Value::from(val));
+        hints.insert("x-canonical-private-synchronous", Value::from("volume"));
+    }
+    let actions: &[&str] = &[];
+    bus.call_method(
+        Some("org.freedesktop.Notifications"),
+        "/org/freedesktop/Notifications",
+        Some("org.freedesktop.Notifications"),
+        "Notify",
+        &("Cranked Audio", 0u32, icon, summary, body, actions, hints, 1000i32),
+    )?;
+    Ok(())
+}
+
 fn run_one(bus: &Connection, command: Command) -> zbus::Result<()> {
     match command {
         Command::Media(key) => media(bus, key),
         Command::Volume { percent, name } => {
-            osd(bus, "mediaPlayerVolumeChanged", &(i32::from(percent), name.as_str(), "audio-volume-high"))
+            if osd(bus, "mediaPlayerVolumeChanged", &(i32::from(percent), name.as_str(), "audio-volume-high")).is_err() {
+                notify(bus, "audio-volume-high", &format!("{name} {percent}%"), "", Some(i32::from(percent)))?;
+            }
+            Ok(())
         }
-        Command::Text { icon, text } => osd(bus, "showText", &(icon.as_str(), text.as_str())),
+        Command::Text { icon, text } => {
+            if osd(bus, "showText", &(icon.as_str(), text.as_str())).is_err() {
+                notify(bus, &icon, &text, "", None)?;
+            }
+            Ok(())
+        }
     }
 }
 
