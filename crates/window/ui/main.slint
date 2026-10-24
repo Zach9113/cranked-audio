@@ -1,5 +1,5 @@
 import { Button } from "std-widgets.slint";
-import { KnobPage, ButtonPage, GeneralPage, Lists, KnobSettings, General } from "settings.slint";
+import { KnobPage, ButtonPage, GeneralPage, CalibrationPage, Lists, KnobSettings, General } from "settings.slint";
 export { Lists, KnobSettings, General }
 
 export struct KnobData {
@@ -253,6 +253,7 @@ export component MainWindow inherits Window {
     callback open-button(int);
     callback open-general();
     callback save();
+    callback back();
 
     VerticalLayout {
         padding: 18px;
@@ -262,12 +263,13 @@ export component MainWindow inherits Window {
             spacing: 14px;
             if root.page != 0: Button {
                 text: "‹ Back";
-                clicked => { root.page = 0; }
+                clicked => { root.back(); }
             }
             Text {
                 text: root.page == 0 ? "Cranked Audio"
                     : root.page == 1 ? (KnobSettings.name == "" ? "Knob " + (KnobSettings.index + 1) : KnobSettings.name)
                     : root.page == 2 ? "Button " + (KnobSettings.index + 1)
+                    : root.page == 4 ? "LED colours"
                     : "Settings";
                 font-size: 22px;
                 font-weight: 800;
@@ -321,5 +323,6 @@ export component MainWindow inherits Window {
         if root.page == 1: KnobPage { }
         if root.page == 2: ButtonPage { }
         if root.page == 3: GeneralPage { }
+        if root.page == 4: CalibrationPage { }
     }
 }

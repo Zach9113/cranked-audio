@@ -167,13 +167,20 @@ pub struct Leds {
     pub brightness: u8,
     /// Dim a knob to a quarter when none of its apps are playing.
     pub dim_idle: bool,
+    /// Per-channel (red, green, blue) correction for dimming, set with the LED calibration: an LED's three colours
+    /// don't dim evenly, so a dimmed colour drifts in tint unless each channel is corrected. 1.0 = no correction;
+    /// higher keeps that channel brighter when dimmed.
+    pub gamma: [f64; 3],
 }
 
 impl Default for Leds {
     fn default() -> Self {
-        Self { brightness: 80, dim_idle: true }
+        Self { brightness: 80, dim_idle: true, gamma: [1.0; 3] }
     }
 }
+
+/// Calibration sliders go this far either way.
+pub const GAMMA_RANGE: (f64, f64) = (0.4, 2.5);
 
 /// Off until `url` is set. The token is a long-lived access token, kept in its own file readable only by you.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

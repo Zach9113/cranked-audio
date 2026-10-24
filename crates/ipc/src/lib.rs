@@ -8,6 +8,7 @@
 //! - `config JSON`: save these [`settings::Config`] to config.toml and use them
 //! - `token TEXT`: save a new Home Assistant token (readable only by you) and reconnect
 //! - `profile NAME`: switch profile
+//! - `calibrate R G B`: show the LED calibration pattern with that per-channel correction; `calibrate off` ends it
 //! - `entities`: answered with [`ServerMessage::Entities`] (Home Assistant things buttons and knobs can use)
 
 use std::path::PathBuf;

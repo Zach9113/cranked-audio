@@ -222,6 +222,12 @@ fn main() {
                         }
                     }
                     "profile" => switch_to = Some(rest.to_string()),
+                    // `calibrate R G B` shows the LED calibration pattern with that correction; `calibrate off` ends it
+                    "calibrate" => {
+                        let values: Vec<f64> = rest.split_whitespace().filter_map(|v| v.parse().ok()).collect();
+                        let gamma = <[f64; 3]>::try_from(values).ok();
+                        core.calibrate(gamma, Instant::now());
+                    }
                     "check-update" => {
                         let tx = events.clone();
                         std::thread::Builder::new()

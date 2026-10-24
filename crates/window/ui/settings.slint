@@ -53,6 +53,12 @@ export global General {
     in-out property <bool> popups;
     in-out property <float> brightness;
     in-out property <bool> dim-idle;
+    // LED calibration: per-channel correction for dimming
+    in-out property <float> gamma-red: 1.0;
+    in-out property <float> gamma-green: 1.0;
+    in-out property <float> gamma-blue: 1.0;
+    callback gamma-changed();
+    callback open-calibration();
     in-out property <bool> auto-enabled;
     in-out property <[bool]> lower;
     in-out property <[bool]> triggers;
@@ -423,6 +429,10 @@ export component GeneralPage inherits ScrollView {
                     Label { text: round(General.brightness) + "%"; width: 44px; }
                 }
                 CheckBox { text: "Dim a knob's lights when nothing on it is playing"; checked <=> General.dim-idle; }
+                HorizontalLayout {
+                    alignment: start;
+                    Button { text: "Calibrate LED colours…"; clicked => { General.open-calibration(); } }
+                }
             }
         }
 
@@ -487,6 +497,58 @@ export component GeneralPage inherits ScrollView {
         HorizontalLayout {
             alignment: start;
             Button { text: "Open the settings file"; clicked => { General.edit-file(); } }
+        }
+    }
+}
+
+component GammaSlider inherits HorizontalLayout {
+    in property <string> label;
+    in property <color> tint;
+    in-out property <float> value;
+    callback changed();
+    spacing: 10px;
+    Rectangle {
+        width: 14px;
+        height: 14px;
+        y: (parent.height - self.height) / 2;
+        border-radius: 7px;
+        background: root.tint;
+    }
+    Label { text: root.label; width: 60px; }
+    Slider {
+        minimum: 0.4;
+        maximum: 2.5;
+        value <=> root.value;
+        changed => { root.changed(); }
+    }
+    Label { text: round(root.value * 100) / 100; width: 44px; }
+}
+
+export component CalibrationPage inherits VerticalLayout {
+    spacing: 14px;
+    alignment: start;
+    GroupBox {
+        title: "Make dimmed LEDs keep their colour";
+        VerticalLayout {
+            spacing: 10px;
+            Hint { text: "Look at the mixer: every knob now shows its colour three times. Full brightness on the left, dimmer in the middle, dimmest on the right."; }
+            Hint { text: "If the dimmer LEDs look like a different colour than the left one, move a slider. Too red? Lower Red. Missing some green? Raise Green. The mixer changes as you move them."; }
+            Hint { text: "When all three LEDs on every knob look like the same colour, press Save. Back leaves things as they were."; }
+            GammaSlider { label: "Red"; tint: #ff3b30; value <=> General.gamma-red; changed => { General.gamma-changed(); } }
+            GammaSlider { label: "Green"; tint: #22c55e; value <=> General.gamma-green; changed => { General.gamma-changed(); } }
+            GammaSlider { label: "Blue"; tint: #3b82f6; value <=> General.gamma-blue; changed => { General.gamma-changed(); } }
+            HorizontalLayout {
+                alignment: start;
+                Button {
+                    text: "Reset to no correction";
+                    clicked => {
+                        General.gamma-red = 1.0;
+                        General.gamma-green = 1.0;
+                        General.gamma-blue = 1.0;
+                        General.gamma-changed();
+                    }
+                }
+            }
         }
     }
 }

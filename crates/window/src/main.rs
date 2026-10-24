@@ -562,6 +562,42 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     general.on_edit_file(open_settings);
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
+        general.on_open_calibration(move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let gamma = link.config.as_ref().map_or([1.0; 3], |c| c.leds.gamma);
+            let general = w.global::<General>();
+            general.set_gamma_red(gamma[0] as f32);
+            general.set_gamma_green(gamma[1] as f32);
+            general.set_gamma_blue(gamma[2] as f32);
+            link.send(&format!("calibrate {} {} {}", gamma[0], gamma[1], gamma[2]));
+            w.set_page(4);
+        });
+    }
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        general.on_gamma_changed(move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let general = w.global::<General>();
+            link.send(&format!("calibrate {} {} {}", general.get_gamma_red(), general.get_gamma_green(), general.get_gamma_blue()));
+        });
+    }
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        window.on_back(move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            if w.get_page() == 4 {
+                // leave the pattern; nothing saved
+                link.send("calibrate off");
+                if load_general(&w, &link) {
+                    w.set_page(3);
+                    return;
+                }
+            }
+            w.set_page(0);
+        });
+    }
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_switch_profile(move |index| {
             let Ok(mut link) = link.lock() else { return };
             let Some(name) = link.config.as_ref().and_then(|c| c.profiles.get(index as usize)).map(|p| p.name.clone()) else {
@@ -701,6 +737,13 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                         store_knob(&w, channel);
                     }
                 }
+                4 => {
+                    let general = w.global::<General>();
+                    let (low, high) = cranked_ipc::settings::GAMMA_RANGE;
+                    config.leds.gamma = [general.get_gamma_red(), general.get_gamma_green(), general.get_gamma_blue()]
+                        .map(|g| (f64::from(g) * 100.0).round().clamp(low * 100.0, high * 100.0) / 100.0);
+                    link.send("calibrate off");
+                }
                 3 => {
                     store_general(&w, &mut config, profile);
                     let token = w.global::<General>().get_ha_token().trim().to_string();
@@ -759,7 +802,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = window.as_weak();
         std::thread::Builder::new().name("link".into()).spawn(move || run_link(link, weak)).unwrap();
     }
-    // for screenshots and tests: CRANKED_OPEN="knob 2" | "button 2" | "settings" opens that page once loaded
+    // for screenshots and tests: CRANKED_OPEN="knob 2" | "button 2" | "settings" | "leds" opens that page once loaded
     if let Ok(open) = std::env::var("CRANKED_OPEN") {
         let weak = window.as_weak();
         slint::Timer::single_shot(Duration::from_millis(1500), move || {
@@ -770,6 +813,7 @@ fn main() -> Result<(), slint::PlatformError> {
                 ("knob", Some(i)) => w.invoke_open_knob(i),
                 ("button", Some(i)) => w.invoke_open_button(i),
                 ("settings", _) => w.invoke_open_general(),
+                ("leds", _) => w.global::<General>().invoke_open_calibration(),
                 _ => {}
             }
         });

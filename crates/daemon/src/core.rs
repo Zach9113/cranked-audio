@@ -11,7 +11,7 @@ use crate::config::{parse_color, Action, AutoLower, Channel, Config, State};
 use crate::duck::Ducker;
 use crate::desktop::{Command as Desktop, MediaKey};
 use crate::ha::{Command as Ha, EntityState};
-use crate::leds::{colors, KnobLook};
+use crate::leds::{calibration, colors, KnobLook};
 use crate::matching::{channel_for, Stream};
 use crate::Event;
 
@@ -30,6 +30,8 @@ const RESULT_WITHIN: Duration = Duration::from_secs(10);
 const NO_MIXER_AFTER: Duration = Duration::from_secs(4);
 /// Knob positions are saved once they've been still this long.
 const SAVE_AFTER: Duration = Duration::from_secs(2);
+/// A calibration nobody touches for this long ends by itself (say the window was closed).
+const CALIBRATION_TIMEOUT: Duration = Duration::from_secs(180);
 /// How many seen app names to remember.
 const SEEN_APPS: usize = 200;
 /// While the screen is off, touching a knob or button lights the LEDs for this long.
@@ -112,6 +114,8 @@ pub struct Core {
     moved_at: Option<Instant>,
     screen_off: bool,
     touched_at: Option<Instant>,
+    /// LED calibration in progress: when it last changed, and the correction being tried.
+    calibrating: Option<(Instant, [f64; 3])>,
     pub verbose: bool,
 }
 
@@ -159,6 +163,7 @@ impl Core {
             moved_at: None,
             screen_off: false,
             touched_at: None,
+            calibrating: None,
             verbose: false,
         };
         core.update_holds();
@@ -446,9 +451,16 @@ impl Core {
         }
     }
 
+    /// Start or adjust (`Some`) or end (`None`) the LED calibration pattern, trying this per-channel correction.
+    pub fn calibrate(&mut self, gamma: Option<[f64; 3]>, now: Instant) {
+        let (low, high) = cranked_ipc::settings::GAMMA_RANGE;
+        self.calibrating = gamma.map(|g| (now, g.map(|c| c.clamp(low, high))));
+        self.last_frame = None;
+    }
+
     /// LEDs stay dark while the screen is off, unless the mixer was just touched.
     fn leds_dark(&self, now: Instant) -> bool {
-        self.screen_off && !self.touched_at.is_some_and(|t| now.saturating_duration_since(t) < WAKE_FOR)
+        self.calibrating.is_none() && self.screen_off && !self.touched_at.is_some_and(|t| now.saturating_duration_since(t) < WAKE_FOR)
     }
 
     fn mixer_input(&mut self, input: Input, now: Instant, out: &mut Vec<Out>) {
@@ -604,6 +616,9 @@ impl Core {
 
     pub fn tick(&mut self, now: Instant) -> Vec<Out> {
         let mut out = Vec::new();
+        if self.calibrating.is_some_and(|(at, _)| now.saturating_duration_since(at) >= CALIBRATION_TIMEOUT) {
+            self.calibrate(None, now);
+        }
         for gesture in self.buttons.tick(now) {
             self.gesture(gesture, now, &mut out);
         }
@@ -712,7 +727,13 @@ impl Core {
                 },
             }
         });
-        let frame = led_frame(&colors(&looks, self.config.leds.brightness, self.config.leds.dim_idle));
+        let gamma = self.calibrating.map_or(self.config.leds.gamma, |(_, gamma)| gamma);
+        let frame = if self.calibrating.is_some() {
+            let colours = std::array::from_fn(|k| looks[k].color);
+            led_frame(&calibration(&colours, self.config.leds.brightness, gamma))
+        } else {
+            led_frame(&colors(&looks, self.config.leds.brightness, self.config.leds.dim_idle, gamma))
+        };
         let since = self.last_led_send.map(|t| now.duration_since(t));
         if self.last_frame == Some(frame) && since.is_some_and(|s| s < LED_REFRESH) {
             self.led_waiting = false;
@@ -1352,5 +1373,24 @@ mod tests {
         core.handle(Event::StreamRemoved(3), start);
         assert_eq!(core.snapshot().known_apps, ["Firefox", "spotify"]);
         assert_eq!(core.state().apps, ["spotify", "Firefox"]);
+    }
+
+    #[test]
+    fn calibration_shows_each_colour_full_then_dimmed_and_ends_by_itself() {
+        let start = Instant::now();
+        let mut core = synced(start);
+        let frame = |out: &[Out]| out.iter().find_map(|o| match o { Out::Leds(f) => Some(*f), _ => None });
+        let at = start + Duration::from_secs(1);
+        core.calibrate(Some([1.0, 1.0, 1.0]), at);
+        let shown = frame(&core.tick(at)).expect("the pattern goes out right away");
+        // knob 1 (default colour #00C8FF at 80% brightness): full on the left, dimmer to the right
+        let (left, middle, right) = (shown[3], shown[6], shown[9]);
+        assert!(left > middle && middle > right, "{left} {middle} {right}");
+        core.calibrate(Some([1.0, 9.0, 1.0]), at);
+        let corrected = frame(&core.tick(at + Duration::from_millis(100))).unwrap();
+        assert!(corrected[6] > shown[6], "more green kept when dimmed");
+        assert!(core.calibrating.is_some());
+        core.tick(at + CALIBRATION_TIMEOUT);
+        assert!(core.calibrating.is_none(), "ends by itself");
     }
 }
