@@ -24,14 +24,19 @@ PlasmoidItem {
     property bool running: false
 
     readonly property var cfg: Plasmoid.configuration
-    // "Show the knobs right in the panel" (on by default): in a panel thick enough for them, the knobs replace the
-    // icon and size themselves to the panel's thickness; a thin panel (a taskbar) keeps the icon
+    // "Show the knobs right in the panel" (on by default): the knobs replace the icon and size themselves to the
+    // panel's thickness; in a thin panel they're bare dials (no text, buttons inside) so they stay usable
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
     readonly property real roomyPanel: Kirigami.Units.gridUnit * 3.5
     property real panelThickness: 0
     readonly property bool inPanel: cfg.showInPanel
         && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
-        && panelThickness >= roomyPanel
+    readonly property bool thinPanel: inPanel && panelThickness > 0 && panelThickness < roomyPanel
+    // what shows, after the thin-panel rules
+    readonly property bool showName: cfg.showName && !thinPanel
+    readonly property bool showSource: cfg.showSource && !thinPanel
+    readonly property bool showActionLabels: cfg.showActionLabels && !thinPanel
+    readonly property bool buttonsInDial: cfg.buttonsInDial || thinPanel
     // the knobs' size across the panel per unit, measured (it's proportional to the unit)
     property real acrossPerUnit: 0
     readonly property real unit: inPanel && panelThickness > 0 && acrossPerUnit > 0
@@ -285,12 +290,12 @@ PlasmoidItem {
                         index: modelData.index
                         unit: root.unit
                         theme: root.theme
-                        showName: root.cfg.showName
+                        showName: root.showName
                         showPercent: root.cfg.showPercent
-                        showSource: root.cfg.showSource
+                        showSource: root.showSource
                         showButton: root.cfg.showButton
-                        showActionLabels: root.cfg.showActionLabels
-                        buttonsInDial: root.cfg.buttonsInDial
+                        showActionLabels: root.showActionLabels
+                        buttonsInDial: root.buttonsInDial
                         onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onStep: delta => root.stepKnob(modelData.index, delta)
                         onPressButton: root.press(modelData.index)
@@ -314,9 +319,9 @@ PlasmoidItem {
                         index: modelData.index
                         unit: root.unit
                         theme: root.theme
-                        showName: root.cfg.showName
+                        showName: root.showName
                         showPercent: root.cfg.showPercent
-                        showSource: root.cfg.showSource
+                        showSource: root.showSource
                         showButton: root.cfg.showButton
                         onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onPressButton: root.press(modelData.index)
@@ -347,11 +352,11 @@ PlasmoidItem {
                             color: row.knob.muted ? row.knob.muted_color : row.knob.color
                         }
                         ColumnLayout {
-                            visible: root.cfg.showName || root.cfg.showSource
+                            visible: root.showName || root.showSource
                             Layout.preferredWidth: root.unit * 6
                             spacing: 0
                             PlasmaComponents.Label {
-                                visible: root.cfg.showName
+                                visible: root.showName
                                 text: row.knob.name
                                 color: root.theme.text
                                 font.weight: Font.Bold
@@ -360,7 +365,7 @@ PlasmoidItem {
                                 Layout.fillWidth: true
                             }
                             PlasmaComponents.Label {
-                                visible: root.cfg.showSource
+                                visible: root.showSource
                                 text: row.knob.muted ? "muted" : row.knob.lowered ? row.knob.source + " · lowered" : row.knob.source
                                 color: root.theme.subtle
                                 font.pixelSize: root.unit * 0.65

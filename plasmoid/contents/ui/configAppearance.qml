@@ -107,7 +107,7 @@ KCM.SimpleKCM {
         }
         QQC2.CheckBox { text: "Title and profile switcher"; checked: page.cfg_showHeader; onToggled: page.cfg_showHeader = checked }
         QQC2.CheckBox {
-            text: "In a panel tall enough for them: show the knobs, not an icon"
+            text: "In a panel: show the knobs, not an icon (a thin panel gets bare dials)"
             checked: page.cfg_showInPanel
             onToggled: page.cfg_showInPanel = checked
         }
