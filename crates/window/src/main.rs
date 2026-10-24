@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use cranked_ipc::settings::{Channel, Config, PopupStyle};
-use cranked_ipc::{Entity, Knob, ServerMessage, Snapshot};
+use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot};
 use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
@@ -520,9 +520,145 @@ fn send_config(link: &mut Link, config: Config) {
     }
 }
 
-fn show_device_choices(_window: &MainWindow, _choices: &cranked_ipc::DeviceChoices) {}
+thread_local! {
+    /// What Settings > Devices can add (from the service) and the MIDI control last learned.
+    static CHOICES: RefCell<DeviceChoices> = RefCell::new(DeviceChoices::default());
+    static LEARNED: RefCell<Option<LearnedControl>> = const { RefCell::new(None) };
+}
 
-fn show_learned(_window: &MainWindow, _learned: Option<cranked_ipc::LearnedControl>) {}
+fn show_device_choices(window: &MainWindow, choices: &DeviceChoices) {
+    let devices = window.global::<Devices>();
+    devices.set_keyboards(strings(choices.keyboards.iter().map(String::as_str)));
+    devices.set_serial_ports(strings(choices.serial.iter().map(String::as_str)));
+    let clamp = |index: i32, len: usize| index.clamp(0, len.saturating_sub(1) as i32);
+    devices.set_keyboard_index(clamp(devices.get_keyboard_index(), choices.keyboards.len()));
+    devices.set_deej_port(clamp(devices.get_deej_port(), choices.serial.len()));
+    if !devices.get_learning() && !devices.get_learned() {
+        devices.set_learn_status(
+            match choices.midi.len() {
+                0 => "No MIDI controllers found. Plug one in, then click Look for devices again.".to_string(),
+                _ => format!("Found: {}", choices.midi.join(", ")),
+            }
+            .into(),
+        );
+    }
+    CHOICES.with(|c| *c.borrow_mut() = choices.clone());
+}
+
+fn show_learned(window: &MainWindow, learned: Option<LearnedControl>) {
+    let devices = window.global::<Devices>();
+    devices.set_learning(false);
+    devices.set_learned(learned.is_some());
+    devices.set_learn_status(
+        match &learned {
+            Some(l) => format!("Heard {} {} on channel {} from {}", l.kind.to_uppercase(), l.number, l.channel, l.port),
+            None => "Nothing moved. Click Learn and try again.".to_string(),
+        }
+        .into(),
+    );
+    LEARNED.with(|l| *l.borrow_mut() = learned);
+}
+
+/// Settings > Devices: the configured devices, one line each.
+fn show_devices(window: &MainWindow, link: &Link) {
+    let Some(config) = &link.config else { return };
+    let names: Vec<String> = config
+        .profiles
+        .get(active_profile(link))
+        .map_or_else(Vec::new, |p| p.channels.iter().map(|c| c.name.clone()).collect());
+    let knob = |k: usize| names.get(k.wrapping_sub(1)).cloned().unwrap_or_else(|| format!("knob {k}"));
+    let lines: Vec<String> = config.devices.iter().map(|d| editor::device_summary(d, &knob)).collect();
+    window.global::<Devices>().set_summaries(strings(lines.iter().map(String::as_str)));
+}
+
+/// Settings > Devices: adding and removing keyboard knobs, MIDI controls and deej boxes.
+fn devices_page(window: &MainWindow, link: &Arc<Mutex<Link>>) {
+    use cranked_ipc::settings::{Device, MidiControl};
+    let page = window.global::<Devices>();
+    // runs `change` on a copy of the config, then saves it and redraws the list
+    let edit = |change: fn(&MainWindow, &mut Vec<Device>, i32) -> bool| {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        move |arg: i32| {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let Some(mut config) = link.config.clone() else { return };
+            if change(&w, &mut config.devices, arg) {
+                send_config(&mut link, config);
+                show_devices(&w, &link);
+            }
+        }
+    };
+    page.on_remove(edit(|_, devices, index| {
+        let index = index as usize;
+        (index < devices.len()).then(|| devices.remove(index)).is_some()
+    }));
+    let add_keyboard = edit(|w, devices, _| {
+        let page = w.global::<Devices>();
+        let Some(name) = CHOICES.with(|c| c.borrow().keyboards.get(page.get_keyboard_index().max(0) as usize).cloned())
+        else {
+            return false;
+        };
+        devices.push(Device::KeyboardKnob {
+            name,
+            knob: page.get_keyboard_knob().max(0) as usize + 1,
+            step: page.get_keyboard_step().clamp(1, 20) as u8,
+            grab: page.get_keyboard_grab(),
+        });
+        true
+    });
+    page.on_add_keyboard(move || add_keyboard(0));
+    let add_midi = edit(|w, devices, _| {
+        let page = w.global::<Devices>();
+        let Some(learned) = LEARNED.with(|l| l.borrow_mut().take()) else { return false };
+        let button = page.get_midi_button();
+        editor::add_midi_control(
+            devices,
+            &learned.port,
+            MidiControl {
+                channel: learned.channel,
+                kind: learned.kind,
+                number: learned.number,
+                knob: page.get_midi_knob().max(0) as usize + 1,
+                button,
+                relative: page.get_midi_relative() && !button,
+            },
+        );
+        page.set_learned(false);
+        page.set_learn_status("Added. Click Learn to map another control.".into());
+        true
+    });
+    page.on_add_midi(move || add_midi(0));
+    let add_deej = edit(|w, devices, _| {
+        let page = w.global::<Devices>();
+        let Some(port) = CHOICES.with(|c| c.borrow().serial.get(page.get_deej_port().max(0) as usize).cloned()) else {
+            return false;
+        };
+        let first = page.get_deej_first().max(0) as usize + 1;
+        let count = page.get_deej_count().clamp(1, 16) as usize;
+        let knobs = (first..first + count).map(|k| k.min(cranked_ipc::settings::MAX_CONTROLS)).collect();
+        devices.push(Device::Deej { port, baud: 9600, knobs, invert: page.get_deej_invert() });
+        true
+    });
+    page.on_add_deej(move || add_deej(0));
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        page.on_learn(move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let page = w.global::<Devices>();
+            page.set_learning(true);
+            page.set_learned(false);
+            page.set_learn_status("Move a knob or fader, or press a button, on your controller…".into());
+            link.send("learn-midi");
+        });
+    }
+    {
+        let link = Arc::clone(link);
+        page.on_refresh(move || {
+            if let Ok(mut link) = link.lock() {
+                link.send("list-devices");
+            }
+        });
+    }
+}
 
 fn sibling(name: &str) -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).unwrap_or_else(|| name.into())
@@ -841,6 +977,16 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     }
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
+        general.on_open_devices(move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            show_devices(&w, &link);
+            link.send("list-devices");
+            w.set_page(5);
+        });
+    }
+    devices_page(window, link);
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_open_calibration(move || {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
             let gamma = link.config.as_ref().map_or([1.0; 3], |c| c.leds.gamma);
@@ -884,6 +1030,11 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                     w.set_page(3);
                     return;
                 }
+            }
+            if w.get_page() == 5 {
+                // devices save as they change; back to Settings with its unsaved edits as they were
+                w.set_page(3);
+                return;
             }
             w.set_page(0);
         });
@@ -1112,7 +1263,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let weak = window.as_weak();
         std::thread::Builder::new().name("link".into()).spawn(move || run_link(link, weak)).unwrap();
     }
-    // for screenshots and tests: CRANKED_OPEN="knob 2" | "button 2" | "settings" | "leds" opens that page once loaded
+    // for screenshots and tests: CRANKED_OPEN="knob 2" | "button 2" | "settings" | "leds" | "devices" opens that page once loaded
     if let Ok(open) = std::env::var("CRANKED_OPEN") {
         let weak = window.as_weak();
         slint::Timer::single_shot(Duration::from_millis(1500), move || {
@@ -1129,6 +1280,12 @@ fn main() -> Result<(), slint::PlatformError> {
                 ("button", Some(i)) => w.invoke_open_button(i),
                 ("settings", _) => w.invoke_open_general(),
                 ("leds", _) => w.global::<General>().invoke_open_calibration(),
+                ("devices", _) => {
+                    w.global::<General>().invoke_open_devices();
+                    if open.ends_with("learn") {
+                        w.global::<Devices>().invoke_learn();
+                    }
+                }
                 _ => {}
             }
         });

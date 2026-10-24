@@ -177,6 +177,66 @@ pub fn remove_knob(config: &mut cranked_ipc::settings::Config, profile: usize, i
     true
 }
 
+/// One line describing a configured device, for Settings > Devices. `knob` names knobs (counting from 1).
+pub fn device_summary(device: &cranked_ipc::settings::Device, knob: &dyn Fn(usize) -> String) -> String {
+    use cranked_ipc::settings::Device;
+    match device {
+        Device::KeyboardKnob { name, knob: k, step, grab } => format!(
+            "Keyboard knob \u{2014} {name}: turns {} by {step}%{}",
+            knob(*k),
+            if *grab { "" } else { " (the system volume moves too)" }
+        ),
+        Device::Midi { name, controls } => {
+            let parts: Vec<String> = controls
+                .iter()
+                .map(|c| {
+                    let what = if c.button {
+                        "button"
+                    } else if c.relative {
+                        "endless knob"
+                    } else {
+                        "knob"
+                    };
+                    format!("{} {} ch{} \u{2192} {}'s {what}", c.kind.to_uppercase(), c.number, c.channel, knob(c.knob))
+                })
+                .collect();
+            let list = if parts.is_empty() { "nothing mapped yet".to_string() } else { parts.join(", ") };
+            format!("MIDI \u{2014} {name}: {list}")
+        }
+        Device::Deej { port, knobs, invert, .. } => {
+            let list: Vec<String> = knobs.iter().map(|k| knob(*k)).collect();
+            format!(
+                "deej box \u{2014} {port}: sliders turn {}{}",
+                list.join(", "),
+                if *invert { " (reversed)" } else { "" }
+            )
+        }
+    }
+}
+
+/// Adds a learned MIDI control to the device for its port (making the device if it's new). A control that was
+/// already mapped is replaced, so learning the same fader again just moves it.
+pub fn add_midi_control(
+    devices: &mut Vec<cranked_ipc::settings::Device>,
+    port: &str,
+    control: cranked_ipc::settings::MidiControl,
+) {
+    use cranked_ipc::settings::Device;
+    let same = |c: &cranked_ipc::settings::MidiControl| {
+        c.channel == control.channel && c.kind == control.kind && c.number == control.number
+    };
+    for device in devices.iter_mut() {
+        if let Device::Midi { name, controls } = device {
+            if name == port {
+                controls.retain(|c| !same(c));
+                controls.push(control);
+                return;
+            }
+        }
+    }
+    devices.push(Device::Midi { name: port.to_string(), controls: vec![control] });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +311,24 @@ mod tests {
             add_knob(&mut config.profiles[0]);
         }
         assert_eq!(config.profiles[0].channels.len(), cranked_ipc::settings::MAX_CONTROLS);
+    }
+
+    #[test]
+    fn learning_a_midi_control_twice_moves_it() {
+        use cranked_ipc::settings::{Device, MidiControl};
+        let control =
+            |number, knob| MidiControl { channel: 1, kind: "cc".into(), number, knob, button: false, relative: false };
+        let mut devices = Vec::new();
+        add_midi_control(&mut devices, "nanoKONTROL2", control(0, 1));
+        add_midi_control(&mut devices, "nanoKONTROL2", control(1, 2));
+        add_midi_control(&mut devices, "nanoKONTROL2", control(0, 3));
+        add_midi_control(&mut devices, "Other", control(0, 1));
+        assert_eq!(devices.len(), 2);
+        let Device::Midi { controls, .. } = &devices[0] else { panic!() };
+        assert_eq!(controls.iter().map(|c| (c.number, c.knob)).collect::<Vec<_>>(), [(1, 2), (0, 3)]);
+        let name = |k: usize| format!("K{k}");
+        assert_eq!(device_summary(&devices[1], &name), "MIDI \u{2014} Other: CC 0 ch1 \u{2192} K1's knob");
+        let deej = Device::Deej { port: "/dev/ttyACM0".into(), baud: 9600, knobs: vec![1, 2], invert: true };
+        assert_eq!(device_summary(&deej, &name), "deej box \u{2014} /dev/ttyACM0: sliders turn K1, K2 (reversed)");
     }
 }

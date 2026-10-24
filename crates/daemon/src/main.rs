@@ -239,7 +239,7 @@ fn main() {
                     "profile" => switch_to = Some(rest.to_string()),
                     "list-devices" => clients.send(&ServerMessage::Devices(cranked_ipc::DeviceChoices {
                         keyboards: devices::keyboard_knobs(),
-                        midi: devices::midi_ports(),
+                        midi: devices::midi_controllers(),
                         serial: devices::serial_ports(),
                     })),
                     "learn-midi" => {

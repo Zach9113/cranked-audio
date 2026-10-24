@@ -112,6 +112,7 @@ export global General {
     callback look-changed();
     callback toggle-shown(int);
     callback add-knob();
+    callback open-devices();
     in property <[string]> theme-names;
     callback theme-changed(int);
     in-out property <float> brightness;
@@ -506,6 +507,10 @@ export component GeneralPage inherits ScrollView {
                     }
                 }
                 Hint { text: "To remove a knob, right-click it and choose Remove this knob."; }
+                HorizontalLayout {
+                    alignment: start;
+                    Button { text: "Devices… (keyboard knob, MIDI, deej)"; clicked => { General.open-devices(); } }
+                }
             }
         }
 
@@ -717,6 +722,155 @@ export component CalibrationPage inherits VerticalLayout {
                     }
                 }
             }
+        }
+    }
+}
+
+// Settings > Devices: keyboard knobs, MIDI controllers and deej boxes.
+export global Devices {
+    // one line per configured device
+    in property <[string]> summaries;
+    // what can be added (from the service)
+    in property <[string]> keyboards;
+    in property <[string]> serial-ports;
+    // MIDI learn: what the user should do, or what was heard
+    in property <string> learn-status;
+    in property <bool> learned;
+    in property <bool> learning;
+    in-out property <int> keyboard-index;
+    in-out property <int> keyboard-knob;
+    in-out property <int> keyboard-step: 2;
+    in-out property <bool> keyboard-grab: true;
+    in-out property <int> midi-knob;
+    in-out property <bool> midi-button;
+    in-out property <bool> midi-relative;
+    in-out property <int> deej-port;
+    in-out property <int> deej-first;
+    in-out property <int> deej-count: 3;
+    in-out property <bool> deej-invert;
+    callback remove(int);
+    callback add-keyboard();
+    callback learn();
+    callback add-midi();
+    callback add-deej();
+    callback refresh();
+}
+
+export component DevicesPage inherits ScrollView {
+    VerticalLayout {
+        padding: 4px;
+        spacing: 14px;
+        alignment: start;
+
+        GroupBox {
+            title: "Your devices";
+            VerticalLayout {
+                spacing: 8px;
+                for summary[i] in Devices.summaries: HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: summary; horizontal-stretch: 1; wrap: word-wrap; }
+                    Button { text: "Remove"; clicked => { Devices.remove(i); } }
+                }
+                if Devices.summaries.length == 0: Hint { text: "None yet. The mixer and the on-screen knobs always work; add more controllers below."; }
+            }
+        }
+
+        GroupBox {
+            title: "MIDI controller";
+            VerticalLayout {
+                spacing: 8px;
+                Hint { text: "Click Learn, then move a knob or fader (or press a button or pad) on your controller."; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button {
+                        text: Devices.learning ? "Listening…" : "Learn";
+                        enabled: !Devices.learning;
+                        clicked => { Devices.learn(); }
+                    }
+                    Label { text: Devices.learn-status; horizontal-stretch: 1; wrap: word-wrap; }
+                }
+                if Devices.learned: VerticalLayout {
+                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Label { text: "Use it for"; width: 110px; }
+                        ComboBox { model: Lists.knob-names; current-index <=> Devices.midi-knob; }
+                    }
+                    CheckBox { text: "It's a button (press = that knob's button)"; checked <=> Devices.midi-button; }
+                    CheckBox { text: "It's an endless knob (it sends turns, not a position)"; checked <=> Devices.midi-relative; enabled: !Devices.midi-button; }
+                    HorizontalLayout {
+                        alignment: start;
+                        Button { text: "Add this control"; clicked => { Devices.add-midi(); } }
+                    }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Keyboard knob";
+            VerticalLayout {
+                spacing: 8px;
+                Hint { text: "A volume knob on a keyboard (or anything with volume keys): turning it turns a knob, pressing it is that knob's button."; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Keyboard"; width: 110px; }
+                    ComboBox { model: Devices.keyboards; current-index <=> Devices.keyboard-index; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Turns"; width: 110px; }
+                    ComboBox { model: Lists.knob-names; current-index <=> Devices.keyboard-knob; }
+                    Label { text: "by"; }
+                    SpinBox { minimum: 1; maximum: 20; value <=> Devices.keyboard-step; }
+                    Label { text: "% a click"; }
+                }
+                CheckBox {
+                    text: "Take it over (so it doesn't also change the system volume)";
+                    checked <=> Devices.keyboard-grab;
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    Button {
+                        text: "Add keyboard knob";
+                        enabled: Devices.keyboards.length > 0;
+                        clicked => { Devices.add-keyboard(); }
+                    }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "deej slider box (Arduino)";
+            VerticalLayout {
+                spacing: 8px;
+                Hint { text: "A DIY slider box that sends its sliders as \"512|1023|0\" lines over USB."; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Port"; width: 110px; }
+                    ComboBox { model: Devices.serial-ports; current-index <=> Devices.deej-port; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Sliders"; width: 110px; }
+                    SpinBox { minimum: 1; maximum: 16; value <=> Devices.deej-count; }
+                    Label { text: "starting at"; }
+                    ComboBox { model: Lists.knob-names; current-index <=> Devices.deej-first; }
+                }
+                CheckBox { text: "Sliders read backwards"; checked <=> Devices.deej-invert; }
+                HorizontalLayout {
+                    alignment: start;
+                    Button {
+                        text: "Add deej box";
+                        enabled: Devices.serial-ports.length > 0;
+                        clicked => { Devices.add-deej(); }
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: start;
+            Button { text: "Look for devices again"; clicked => { Devices.refresh(); } }
         }
     }
 }

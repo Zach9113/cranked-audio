@@ -1,7 +1,7 @@
 import { Button, Slider } from "std-widgets.slint";
 
-import { Palette, Look, KnobPage, ButtonPage, GeneralPage, CalibrationPage, Lists, KnobSettings, General } from "settings.slint";
-export { Lists, KnobSettings, General, Palette, Look }
+import { Palette, Look, KnobPage, ButtonPage, GeneralPage, CalibrationPage, DevicesPage, Devices, Lists, KnobSettings, General } from "settings.slint";
+export { Lists, KnobSettings, General, Palette, Look, Devices }
 export { Palette as StdPalette } from "std-widgets.slint";
 
 export struct KnobData {
@@ -530,6 +530,7 @@ export component MainWindow inherits Window {
                     : root.page == 1 ? (KnobSettings.name == "" ? "Knob " + (KnobSettings.index + 1) : KnobSettings.name)
                     : root.page == 2 ? "Button " + (KnobSettings.index + 1)
                     : root.page == 4 ? "LED colours"
+                    : root.page == 5 ? "Devices"
                     : "Settings";
                 // the title scales on the knobs page; settings pages stay readable
                 font-size: root.page == 0 ? 22px * max(0.65, Look.scale) : 22px;
@@ -563,7 +564,7 @@ export component MainWindow inherits Window {
                 text: "Settings";
                 clicked => { root.open-general(); }
             }
-            if root.page != 0: Button {
+            if root.page != 0 && root.page != 5: Button {
                 text: "Save";
                 primary: true;
                 clicked => { root.save(); }
@@ -624,6 +625,7 @@ export component MainWindow inherits Window {
         if root.page == 2: ButtonPage { }
         if root.page == 3: GeneralPage { }
         if root.page == 4: CalibrationPage { }
+        if root.page == 5: DevicesPage { }
     }
 
     // without the title bar, a small gear in the corner still gets to Settings

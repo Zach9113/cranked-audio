@@ -168,6 +168,26 @@ pub fn midi_ports() -> Vec<String> {
     input.ports().iter().filter_map(|p| input.port_name(p).ok()).filter(|n| !n.contains("Cranked Audio")).collect()
 }
 
+/// A port's name without ALSA's client:port numbers ("nanoKONTROL2:nanoKONTROL2 _ CTRL 20:0" loses " 20:0"),
+/// which change from boot to boot, so a saved name keeps matching.
+pub fn stable_port_name(name: &str) -> &str {
+    match name.rsplit_once(' ') {
+        Some((rest, numbers))
+            if numbers.split_once(':').is_some_and(|(a, b)| {
+                !a.is_empty() && !b.is_empty() && a.bytes().chain(b.bytes()).all(|c| c.is_ascii_digit())
+            }) =>
+        {
+            rest
+        }
+        _ => name,
+    }
+}
+
+/// MIDI controllers to offer: ALSA's loopback ("Midi Through") isn't one.
+pub fn midi_controllers() -> Vec<String> {
+    midi_ports().iter().filter(|n| !n.starts_with("Midi Through")).map(|n| stable_port_name(n).to_string()).collect()
+}
+
 fn midi(name: &str, controls: &[MidiControl], events: &Sender<Event>, current: &dyn Fn() -> bool) {
     let mut reported = false;
     while current() {
@@ -219,9 +239,10 @@ pub fn learn_midi(events: Sender<Event>, wait: Duration) {
     for port in ports {
         let Ok(input) = midir::MidiInput::new("Cranked Audio learn") else { continue };
         let port_name = input.port_name(&port).unwrap_or_default();
-        if port_name.contains("Cranked Audio") {
+        if port_name.contains("Cranked Audio") || port_name.starts_with("Midi Through") {
             continue;
         }
+        let port_name = stable_port_name(&port_name).to_string();
         let found = found.clone();
         if let Ok(connection) = input.connect(
             &port,
@@ -381,5 +402,13 @@ mod tests {
         assert_eq!(deej_line("0|512|1023\r\n", false), [Some(0), Some(50), Some(100)]);
         assert_eq!(deej_line("0|1023", true), [Some(100), Some(0)]);
         assert_eq!(deej_line("12|x|2000", false), [Some(1), None, None]);
+    }
+
+    #[test]
+    fn saved_midi_names_leave_out_the_alsa_numbers() {
+        assert_eq!(stable_port_name("nanoKONTROL2:nanoKONTROL2 _ CTRL 20:0"), "nanoKONTROL2:nanoKONTROL2 _ CTRL");
+        assert_eq!(stable_port_name("Cranked test:Cranked Test MIDI 128:0"), "Cranked test:Cranked Test MIDI");
+        assert_eq!(stable_port_name("Launchkey MK3"), "Launchkey MK3");
+        assert_eq!(stable_port_name("Port 2"), "Port 2");
     }
 }

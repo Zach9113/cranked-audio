@@ -10,6 +10,10 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
   "everything else" on a fourth. Apps are matched by name, so new windows and tabs follow their knob.
 - **Works with or without hardware:** use a 5-knob USB serial mixer (CH343-based, with 15 RGB LEDs and 5 buttons),
   or drag and scroll the knobs in the window. Plug a mixer in later and it takes over.
+- **As many knobs as you like:** 1 to 16 per profile, added with the + card and removed from a knob's menu. The mixer
+  drives the first five; the rest live on screen or on other controllers.
+- **More controllers:** a volume knob on your keyboard, any MIDI controller (click Learn and move a fader) or a
+  deej-style Arduino slider box can turn knobs and press their buttons.
 - **Buttons:** press and hold actions: mute a knob, play/pause, next/previous track, switch audio output, next profile,
   or toggle anything in Home Assistant.
 - **Auto-lower:** turns music and videos down while voice chat or another knob is playing, then brings them back.
@@ -17,6 +21,8 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
   Only playback is touched; microphones and screen sharing never are.
 - **Knob lights:** each knob fills with its own two colours, follows the level smoothly, dims when nothing is playing
   and goes dark when the screen locks. Built-in calibration keeps dimmed colours true on your LEDs.
+- **Your look:** dials, sliders or mixing-desk faders; themes (Cranked, Midnight, Graphite, Light, or your desktop's
+  colours); size from tiny to large; choose which text shows, hide knobs, put the buttons inside the dials.
 - **Popups where you want them:** KDE's on-screen display, the Atoll dynamic island, or standard
   notifications (automatic picks the island when it's running).
 - **Panel widget (KDE Plasma):** your knobs as dials (like the app) or sliders in a popup from the panel or on the
@@ -70,7 +76,8 @@ at login).
 
 Open **Cranked Audio** from the app menu or click the tray icon. Drag or scroll a knob to turn it; right-click a knob
 to choose its apps, colours and range, and right-click a button to choose what a press and a hold do.
-**Settings** covers profiles, Auto-lower, LED brightness and calibration, popups and Home Assistant.
+**Settings** covers the look, profiles, Auto-lower, LED brightness and calibration, popups, Home Assistant and
+**Devices** (keyboard knobs, MIDI controllers and deej boxes).
 
 On KDE Plasma, right-click the panel, choose **Add Widgets…** and add **Cranked Audio** to have your knobs one
 click away.
