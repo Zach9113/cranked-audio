@@ -8,7 +8,7 @@ mod dbus;
 mod desktop;
 mod devices;
 mod duck;
-mod ha;
+mod home_assistant;
 mod leds;
 mod matching;
 mod serial;
@@ -40,11 +40,11 @@ pub enum Event {
     StreamRemoved(u32),
     /// The default output changed to this device (None: there was no other one).
     OutputSwitched(Option<String>),
-    HaState(ha::EntityState),
-    HaFailed,
+    HomeAssistantState(home_assistant::EntityState),
+    HomeAssistantFailed,
     /// The screen is locked or every monitor sleeps (true), or it's back (false).
     ScreenOff(bool),
-    HaEntities(Vec<cranked_ipc::Entity>),
+    HomeAssistantEntities(Vec<cranked_ipc::Entity>),
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
     /// A window connected / sent a line.
@@ -122,25 +122,26 @@ fn main() {
     let (commands, audio_inbox) = mpsc::channel();
     let (desktop, desktop_inbox) = mpsc::channel();
     let leds = serial::Writer::default();
-    let ha_generation = Arc::new(AtomicU64::new(0));
-    let start_ha = |config: &Config| -> Option<mpsc::Sender<ha::Command>> {
-        let mine = ha_generation.fetch_add(1, Ordering::Relaxed) + 1;
-        let settings = config::ha_settings(config, &config_path)?;
+    let home_assistant_generation = Arc::new(AtomicU64::new(0));
+    let start_home_assistant = |config: &Config| -> Option<mpsc::Sender<home_assistant::Command>> {
+        let mine = home_assistant_generation.fetch_add(1, Ordering::Relaxed) + 1;
+        let settings = config::home_assistant_settings(config, &config_path)?;
         let (calls, calls_inbox) = mpsc::channel();
-        let (states, watched, generation) = (events.clone(), config.ha_entities(), Arc::clone(&ha_generation));
+        let (states, watched, generation) =
+            (events.clone(), config.home_assistant_entities(), Arc::clone(&home_assistant_generation));
         let for_states = settings.clone();
         std::thread::Builder::new()
-            .name("ha-states".into())
-            .spawn(move || ha::run_states(for_states, watched, states, generation, mine))
+            .name("home-assistant-states".into())
+            .spawn(move || home_assistant::run_states(for_states, watched, states, generation, mine))
             .unwrap();
         let failures = events.clone();
         std::thread::Builder::new()
-            .name("ha-calls".into())
-            .spawn(move || ha::run_calls(settings, calls_inbox, failures))
+            .name("home-assistant-calls".into())
+            .spawn(move || home_assistant::run_calls(settings, calls_inbox, failures))
             .unwrap();
         Some(calls)
     };
-    let mut ha_calls = start_ha(&config);
+    let mut home_assistant_calls = start_home_assistant(&config);
     std::thread::Builder::new().name("desktop".into()).spawn(move || desktop::run(desktop_inbox)).unwrap();
     {
         let events = events.clone();
@@ -184,7 +185,7 @@ fn main() {
 
     let mut core = Core::new(config, &state);
     core.verbose = verbose;
-    core.ha_enabled = ha_calls.is_some();
+    core.home_assistant_enabled = home_assistant_calls.is_some();
     let api = dbus::start(events.clone());
     let device_generation = Arc::new(AtomicU64::new(0));
     devices::start(&core.config().devices, &events, &device_generation);
@@ -205,7 +206,7 @@ fn main() {
         let mut new_config: Option<Config> = None;
         let mut switch_to: Option<String> = None;
         let mut cycle_profile = false;
-        let mut restart_ha = false;
+        let mut restart_home_assistant = false;
         let event = match event {
             Some(Event::ClientConnected(stream)) => {
                 clients.add(stream, &core.snapshot());
@@ -216,9 +217,9 @@ fn main() {
                 match verb {
                     "reload" => reload = true,
                     "get-config" => clients.send(&ServerMessage::Config(core.config().clone())),
-                    "entities" => match &ha_calls {
+                    "entities" => match &home_assistant_calls {
                         Some(calls) => {
-                            let _ = calls.send(ha::Command::ListEntities);
+                            let _ = calls.send(home_assistant::Command::ListEntities);
                         }
                         None => clients.send(&ServerMessage::Entities(Vec::new())),
                     },
@@ -238,7 +239,7 @@ fn main() {
                     "token" => {
                         let path = core.config().token_path(&config_path);
                         match save_secret(&path, rest.trim()) {
-                            Ok(()) => restart_ha = true,
+                            Ok(()) => restart_home_assistant = true,
                             Err(e) => eprintln!("home assistant: can't save the token ({e})"),
                         }
                     }
@@ -384,7 +385,7 @@ fn main() {
                 })));
                 None
             }
-            Some(Event::HaEntities(entities)) => {
+            Some(Event::HomeAssistantEntities(entities)) => {
                 clients.send(&ServerMessage::Entities(entities));
                 None
             }
@@ -459,9 +460,9 @@ fn main() {
         }
         if let Some(config) = new_config {
             eprintln!("settings: applied");
-            let ha_changed = config.home_assistant != core.config().home_assistant
-                || config.ha_entities() != core.config().ha_entities();
-            restart_ha |= ha_changed;
+            let home_assistant_changed = config.home_assistant != core.config().home_assistant
+                || config.home_assistant_entities() != core.config().home_assistant_entities();
+            restart_home_assistant |= home_assistant_changed;
             if let Some(shortcuts) = &mut shortcuts {
                 shortcuts.ensure(most_knobs(&config));
             }
@@ -471,9 +472,9 @@ fn main() {
             core.set_config(config, &mut out);
             clients.send(&ServerMessage::Config(core.config().clone()));
         }
-        if restart_ha {
-            ha_calls = start_ha(core.config());
-            core.ha_enabled = ha_calls.is_some();
+        if restart_home_assistant {
+            home_assistant_calls = start_home_assistant(core.config());
+            core.home_assistant_enabled = home_assistant_calls.is_some();
         }
         out.extend(core.tick(now));
         if !clients.is_empty() || api.is_some() {
@@ -510,7 +511,7 @@ fn main() {
                 }
                 Out::Leds(frame) => leds.send(&frame),
                 Out::SaveState(state) => state.save(&state_path),
-                Out::Ha(command) => match &ha_calls {
+                Out::HomeAssistant(command) => match &home_assistant_calls {
                     Some(calls) => {
                         let _ = calls.send(command);
                     }

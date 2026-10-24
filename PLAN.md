@@ -41,7 +41,7 @@ cranked-audiod (service, always running, no window)         cranked-audio (windo
 4. **Home Assistant** (done 2026-10-23): light knobs with proportional catch-up (never moved by startup or profile
    switches), live state from the event stream (cheap text pre-check, only watched entities parsed) with polling
    while it's down, 150 ms throttle per light, button toggles with "Turning on ..." + result popups.
-   `tests/live_ha.sh` runs it against `tests/fake_ha.py`.
+   `tests/live_home_assistant.sh` runs it against `tests/fake_home_assistant.py`.
    **Auto-lower** (done 2026-10-23): in-process peak meters (25 readings/s) only on trigger knobs' apps and voice
    chat, never a lowered knob; fade 0.25 s down, hold 1.2 s, 0.8 s back; knob turns, new streams and the guard
    respect it; LEDs dim with it. `tests/live_duck.sh` (tone vs silence on a null sink).
@@ -52,8 +52,8 @@ cranked-audiod (service, always running, no window)         cranked-audio (windo
    buttons, Settings opens config.toml (applied live). Talks to the service over a Unix socket
    (`crates/ipc`) instead of D-Bus: simpler, same cost. Starts the service if it isn't running. Without a mixer the
    knobs start where they were (state.toml). Tray icon in the service (open, profiles, settings file, quit).
-   Settings inside the window: right-click a knob (or click its name) for apps / output / HA light, range and
-   colours; right-click a button for press/hold actions with HA entity pickers; Settings for profiles,
+   Settings inside the window: right-click a knob (or click its name) for apps / output / Home Assistant light, range and
+   colours; right-click a button for press/hold actions with Home Assistant entity pickers; Settings for profiles,
    Auto-lower, popups, LEDs and Home Assistant (token saved 0600). The service is the only writer of config.toml.
    Still to do: install + autostart (phase 7).
 6. **More controllers**: MIDI, DIY serial sliders.

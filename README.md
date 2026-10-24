@@ -135,7 +135,7 @@ The Nixpkgs and Fenix inputs share the pins from Meridian Client.
 ```bash
 cargo build --release
 target/release/cranked-audiod --dry-run -v     # show which app goes on which knob, change nothing
-cargo test && tests/live.sh && tests/live_ha.sh && tests/live_duck.sh && tests/live_dbus.sh
+cargo test && tests/live.sh && tests/live_home_assistant.sh && tests/live_duck.sh && tests/live_dbus.sh
 ```
 
 The live tests require a running PipeWire/PulseAudio server and a D-Bus session on the host.

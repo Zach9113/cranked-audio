@@ -133,8 +133,8 @@ export global General {
     in-out property <bool> auto-dim;
     // a mixer has been connected at some point; until then its light settings stay hidden
     in property <bool> has-mixer: true;
-    in-out property <string> ha-url;
-    in-out property <string> ha-token;
+    in-out property <string> home-assistant-url;
+    in-out property <string> home-assistant-token;
     in-out property <int> profile-index;
     in-out property <string> profile-name;
     in-out property <string> current-version: "v0.1.0";
@@ -647,13 +647,13 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     spacing: 8px;
                     Label { text: "Address"; width: 110px; }
-                    LineEdit { text <=> General.ha-url; placeholder-text: "http://homeassistant.local:8123"; }
+                    LineEdit { text <=> General.home-assistant-url; placeholder-text: "http://homeassistant.local:8123"; }
                 }
                 HorizontalLayout {
                     spacing: 8px;
                     Label { text: "Access token"; width: 110px; }
                     LineEdit {
-                        text <=> General.ha-token;
+                        text <=> General.home-assistant-token;
                         input-type: password;
                         placeholder-text: Lists.home-assistant ? "saved (type to replace)" : "long-lived access token";
                     }

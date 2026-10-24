@@ -84,7 +84,7 @@ Numbers marked (measured) come from probing the real mixer or the live system in
 - A knob can control a light's brightness instead of audio (0% = off). If the light was changed elsewhere, the knob
   catches up proportionally instead of jumping: moving up, light' = light + (v - prev) * (100 - light) / (100 - prev);
   moving down, light' = light - (prev - v) * light / prev; within 3% they move 1:1.
-- Live state from HA's event stream (`/api/stream`, state_changed), with a slow poll as fallback. Send light changes
+- Live state from Home Assistant's event stream (`/api/stream`, state_changed), with a slow poll as fallback. Send light changes
   at most every 0.15 s, newest wins.
 - Button actions can toggle/turn off a switch, light, fan, input_boolean, or run a scene/script. Show an instant
   "Turning on ..." popup, then the result.
@@ -92,7 +92,7 @@ Numbers marked (measured) come from probing the real mixer or the live system in
 ## 8. Profiles
 
 - A profile = the whole layout: per-channel apps, names, colours, ranges, lights, button actions, Auto-lower.
-  Global settings (brightness, popups, HA connection) are shared. The live settings are the active profile.
+  Global settings (brightness, popups, Home Assistant connection) are shared. The live settings are the active profile.
 - Switching applies the current knob positions to the new layout immediately and shows a popup.
 
 ## 9. On-screen controls / no mixer

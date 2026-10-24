@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""A tiny stand-in for Home Assistant's REST API and WebSocket API (subscribe_entities), for tests/live_ha.sh.
+"""A tiny stand-in for Home Assistant's REST API and WebSocket API (subscribe_entities), for tests/live_home_assistant.sh.
 
-Usage: fake_ha.py PORT TOKEN LOG. Every service call is appended to LOG as `domain/service entity [brightness]`.
+Usage: fake_home_assistant.py PORT TOKEN LOG. Every service call is appended to LOG as `domain/service entity [brightness]`.
 POST /test/set {"entity_id", "state", "brightness"} changes a state as if someone used another app."""
 import base64, hashlib, json, queue, struct, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

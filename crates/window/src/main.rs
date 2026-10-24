@@ -482,8 +482,8 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
     general.set_voice_chat(auto.voice_chat);
     general.set_amount_index(editor::amount_index(auto.amount) as i32);
     general.set_auto_dim(auto.dim_leds);
-    general.set_ha_url(config.home_assistant.url.clone().unwrap_or_default().into());
-    general.set_ha_token("".into());
+    general.set_home_assistant_url(config.home_assistant.url.clone().unwrap_or_default().into());
+    general.set_home_assistant_token("".into());
     general.set_profile_index(profile_index as i32);
     general.set_profile_name(profile.name.as_str().into());
     window.global::<Lists>().set_profiles(strings(config.profiles.iter().map(|p| p.name.as_str())));
@@ -509,7 +509,7 @@ fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize)
         _ => LedBlend::Classic,
     };
     config.leds.dim_idle = general.get_dim_idle();
-    let url = general.get_ha_url().trim().to_string();
+    let url = general.get_home_assistant_url().trim().to_string();
     config.home_assistant.url = (!url.is_empty()).then_some(url);
     if let Some(profile) = config.profiles.get_mut(profile_index) {
         let knobs = |model: ModelRc<bool>| model.iter().enumerate().filter(|(_, on)| *on).map(|(i, _)| i + 1).collect();
@@ -1291,7 +1291,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                 }
                 3 => {
                     store_general(&w, &mut config, profile);
-                    let token = w.global::<General>().get_ha_token().trim().to_string();
+                    let token = w.global::<General>().get_home_assistant_token().trim().to_string();
                     if !token.is_empty() {
                         link.send(&format!("token {token}"));
                     }
