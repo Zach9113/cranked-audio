@@ -108,11 +108,25 @@ busctl --user call io.github.zach9113.CrankedAudio /io/github/zach9113/CrankedAu
 
 ## Development
 
+With Nix, enter the pinned development shell on x86-64 or ARM64 Linux:
+
+```bash
+nix develop
+```
+
+The shell includes Rust, Cargo, Clippy, rustfmt, rust-analyzer, development tools, and the native
+audio and windowing libraries. Interactive shells start Nushell; use `nix develop -c <command>`
+to run a command directly. For automatic activation with direnv and nix-direnv, run `direnv allow`.
+The Nixpkgs and Fenix inputs share the pins from Meridian Client.
+
 ```bash
 cargo build --release
 target/release/cranked-audiod --dry-run -v     # show which app goes on which knob, change nothing
 cargo test && tests/live.sh && tests/live_ha.sh && tests/live_duck.sh && tests/live_dbus.sh
 ```
+
+The live tests require a running PipeWire/PulseAudio server and a D-Bus session on the host.
+The development shell supplies client tools; it does not start these services.
 
 `SPEC.md` describes how everything behaves; `PLAN.md` is the roadmap.
 
