@@ -386,7 +386,12 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                     if let Ok(mut link) = link.lock() {
                         link.snapshot = snapshot.clone();
                     }
-                    let _ = window.upgrade_in_event_loop(move |w| show(&w, &snapshot));
+                    let _ = window.upgrade_in_event_loop(move |w| {
+                        if !snapshot.version.is_empty() {
+                            w.global::<General>().set_current_version(snapshot.version.clone().into());
+                        }
+                        show(&w, &snapshot);
+                    });
                 }
                 ServerMessage::Config(config) => {
                     if let Ok(mut link) = link.lock() {
@@ -401,6 +406,18 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                     let _ = window.upgrade_in_event_loop(move |w| {
                         let (light, press, hold) = selected_entities(&w);
                         fill_entity_lists(&w, &entities, light.as_deref(), press.as_deref(), hold.as_deref());
+                    });
+                }
+                ServerMessage::UpdateStatus { status, latest_version, can_install } => {
+                    let _ = window.upgrade_in_event_loop(move |w| {
+                        let general = w.global::<General>();
+                        general.set_checking_update(false);
+                        general.set_updating(false);
+                        general.set_update_status(status.into());
+                        general.set_update_available(can_install);
+                        if let Some(v) = latest_version {
+                            general.set_latest_version(v.into());
+                        }
                     });
                 }
                 ServerMessage::Quit => {
@@ -454,6 +471,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     }
 
     let general = window.global::<General>();
+    general.set_current_version(format!("v{}", env!("CARGO_PKG_VERSION")).into());
     let flip = |pick: fn(&General) -> ModelRc<bool>, weak: slint::Weak<MainWindow>| {
         move |index: i32| {
             let Some(w) = weak.upgrade() else { return };
@@ -537,6 +555,30 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             link.snapshot.profile = name;
             if let Some(w) = weak.upgrade() {
                 load_general(&w, &link);
+            }
+        });
+    }
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        general.on_check_update(move || {
+            let Ok(mut link) = link.lock() else { return };
+            link.send("check-update");
+            if let Some(w) = weak.upgrade() {
+                let g = w.global::<General>();
+                g.set_checking_update(true);
+                g.set_update_status("Checking for updates...".into());
+            }
+        });
+    }
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        general.on_apply_update(move || {
+            let Ok(mut link) = link.lock() else { return };
+            link.send("apply-update");
+            if let Some(w) = weak.upgrade() {
+                let g = w.global::<General>();
+                g.set_updating(true);
+                g.set_update_status("Downloading and installing...".into());
             }
         });
     }

@@ -12,6 +12,7 @@ mod matching;
 mod serial;
 mod server;
 mod tray;
+mod updater;
 
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -49,6 +50,8 @@ pub enum Event {
     Tray(tray::Action),
     AudioReady,
     AudioLost,
+    UpdateCheckResult(Result<Option<updater::ReleaseInfo>, String>),
+    UpdateApplyResult(Result<(), String>),
 }
 
 const USAGE: &str = "usage: cranked-audiod [--config FILE] [--no-mixer] [--stdin] [-v]
@@ -170,6 +173,7 @@ fn main() {
     core.ha_enabled = ha_calls.is_some();
     let tray = tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
     let mut tray_shows = (String::new(), Vec::<String>::new(), false);
+    let mut latest_release: Option<updater::ReleaseInfo> = None;
     loop {
         let event = match inbox.recv_timeout(core.next_wake()) {
             Ok(event) => Some(event),
@@ -218,6 +222,34 @@ fn main() {
                         }
                     }
                     "profile" => switch_to = Some(rest.to_string()),
+                    "check-update" => {
+                        let tx = events.clone();
+                        std::thread::Builder::new()
+                            .name("updater-check".into())
+                            .spawn(move || {
+                                let res = updater::check_for_update();
+                                let _ = tx.send(Event::UpdateCheckResult(res));
+                            })
+                            .unwrap();
+                    }
+                    "apply-update" => {
+                        if let Some(info) = latest_release.clone() {
+                            let tx = events.clone();
+                            std::thread::Builder::new()
+                                .name("updater-apply".into())
+                                .spawn(move || {
+                                    let res = updater::apply_update(&info.tarball_url);
+                                    let _ = tx.send(Event::UpdateApplyResult(res));
+                                })
+                                .unwrap();
+                        } else {
+                            clients.send(&ServerMessage::UpdateStatus {
+                                status: "No update found to install. Check for updates first.".into(),
+                                latest_version: None,
+                                can_install: false,
+                            });
+                        }
+                    }
                     _ => match parse_line(&line) {
                         Some(bytes) => {
                             let _ = events.send(Event::OnScreen(bytes));
@@ -253,6 +285,54 @@ fn main() {
             }
             Some(Event::HaEntities(entities)) => {
                 clients.send(&ServerMessage::Entities(entities));
+                None
+            }
+            Some(Event::UpdateCheckResult(res)) => {
+                match res {
+                    Ok(Some(info)) => {
+                        let version = info.version.clone();
+                        latest_release = Some(info);
+                        clients.send(&ServerMessage::UpdateStatus {
+                            status: format!("Update available: {version}"),
+                            latest_version: Some(version),
+                            can_install: true,
+                        });
+                    }
+                    Ok(None) => {
+                        latest_release = None;
+                        clients.send(&ServerMessage::UpdateStatus {
+                            status: format!("Up to date ({})", updater::CURRENT_VERSION),
+                            latest_version: None,
+                            can_install: false,
+                        });
+                    }
+                    Err(e) => {
+                        clients.send(&ServerMessage::UpdateStatus {
+                            status: format!("Check failed: {e}"),
+                            latest_version: None,
+                            can_install: false,
+                        });
+                    }
+                }
+                None
+            }
+            Some(Event::UpdateApplyResult(res)) => {
+                match res {
+                    Ok(()) => {
+                        clients.send(&ServerMessage::UpdateStatus {
+                            status: "Update installed! Restarting...".into(),
+                            latest_version: None,
+                            can_install: false,
+                        });
+                    }
+                    Err(e) => {
+                        clients.send(&ServerMessage::UpdateStatus {
+                            status: format!("Install failed: {e}"),
+                            latest_version: None,
+                            can_install: false,
+                        });
+                    }
+                }
                 None
             }
             other => other,

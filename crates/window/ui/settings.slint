@@ -52,6 +52,12 @@ export global General {
     in-out property <string> ha-token;
     in-out property <int> profile-index;
     in-out property <string> profile-name;
+    in-out property <string> current-version: "v0.1.0";
+    in-out property <string> latest-version: "";
+    in-out property <string> update-status: "Up to date";
+    in-out property <bool> update-available: false;
+    in-out property <bool> checking-update: false;
+    in-out property <bool> updating: false;
     callback toggle-lower(int);
     callback toggle-trigger(int);
     callback switch-profile(int);
@@ -59,6 +65,8 @@ export global General {
     callback rename-profile(string);
     callback delete-profile();
     callback edit-file();
+    callback check-update();
+    callback apply-update();
 }
 
 component Label inherits Text {
@@ -370,6 +378,42 @@ export component GeneralPage inherits ScrollView {
                     }
                 }
                 Hint { text: "Create a token in Home Assistant under your profile → Security → Long-lived access tokens. It's stored in a file only you can read."; }
+            }
+        }
+
+        GroupBox {
+            title: "Updates";
+            VerticalLayout {
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Installed"; width: 110px; }
+                    Label { text: General.current-version; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Status"; width: 110px; }
+                    Label { text: General.update-status; }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    padding-left: 118px;
+                    alignment: start;
+                    Button {
+                        text: General.checking-update ? "Checking..." : "Check for updates";
+                        enabled: !General.checking-update && !General.updating;
+                        clicked => { General.check-update(); }
+                    }
+                    if General.update-available: Button {
+                        text: General.updating ? "Installing..." : "Install " + General.latest-version;
+                        primary: true;
+                        enabled: !General.updating;
+                        clicked => { General.apply-update(); }
+                    }
+                }
+                if General.update-available: Hint {
+                    text: "Downloads the latest release and updates Cranked Audio. Your settings and profiles will be preserved.";
+                }
             }
         }
 

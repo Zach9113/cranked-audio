@@ -288,6 +288,7 @@ impl Core {
             playing,
             home_assistant: self.ha_enabled,
             knobs,
+            version: format!("v{}", env!("CARGO_PKG_VERSION")),
         }
     }
 
@@ -400,7 +401,12 @@ impl Core {
                 self.streams.clear();
                 self.metered.clear();
             }
-            Event::ClientConnected(_) | Event::ClientLine(_) | Event::Tray(_) | Event::HaEntities(_) => {}
+            Event::ClientConnected(_)
+            | Event::ClientLine(_)
+            | Event::Tray(_)
+            | Event::HaEntities(_)
+            | Event::UpdateCheckResult(_)
+            | Event::UpdateApplyResult(_) => {}
         }
         out
     }

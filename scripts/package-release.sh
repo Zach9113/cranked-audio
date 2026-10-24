@@ -87,7 +87,7 @@ SERVICE
 
 systemctl --user daemon-reload
 systemctl --user enable "$service" >/dev/null
-systemctl --user restart "$service"
+systemctl --user restart --no-block "$service"
 command -v update-desktop-database >/dev/null && update-desktop-database "$share/applications" 2>/dev/null || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$share/icons/hicolor" 2>/dev/null || true
 

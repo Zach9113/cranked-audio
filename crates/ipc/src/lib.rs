@@ -30,6 +30,11 @@ pub enum ServerMessage {
     Snapshot(Snapshot),
     Config(settings::Config),
     Entities(Vec<Entity>),
+    UpdateStatus {
+        status: String,
+        latest_version: Option<String>,
+        can_install: bool,
+    },
     Quit,
 }
 
@@ -50,6 +55,8 @@ pub struct Snapshot {
     /// Home Assistant is set up.
     pub home_assistant: bool,
     pub knobs: Vec<Knob>,
+    #[serde(default)]
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
