@@ -61,7 +61,8 @@ KCM.SimpleKCM {
             ]
             textRole: "text"
             valueRole: "value"
-            currentIndex: indexOfValue(page.cfg_style)
+            // found in the model directly (indexOfValue isn't ready when the page opens)
+            currentIndex: model.findIndex(m => m.value === page.cfg_style)
             onActivated: page.cfg_style = currentValue
         }
 
@@ -75,7 +76,7 @@ KCM.SimpleKCM {
             ]
             textRole: "text"
             valueRole: "value"
-            currentIndex: indexOfValue(page.cfg_theme)
+            currentIndex: model.findIndex(m => m.value === page.cfg_theme)
             onActivated: page.cfg_theme = currentValue
         }
 
@@ -124,22 +125,25 @@ KCM.SimpleKCM {
 
         Item { Kirigami.FormData.isSection: true }
 
-        Repeater {
-            model: page.knobNames
-            delegate: QQC2.CheckBox {
-                required property string modelData
-                required property int index
-                Kirigami.FormData.label: index === 0 ? "Knobs:" : ""
-                text: modelData
-                checked: page.hidden().indexOf(index + 1) < 0
-                onToggled: page.setShown(index + 1, checked)
-            }
-        }
-        QQC2.Label {
-            visible: page.knobNames.length === 0
+        // one column, so the form lays it out as a single row however many knobs there are
+        ColumnLayout {
             Kirigami.FormData.label: "Knobs:"
-            text: "Start Cranked Audio to choose which knobs show."
-            opacity: 0.7
+            spacing: 0
+            Repeater {
+                model: page.knobNames
+                delegate: QQC2.CheckBox {
+                    required property string modelData
+                    required property int index
+                    text: modelData
+                    checked: page.hidden().indexOf(index + 1) < 0
+                    onToggled: page.setShown(index + 1, checked)
+                }
+            }
+            QQC2.Label {
+                visible: page.knobNames.length === 0
+                text: "Start Cranked Audio to choose which knobs show."
+                opacity: 0.7
+            }
         }
 
         QQC2.SpinBox {

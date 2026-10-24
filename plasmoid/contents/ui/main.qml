@@ -113,7 +113,14 @@ PlasmoidItem {
         return levels.join("\n") + "\nProfile: " + snapshot.profile;
     }
 
-    compactRepresentation: inPanel ? panelKnobs : panelIcon
+    // Plasma builds this once, so it switches between the icon and the knobs itself
+    compactRepresentation: Loader {
+        sourceComponent: root.inPanel ? panelKnobs : panelIcon
+        Layout.preferredWidth: item ? item.Layout.preferredWidth : -1
+        Layout.minimumWidth: item ? item.Layout.minimumWidth : -1
+        Layout.preferredHeight: item ? item.Layout.preferredHeight : -1
+        Layout.minimumHeight: item ? item.Layout.minimumHeight : -1
+    }
 
     // in the panel: the knobs themselves
     Component {
@@ -125,9 +132,14 @@ PlasmoidItem {
             Layout.minimumWidth: Layout.preferredWidth
             Layout.preferredHeight: root.vertical ? inline.implicitHeight + pad * 2 : -1
             Layout.minimumHeight: Layout.preferredHeight
-            onWidthChanged: if (root.vertical) root.panelThickness = width
-            onHeightChanged: if (!root.vertical) root.panelThickness = height
-            Component.onCompleted: root.panelThickness = root.vertical ? width : height
+            // measured after the layout settles (Qt.callLater), never in the middle of it
+            function thickness() {
+                const across = root.vertical ? width : height;
+                if (across > 0 && Math.abs(across - root.panelThickness) >= 1) root.panelThickness = across;
+            }
+            onWidthChanged: Qt.callLater(thickness)
+            onHeightChanged: Qt.callLater(thickness)
+            Component.onCompleted: Qt.callLater(thickness)
             Loader {
                 id: inline
                 x: strip.pad
@@ -141,8 +153,8 @@ PlasmoidItem {
                     // only real changes (a setting), not rounding, so the size settles
                     if (k > 0 && Math.abs(k - root.acrossPerUnit) > 0.03 * k) root.acrossPerUnit = k;
                 }
-                onImplicitHeightChanged: measure()
-                onImplicitWidthChanged: measure()
+                onImplicitHeightChanged: Qt.callLater(measure)
+                onImplicitWidthChanged: Qt.callLater(measure)
             }
         }
     }
@@ -257,7 +269,8 @@ PlasmoidItem {
             Flow {
                 id: knobs
                 visible: !placeholder.visible && root.cfg.style === "knobs"
-                width: parent.width
+                // in a panel they stay on one row (the slack covers rounding)
+                width: root.inPanel ? parent.width + root.unit : parent.width
                 spacing: root.unit * 0.5
 
                 Repeater {
@@ -286,7 +299,8 @@ PlasmoidItem {
             Flow {
                 id: faders
                 visible: !placeholder.visible && root.cfg.style === "faders"
-                width: parent.width
+                // in a panel they stay on one row (the slack covers rounding)
+                width: root.inPanel ? parent.width + root.unit : parent.width
                 spacing: root.unit * 0.4
                 Repeater {
                     model: root.cfg.style === "faders" ? root.shownKnobs : []
