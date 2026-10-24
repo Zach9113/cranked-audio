@@ -237,11 +237,15 @@ fn main() {
                         }
                     }
                     "profile" => switch_to = Some(rest.to_string()),
-                    "list-devices" => clients.send(&ServerMessage::Devices(cranked_ipc::DeviceChoices {
-                        keyboards: devices::keyboard_knobs(),
-                        midi: devices::midi_controllers(),
-                        serial: devices::serial_ports(),
-                    })),
+                    "list-devices" => {
+                        let (keyboards, typing) = devices::keyboard_knobs();
+                        clients.send(&ServerMessage::Devices(cranked_ipc::DeviceChoices {
+                            keyboards,
+                            typing,
+                            midi: devices::midi_controllers(),
+                            serial: devices::serial_ports(),
+                        }));
+                    }
                     "learn-midi" => {
                         let events = events.clone();
                         std::thread::spawn(move || devices::learn_midi(events, Duration::from_secs(15)));

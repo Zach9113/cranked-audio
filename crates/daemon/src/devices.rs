@@ -51,16 +51,24 @@ fn send(events: &Sender<Event>, input: Input) -> bool {
 
 // ---------------------------------------------------------------- keyboard knobs
 
-/// Input devices that have volume keys (candidates for a keyboard knob), by name.
-pub fn keyboard_knobs() -> Vec<String> {
-    let mut names: Vec<String> = evdev::enumerate()
+/// Whether an input device types (has letter keys): those are never taken over.
+fn types(device: &evdev::Device) -> bool {
+    device.supported_keys().is_some_and(|k| k.contains(evdev::KeyCode::KEY_A) || k.contains(evdev::KeyCode::KEY_SPACE))
+}
+
+/// Input devices that have volume keys (candidates for a keyboard knob), by name, and which of them also type.
+/// Ones that don't type come first: on most keyboards the knob is on a separate "Consumer Control" device.
+pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
+    let mut found: Vec<(bool, String)> = evdev::enumerate()
         .filter(|(_, d)| d.supported_keys().is_some_and(|k| k.contains(evdev::KeyCode::KEY_VOLUMEUP)))
-        .filter_map(|(_, d)| d.name().map(str::to_string))
-        .filter(|n| !n.contains("Cranked Audio"))
+        .filter_map(|(_, d)| d.name().map(|n| (types(&d), n.to_string())))
+        .filter(|(_, n)| !n.contains("Cranked Audio"))
         .collect();
-    names.sort();
-    names.dedup();
-    names
+    let typing: Vec<String> = found.iter().filter(|(t, _)| *t).map(|(_, n)| n.clone()).collect();
+    found.sort();
+    let mut seen = std::collections::HashSet::new();
+    let names: Vec<String> = found.into_iter().map(|(_, n)| n).filter(|n| seen.insert(n.clone())).collect();
+    (names, typing)
 }
 
 /// What a key does on a keyboard knob (`value`: 1 down, 2 repeat, 0 up). Media keys only matter when the input is
@@ -103,9 +111,7 @@ fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event
             continue;
         };
         // never take over a device that types: the keyboard would stop working
-        let types = device
-            .supported_keys()
-            .is_some_and(|k| k.contains(evdev::KeyCode::KEY_A) || k.contains(evdev::KeyCode::KEY_SPACE));
+        let types = types(&device);
         if grab && types {
             eprintln!("keyboard knob: {name} also types, so it isn't taken over (the system volume moves too)");
         }
@@ -290,11 +296,29 @@ pub fn deej_line(line: &str, invert: bool) -> Vec<Option<u8>> {
 }
 
 /// Serial ports a deej box could be on.
+/// USB vendors whose serial ports are boards a deej box is built on: Arduino, Arduino clones' USB chips (CH340,
+/// FTDI, CP210x, PL2303), Adafruit, SparkFun, Teensy, Raspberry Pi (Pico) and Espressif (ESP32).
+const BOARD_VENDORS: [&str; 11] =
+    ["2341", "2a03", "1a86", "0403", "10c4", "067b", "239a", "1b4f", "16c0", "2e8a", "303a"];
+
+pub fn is_board(vendor: &str) -> bool {
+    BOARD_VENDORS.contains(&vendor.trim())
+}
+
+/// The USB vendor id of a serial device (a /dev path or a /dev/serial/by-id link).
+fn usb_vendor(path: &std::path::Path) -> Option<String> {
+    let tty = std::fs::canonicalize(path).ok()?;
+    let name = tty.file_name()?.to_str()?;
+    std::fs::read_to_string(format!("/sys/class/tty/{name}/device/../idVendor")).ok()
+}
+
+/// Serial ports that could be a deej box: USB boards only (not, say, a monitor's control port), and not the mixer.
 pub fn serial_ports() -> Vec<String> {
     let mut ports: Vec<String> = std::fs::read_dir("/dev/serial/by-id")
         .into_iter()
         .flatten()
         .filter_map(Result::ok)
+        .filter(|e| usb_vendor(&e.path()).is_some_and(|v| is_board(&v)))
         .map(|e| e.path().to_string_lossy().into_owned())
         // the TurnUp-style mixer is handled separately
         .filter(|p| !p.contains("usb-1a86_USB_Single_Serial_"))
@@ -417,5 +441,11 @@ mod tests {
         assert_eq!(stable_port_name("Cranked test:Cranked Test MIDI 128:0"), "Cranked test:Cranked Test MIDI");
         assert_eq!(stable_port_name("Launchkey MK3"), "Launchkey MK3");
         assert_eq!(stable_port_name("Port 2"), "Port 2");
+    }
+
+    #[test]
+    fn deej_ports_are_boards_only() {
+        assert!(is_board("2341") && is_board("1a86\n") && is_board("2e8a"));
+        assert!(!is_board("043e"), "an LG monitor's control port isn't a slider box");
     }
 }

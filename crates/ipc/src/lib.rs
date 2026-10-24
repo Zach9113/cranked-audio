@@ -49,6 +49,9 @@ pub enum ServerMessage {
 pub struct DeviceChoices {
     /// inputs with volume keys (keyboard knobs), by name
     pub keyboards: Vec<String>,
+    /// those of `keyboards` that also type (they're never taken over)
+    #[serde(default)]
+    pub typing: Vec<String>,
     /// MIDI input ports
     pub midi: Vec<String>,
     /// serial ports (for deej boxes)

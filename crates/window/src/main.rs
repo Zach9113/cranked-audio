@@ -534,14 +534,38 @@ thread_local! {
     /// What Settings > Devices can add (from the service) and the MIDI control last learned.
     static CHOICES: RefCell<DeviceChoices> = RefCell::new(DeviceChoices::default());
     static LEARNED: RefCell<Option<LearnedControl>> = const { RefCell::new(None) };
+    /// keyboards already set up as keyboard knobs (not offered again), and the ones the picker shows
+    static ADDED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static SHOWN_KEYBOARDS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The keyboard picker: keyboards not already added, the ones that type marked (they're never taken over).
+fn fill_keyboards(window: &MainWindow) {
+    let devices = window.global::<Devices>();
+    let (shown, labels): (Vec<String>, Vec<String>) = CHOICES.with(|c| {
+        let choices = c.borrow();
+        ADDED.with(|added| {
+            let added = added.borrow();
+            choices
+                .keyboards
+                .iter()
+                .filter(|k| !added.contains(k))
+                .map(|k| {
+                    let label = if choices.typing.contains(k) { format!("{k} (also types)") } else { k.clone() };
+                    (k.clone(), label)
+                })
+                .unzip()
+        })
+    });
+    devices.set_keyboards(strings(labels.iter().map(String::as_str)));
+    devices.set_keyboard_index(devices.get_keyboard_index().clamp(0, shown.len().saturating_sub(1) as i32));
+    SHOWN_KEYBOARDS.with(|s| *s.borrow_mut() = shown);
 }
 
 fn show_device_choices(window: &MainWindow, choices: &DeviceChoices) {
     let devices = window.global::<Devices>();
-    devices.set_keyboards(strings(choices.keyboards.iter().map(String::as_str)));
     devices.set_serial_ports(strings(choices.serial.iter().map(String::as_str)));
     let clamp = |index: i32, len: usize| index.clamp(0, len.saturating_sub(1) as i32);
-    devices.set_keyboard_index(clamp(devices.get_keyboard_index(), choices.keyboards.len()));
     devices.set_deej_port(clamp(devices.get_deej_port(), choices.serial.len()));
     if !devices.get_learning() && !devices.get_learned() {
         devices.set_learn_status(
@@ -553,6 +577,7 @@ fn show_device_choices(window: &MainWindow, choices: &DeviceChoices) {
         );
     }
     CHOICES.with(|c| *c.borrow_mut() = choices.clone());
+    fill_keyboards(window);
 }
 
 fn show_learned(window: &MainWindow, learned: Option<LearnedControl>) {
@@ -572,13 +597,25 @@ fn show_learned(window: &MainWindow, learned: Option<LearnedControl>) {
 /// Settings > Devices: the configured devices, one line each.
 fn show_devices(window: &MainWindow, link: &Link) {
     let Some(config) = &link.config else { return };
-    let names: Vec<String> = config
-        .profiles
-        .get(active_profile(link))
-        .map_or_else(Vec::new, |p| p.channels.iter().map(|c| c.name.clone()).collect());
+    let names: Vec<String> = config.profiles.get(active_profile(link)).map_or_else(Vec::new, |p| {
+        p.channels
+            .iter()
+            .map(|c| if c.master { format!("{} (output volume)", c.name) } else { c.name.clone() })
+            .collect()
+    });
     let knob = |k: usize| names.get(k.wrapping_sub(1)).cloned().unwrap_or_else(|| format!("knob {k}"));
     let lines: Vec<String> = config.devices.iter().map(|d| editor::device_summary(d, &knob)).collect();
     window.global::<Devices>().set_summaries(strings(lines.iter().map(String::as_str)));
+    let added = config
+        .devices
+        .iter()
+        .filter_map(|d| match d {
+            cranked_ipc::settings::Device::KeyboardKnob { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect();
+    ADDED.with(|a| *a.borrow_mut() = added);
+    fill_keyboards(window);
 }
 
 /// Settings > Devices: adding and removing keyboard knobs, MIDI controls and deej boxes.
@@ -603,7 +640,7 @@ fn devices_page(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     }));
     let add_keyboard = edit(|w, devices, _| {
         let page = w.global::<Devices>();
-        let Some(name) = CHOICES.with(|c| c.borrow().keyboards.get(page.get_keyboard_index().max(0) as usize).cloned())
+        let Some(name) = SHOWN_KEYBOARDS.with(|s| s.borrow().get(page.get_keyboard_index().max(0) as usize).cloned())
         else {
             return false;
         };
