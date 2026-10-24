@@ -137,6 +137,46 @@ pub fn app_choices(
     rows
 }
 
+/// Adds a knob to a profile (up to the most a profile can have), with its own colour. Returns its index.
+pub fn add_knob(profile: &mut cranked_ipc::settings::Profile) -> Option<usize> {
+    let count = profile.channels.len();
+    if count >= cranked_ipc::settings::MAX_CONTROLS {
+        return None;
+    }
+    // bright swatches only, in order, so new knobs are easy to tell apart
+    let colours = &SWATCHES[..11];
+    profile.channels.push(cranked_ipc::settings::Channel {
+        name: format!("Knob {}", count + 1),
+        color: colours[count % colours.len()].into(),
+        background: "#000000".into(),
+        ..Default::default()
+    });
+    Some(count)
+}
+
+/// Removes knob `index` from a profile, keeping knob numbers elsewhere (Auto-lower, hidden knobs) pointing at the
+/// same knobs. A profile always keeps at least one knob.
+pub fn remove_knob(config: &mut cranked_ipc::settings::Config, profile: usize, index: usize) -> bool {
+    let Some(p) = config.profiles.get_mut(profile) else { return false };
+    if p.channels.len() <= 1 || index >= p.channels.len() {
+        return false;
+    }
+    p.channels.remove(index);
+    // knob numbers in settings count from 1
+    let renumber = |list: &mut Vec<usize>| {
+        list.retain(|&n| n != index + 1);
+        for n in list.iter_mut() {
+            if *n > index + 1 {
+                *n -= 1;
+            }
+        }
+    };
+    renumber(&mut p.auto_lower.lower);
+    renumber(&mut p.auto_lower.triggers);
+    renumber(&mut config.look.hidden_knobs);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +229,27 @@ mod tests {
         assert!(rows[0].selected && rows[1].selected && !rows[2].selected);
         assert!(rows[2].playing && !rows[0].playing);
         assert_eq!(rows[4].elsewhere, "Music, Game");
+    }
+
+    #[test]
+    fn knobs_can_be_added_and_removed() {
+        use cranked_ipc::settings::Config;
+        let mut config = Config::default();
+        let start = config.profiles[0].channels.len();
+        assert_eq!(add_knob(&mut config.profiles[0]), Some(start));
+        assert_eq!(config.profiles[0].channels[start].name, format!("Knob {}", start + 1));
+        config.profiles[0].auto_lower.lower = vec![1, 3, 6];
+        config.look.hidden_knobs = vec![2, 6];
+        assert!(remove_knob(&mut config, 0, 2), "remove knob 3");
+        assert_eq!(config.profiles[0].auto_lower.lower, [1, 5], "knob 3 gone, knob 6 is now knob 5");
+        assert_eq!(config.look.hidden_knobs, [2, 5]);
+        while config.profiles[0].channels.len() > 1 {
+            assert!(remove_knob(&mut config, 0, 0));
+        }
+        assert!(!remove_knob(&mut config, 0, 0), "the last knob stays");
+        for _ in 0..20 {
+            add_knob(&mut config.profiles[0]);
+        }
+        assert_eq!(config.profiles[0].channels.len(), cranked_ipc::settings::MAX_CONTROLS);
     }
 }

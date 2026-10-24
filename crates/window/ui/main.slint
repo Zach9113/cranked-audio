@@ -368,6 +368,35 @@ component KnobRow inherits Rectangle {
     }
 }
 
+// A dashed card at the end of the knobs that adds one.
+component AddCard inherits Rectangle {
+    callback clicked();
+    width: 64px * Look.scale;
+    border-radius: 16px * Look.scale;
+    border-width: 2px;
+    border-color: add-touch.has-hover ? Palette.faint : Palette.edge;
+    background: add-touch.has-hover ? Palette.card : transparent;
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: "+";
+            font-size: 30px * Look.scale;
+            color: add-touch.has-hover ? Palette.text : Palette.faint;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "Add";
+            font-size: 11px * Look.scale;
+            color: Palette.faint;
+            horizontal-alignment: center;
+        }
+    }
+    add-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
 // The "faders" style: a vertical fader per knob, like a mixing desk.
 component FaderColumn inherits Rectangle {
     in property <KnobData> data;
@@ -481,6 +510,7 @@ export component MainWindow inherits Window {
     callback open-general();
     callback save();
     callback back();
+    callback add-knob();
     // how big the window wants to be for its contents (the window code resizes to it when the knobs or look change)
     out property <length> wanted-width: max(self.min-width, page-layout.preferred-width);
     out property <length> wanted-height: page-layout.preferred-height;
@@ -551,6 +581,9 @@ export component MainWindow inherits Window {
                 knob-settings => { root.open-knob(knob.index); }
                 button-settings => { root.open-button(knob.index); }
             }
+            if Look.show-header && Lists.knob-names.length < 16: AddCard {
+                clicked => { root.add-knob(); }
+            }
         }
         if root.page == 0 && Look.style == 2: HorizontalLayout {
             spacing: 10px * Look.scale;
@@ -561,6 +594,10 @@ export component MainWindow inherits Window {
                 press(down) => { root.button(knob.index, down); }
                 knob-settings => { root.open-knob(knob.index); }
                 button-settings => { root.open-button(knob.index); }
+            }
+            if Look.show-header && Lists.knob-names.length < 16: AddCard {
+                width: 56px * Look.scale;
+                clicked => { root.add-knob(); }
             }
         }
         if root.page == 0 && Look.style == 1: VerticalLayout {

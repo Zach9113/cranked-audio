@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use cranked_protocol::KNOBS;
+use cranked_ipc::settings::MAX_CONTROLS as KNOBS;
 
 pub const HOLD_AFTER: Duration = Duration::from_millis(500);
 const REPEAT_GUARD: Duration = Duration::from_millis(200);
@@ -77,7 +77,8 @@ mod tests {
     use super::*;
 
     fn buttons() -> Buttons {
-        Buttons { has_hold: [true, false, true, true, true], ..Buttons::default() }
+        // button 1 has no hold action, the rest do
+        Buttons { has_hold: std::array::from_fn(|i| i != 1), ..Buttons::default() }
     }
 
     #[test]
@@ -125,7 +126,7 @@ mod tests {
         let t = Instant::now();
         let mut b = buttons();
         assert_eq!(b.up(3, t), None);
-        b.down(9, t);
-        assert_eq!(b.up(9, t), None);
+        b.down(20, t);
+        assert_eq!(b.up(20, t), None);
     }
 }

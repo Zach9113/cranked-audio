@@ -132,7 +132,7 @@ Rectangle {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.preferredWidth: column.unit * (column.showPercent ? 1.4 : 1.8)
                     Layout.preferredHeight: Layout.preferredWidth
-                    source: column.icon(column.knob.press)
+                    source: column.icon(column.knob.press === "Nothing" ? column.knob.hold : column.knob.press)
                     color: column.knob.held ? "#ffd38a" : column.theme.text
                     isMask: true
                 }
@@ -226,7 +226,7 @@ Rectangle {
                 anchors.centerIn: parent
                 width: column.unit * 1.7
                 height: width
-                source: column.icon(column.knob.press)
+                source: column.icon(column.knob.press === "Nothing" ? column.knob.hold : column.knob.press)
                 color: column.knob.held ? "#ffd38a" : column.theme.text
                 isMask: true
             }

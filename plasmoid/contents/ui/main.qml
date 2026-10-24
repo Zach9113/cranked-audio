@@ -319,7 +319,7 @@ PlasmoidItem {
                         }
                         PlasmaComponents.ToolButton {
                             visible: root.cfg.showButton && (row.knob.press !== "Nothing" || row.knob.hold !== "Nothing")
-                            icon.name: knobIcons.icon(row.knob.press)
+                            icon.name: knobIcons.icon(row.knob.press === "Nothing" ? row.knob.hold : row.knob.press)
                             checked: row.knob.held
                             PlasmaComponents.ToolTip.text: "Press: " + row.knob.press + "\nHold: " + row.knob.hold
                             PlasmaComponents.ToolTip.visible: hovered

@@ -96,7 +96,7 @@ Rectangle {
         PlasmaComponents.ToolButton {
             visible: column.showButton && column.hasButton
             Layout.alignment: Qt.AlignHCenter
-            icon.name: knobIcons.icon(column.knob.press)
+            icon.name: knobIcons.icon(column.knob.press === "Nothing" ? column.knob.hold : column.knob.press)
             icon.width: column.unit * 1.2
             icon.height: column.unit * 1.2
             checked: column.knob.held

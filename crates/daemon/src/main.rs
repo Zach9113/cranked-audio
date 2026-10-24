@@ -69,7 +69,7 @@ const USAGE: &str = "usage: cranked-audiod [--config FILE] [--no-mixer] [--stdin
 fn parse_line(line: &str) -> Option<Vec<u8>> {
     let mut words = line.split_whitespace();
     let verb = words.next()?;
-    let channel: u8 = words.next()?.parse().ok().filter(|c| usize::from(*c) < cranked_protocol::KNOBS)?;
+    let channel: u8 = words.next()?.parse().ok().filter(|c| usize::from(*c) < cranked_ipc::settings::MAX_CONTROLS)?;
     match verb {
         "knob" => Some(knob_packet(channel, words.next()?.parse().ok()?).to_vec()),
         "down" => Some(button_packet(channel, true).to_vec()),
@@ -298,14 +298,14 @@ fn main() {
                 None
             }
             Some(Event::Remote(request)) => match request {
-                dbus::Request::SetKnob { knob, percent } if knob < cranked_protocol::KNOBS => {
+                dbus::Request::SetKnob { knob, percent } if knob < cranked_ipc::settings::MAX_CONTROLS => {
                     Some(Event::OnScreen(knob_packet(knob as u8, percent).to_vec()))
                 }
-                dbus::Request::StepKnob { knob, delta } if knob < cranked_protocol::KNOBS => {
+                dbus::Request::StepKnob { knob, delta } if knob < cranked_ipc::settings::MAX_CONTROLS => {
                     let current = i32::from(core.knob(knob).unwrap_or(0));
                     Some(Event::OnScreen(knob_packet(knob as u8, (current + delta).clamp(0, 100) as u8).to_vec()))
                 }
-                dbus::Request::Button { button, down } if button < cranked_protocol::KNOBS => {
+                dbus::Request::Button { button, down } if button < cranked_ipc::settings::MAX_CONTROLS => {
                     Some(Event::OnScreen(button_packet(button as u8, down).to_vec()))
                 }
                 dbus::Request::Profile(name) => {
@@ -482,7 +482,7 @@ mod tests {
     fn stdin_lines_become_packets() {
         assert_eq!(parse_line("knob 1 100"), Some(vec![0xFF, 0xFE, 0x03, 1, 0x03, 0xE8]));
         assert_eq!(parse_line("down 4"), Some(vec![0xFF, 0xFE, 0x06, 4]));
-        assert_eq!(parse_line("knob 5 10"), None);
+        assert_eq!(parse_line("knob 20 10"), None);
         assert_eq!(parse_line("jump 1"), None);
     }
 }

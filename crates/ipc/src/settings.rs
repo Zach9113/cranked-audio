@@ -2,7 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use cranked_protocol::{Rgb, KNOBS};
+use cranked_protocol::Rgb;
+
+/// A profile has 1 to this many knobs (the mixer drives the first five).
+pub const MAX_CONTROLS: usize = 16;
 use serde::{Deserialize, Serialize};
 
 /// What a button does. In the file: `press = "play_pause"` or `hold = { ha_toggle = "light.desk_lamp" }`.
@@ -418,7 +421,10 @@ impl Config {
             self.profiles = Self::default().profiles;
         }
         for profile in &mut self.profiles {
-            profile.channels.resize_with(KNOBS, Channel::default);
+            profile.channels.truncate(MAX_CONTROLS);
+            if profile.channels.is_empty() {
+                profile.channels.push(Channel::default());
+            }
         }
     }
 
@@ -489,7 +495,7 @@ mod tests {
         .unwrap();
         assert_eq!(config.profiles.len(), 2);
         assert_eq!(config.profiles[0].name, "Default");
-        assert_eq!(config.profiles[0].channels.len(), KNOBS);
+        assert_eq!(config.profiles[0].channels.len(), 1, "as many knobs as the file lists");
         assert_eq!(config.profiles[0].channels[0].press, Action::HaToggle("switch.fan".into()));
         assert_eq!(config.profiles[0].channels[0].hold, Action::None);
         assert_eq!(config.profiles[1].channels[0].press, Action::NextProfile);

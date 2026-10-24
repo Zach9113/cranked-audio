@@ -90,6 +90,7 @@ export global KnobSettings {
     callback set-apps-expanded(bool);
     callback add-app(string);
     callback toggle-app(int);
+    callback remove-knob();
 }
 
 export global General {
@@ -110,6 +111,7 @@ export global General {
     in-out property <[bool]> look-shown;
     callback look-changed();
     callback toggle-shown(int);
+    callback add-knob();
     in property <[string]> theme-names;
     callback theme-changed(int);
     in-out property <float> brightness;
@@ -382,6 +384,15 @@ export component KnobPage inherits ScrollView {
                 ColorPicker { label: "Muted"; value <=> KnobSettings.muted-color; }
             }
         }
+
+        HorizontalLayout {
+            alignment: start;
+            Button {
+                text: "Remove this knob";
+                enabled: Lists.knob-names.length > 1;
+                clicked => { KnobSettings.remove-knob(); }
+            }
+        }
     }
 }
 
@@ -475,6 +486,26 @@ export component GeneralPage inherits ScrollView {
                     checked: General.look-shown[i];
                     toggled => { General.toggle-shown(i); }
                 }
+            }
+        }
+
+        GroupBox {
+            title: "Knobs";
+            VerticalLayout {
+                spacing: 8px;
+                Hint {
+                    text: "This profile has " + Lists.knob-names.length + " knob" + (Lists.knob-names.length == 1 ? "" : "s")
+                        + ". A mixer drives the first five; the rest work from this window, the panel widget and scripts.";
+                }
+                HorizontalLayout {
+                    alignment: start;
+                    Button {
+                        text: "Add a knob";
+                        enabled: Lists.knob-names.length < 16;
+                        clicked => { General.add-knob(); }
+                    }
+                }
+                Hint { text: "To remove a knob, right-click it and choose Remove this knob."; }
             }
         }
 

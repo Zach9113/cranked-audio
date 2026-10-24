@@ -189,7 +189,8 @@ fn mix(color: Color, under: Color, amount: f32) -> Color {
 fn row(index: usize, knob: &Knob) -> KnobData {
     let level = knob.level.map_or(-1, i32::from);
     let split = ARC_START + ARC_SWEEP * f64::from(level.max(0)) / 100.0;
-    let (icon_fill, icon_lines) = icon(&knob.press);
+    // the press action's icon, or the hold action's when pressing does nothing
+    let (icon_fill, icon_lines) = icon(if knob.press == "Nothing" { &knob.hold } else { &knob.press });
     KnobData {
         index: index as i32,
         name: knob.name.as_str().into(),
@@ -739,6 +740,18 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         });
     }
     {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        knob.on_remove_knob(move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let Some(mut config) = link.config.clone() else { return };
+            let index = w.global::<KnobSettings>().get_index() as usize;
+            if editor::remove_knob(&mut config, active_profile(&link), index) {
+                send_config(&mut link, config);
+                w.set_page(0);
+            }
+        });
+    }
+    {
         let weak = window.as_weak();
         knob.on_set_apps_expanded(move |expanded| {
             let Some(w) = weak.upgrade() else { return };
@@ -984,6 +997,23 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             }
         });
     }
+    // adds a knob (from the + card or Settings) and opens its settings so it can be set up right away
+    let add_knob = {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let Some(mut config) = link.config.clone() else { return };
+            let profile = active_profile(&link);
+            let Some(index) = editor::add_knob(&mut config.profiles[profile]) else { return };
+            send_config(&mut link, config);
+            if load_knob(&w, &link, index) {
+                link.send("entities");
+                w.set_page(1);
+            }
+        }
+    };
+    window.on_add_knob(add_knob.clone());
+    window.global::<General>().on_add_knob(add_knob);
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_open_general(move || {

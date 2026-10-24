@@ -3,7 +3,8 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use cranked_protocol::{led_frame, Decoder, Event as Input, KnobFilter, KNOBS};
+use cranked_ipc::settings::MAX_CONTROLS as MAX;
+use cranked_protocol::{led_frame, raw_to_percent, Decoder, Event as Input, KnobFilter, KNOBS};
 
 use crate::audio::Command as Audio;
 use crate::buttons::{Buttons, Gesture};
@@ -86,23 +87,23 @@ pub struct Core {
     filter: KnobFilter,
     sync: Option<StartupSync>,
     mixer_connected: bool,
-    knobs: [Option<u8>; KNOBS],
-    dirty: [bool; KNOBS],
-    popup: [bool; KNOBS],
-    muted: [bool; KNOBS],
+    knobs: [Option<u8>; MAX],
+    dirty: [bool; MAX],
+    popup: [bool; MAX],
+    muted: [bool; MAX],
     buttons: Buttons,
     last_apply: Option<Instant>,
     last_frame: Option<[u8; 48]>,
     last_led_send: Option<Instant>,
     led_waiting: bool,
     /// The level each knob's LEDs show right now (eases toward the real level).
-    shown: [Option<f64>; KNOBS],
+    shown: [Option<f64>; MAX],
     shown_at: Option<Instant>,
     led_animating: bool,
     streams: HashMap<u32, (Stream, Option<usize>)>,
     entities: HashMap<String, EntityState>,
     /// Knob position the light was last moved from.
-    applied: [Option<u8>; KNOBS],
+    applied: [Option<u8>; MAX],
     awaiting: HashMap<String, Instant>,
     ducker: Ducker,
     ducking: bool,
@@ -111,7 +112,7 @@ pub struct Core {
     started: Instant,
     /// Home Assistant is set up (shown in the window).
     pub ha_enabled: bool,
-    saved: [Option<u8>; KNOBS],
+    saved: [Option<u8>; MAX],
     /// Apps seen playing (for the window's app list), newest last.
     seen_apps: Vec<String>,
     restored: bool,
@@ -144,21 +145,21 @@ impl Core {
             filter: KnobFilter::new(),
             sync: None,
             mixer_connected: false,
-            knobs: [None; KNOBS],
-            dirty: [false; KNOBS],
-            popup: [false; KNOBS],
-            muted: [false; KNOBS],
+            knobs: [None; MAX],
+            dirty: [false; MAX],
+            popup: [false; MAX],
+            muted: [false; MAX],
             buttons: Buttons::default(),
             last_apply: None,
             last_frame: None,
             last_led_send: None,
             led_waiting: false,
-            shown: [None; KNOBS],
+            shown: [None; MAX],
             shown_at: None,
             led_animating: false,
             streams: HashMap::new(),
             entities: HashMap::new(),
-            applied: [None; KNOBS],
+            applied: [None; MAX],
             awaiting: HashMap::new(),
             ducker: Ducker::default(),
             ducking: false,
@@ -178,6 +179,11 @@ impl Core {
         };
         core.update_holds();
         core
+    }
+
+    /// How many knobs the current profile has.
+    fn count(&self) -> usize {
+        self.channels().len().min(MAX)
     }
 
     fn channels(&self) -> &[Channel] {
@@ -241,7 +247,7 @@ impl Core {
         for index in indexes {
             self.sync_meter(index, out);
         }
-        for channel in 0..KNOBS {
+        for channel in 0..self.count() {
             if let Some(percent) = self.knobs[channel] {
                 self.set_knob(channel, percent, false);
             }
@@ -374,8 +380,12 @@ impl Core {
                     match input {
                         // on-screen knobs can't glitch, so they skip the spike filter
                         Input::Knob { channel, raw } => {
-                            if let Some(percent) = self.filter.seed(usize::from(channel), raw) {
-                                self.set_knob(usize::from(channel), percent, true);
+                            let channel = usize::from(channel);
+                            // the mixer's filter tracks its own five knobs; the others are on screen only
+                            let percent =
+                                self.filter.seed(channel, raw).or_else(|| (raw <= 1023).then(|| raw_to_percent(raw)));
+                            if let Some(percent) = percent {
+                                self.set_knob(channel, percent, true);
                             }
                         }
                         other => self.button_input(other, now, &mut out),
@@ -508,12 +518,12 @@ impl Core {
     }
 
     fn state(&self) -> State {
-        let knobs = (0..KNOBS).filter_map(|i| Some(((i + 1).to_string(), self.knobs[i]?))).collect();
+        let knobs = (0..MAX).filter_map(|i| Some(((i + 1).to_string(), self.knobs[i]?))).collect();
         State { profile: self.config.profiles[self.profile].name.clone(), knobs, apps: self.seen_apps.clone() }
     }
 
     fn set_knob(&mut self, channel: usize, percent: u8, popup: bool) {
-        if channel < KNOBS {
+        if channel < self.count() {
             if popup {
                 self.moved_at = Some(Instant::now());
             }
@@ -529,10 +539,13 @@ impl Core {
     }
 
     fn gesture(&mut self, gesture: Gesture, now: Instant, out: &mut Vec<Out>) {
-        let (channel, action) = match gesture {
-            Gesture::Press(c) => (c, self.channels()[c].press.clone()),
-            Gesture::Hold(c) => (c, self.channels()[c].hold.clone()),
+        let (channel, hold) = match gesture {
+            Gesture::Press(c) => (c, false),
+            Gesture::Hold(c) => (c, true),
         };
+        // a button on a knob this profile doesn't have does nothing
+        let Some(config) = self.channels().get(channel) else { return };
+        let action = if hold { config.hold.clone() } else { config.press.clone() };
         if self.verbose {
             eprintln!("button {channel}: {gesture:?} -> {action:?}");
         }
@@ -576,7 +589,7 @@ impl Core {
     }
 
     fn toggle_mute(&mut self, channel: usize, out: &mut Vec<Out>) {
-        if !self.channels()[channel].controls_audio() {
+        if !self.channels().get(channel).is_some_and(Channel::controls_audio) {
             return;
         }
         let mute = !self.muted[channel];
@@ -604,7 +617,7 @@ impl Core {
     }
 
     fn use_profile(&mut self, index: usize, out: &mut Vec<Out>) {
-        for channel in 0..KNOBS {
+        for channel in 0..self.count() {
             if std::mem::take(&mut self.muted[channel]) {
                 out.extend(self.mute_commands(channel, false));
             }
@@ -619,7 +632,7 @@ impl Core {
         for index in indexes {
             self.sync_meter(index, out);
         }
-        for channel in 0..KNOBS {
+        for channel in 0..self.count() {
             if let Some(percent) = self.knobs[channel] {
                 self.set_knob(channel, percent, false);
             }
@@ -640,7 +653,7 @@ impl Core {
         }
         if !self.restored && !self.mixer_connected && now.duration_since(self.started) >= NO_MIXER_AFTER {
             self.restored = true;
-            for channel in 0..KNOBS {
+            for channel in 0..self.count() {
                 if let (None, Some(percent)) = (self.knobs[channel], self.saved[channel]) {
                     let raw = cranked_protocol::percent_to_raw(percent);
                     self.filter.seed(channel, raw);
@@ -661,7 +674,8 @@ impl Core {
             if (all_seen && quiet) || now.duration_since(sync.started) >= SYNC_LIMIT {
                 self.sync = None;
                 self.lights_settle_until = Some(now + LIGHTS_SETTLE);
-                for channel in 0..KNOBS {
+                // the mixer's own knobs
+                for channel in 0..KNOBS.min(self.count()) {
                     if let Some(percent) = self.filter.position(channel) {
                         self.set_knob(channel, percent, false);
                     }
@@ -674,7 +688,7 @@ impl Core {
         if self.ducking {
             let low = if self.auto_lower().active() { self.auto_lower().low() } else { 1.0 };
             if self.ducker.update(now, low) {
-                for channel in 0..KNOBS {
+                for channel in 0..self.count() {
                     if self.auto_lower().lowers(channel) || !self.auto_lower().active() {
                         self.dirty[channel] |= self.knobs[channel].is_some();
                     }
@@ -684,7 +698,7 @@ impl Core {
         }
         if self.has_pending() && self.last_apply.is_none_or(|t| now.duration_since(t) >= APPLY_EVERY) {
             self.last_apply = Some(now);
-            for channel in 0..KNOBS {
+            for channel in 0..self.count() {
                 if std::mem::take(&mut self.dirty[channel]) {
                     let turned = std::mem::take(&mut self.popup[channel]);
                     out.extend(self.apply(channel, turned));
@@ -727,7 +741,17 @@ impl Core {
         }
         self.ease_levels(now);
         let looks: [KnobLook; KNOBS] = std::array::from_fn(|channel| {
-            let config = &self.channels()[channel];
+            let Some(config) = self.channels().get(channel) else {
+                return KnobLook {
+                    level: None,
+                    color: (0, 0, 0),
+                    background: (0, 0, 0),
+                    muted_color: (0, 0, 0),
+                    muted: false,
+                    idle: false,
+                    scale: 1.0,
+                };
+            };
             let color = |text: &str| parse_color(text).unwrap_or((0, 0, 0));
             let playing = self.streams.values().any(|(s, c)| *c == Some(channel) && !s.corked);
             KnobLook {
@@ -774,7 +798,7 @@ impl Core {
         self.shown_at = Some(now);
         let alpha = 1.0 - (-dt / LED_EASE).exp();
         let mut moving = false;
-        for channel in 0..KNOBS {
+        for channel in 0..self.count() {
             let target = self.level(channel).map(f64::from);
             self.shown[channel] = match (self.shown[channel], target) {
                 (Some(shown), Some(target)) => {
@@ -802,6 +826,14 @@ impl Core {
         Some(volume)
     }
 
+    fn set_light(&mut self, entity: String, percent: u8) -> Vec<Out> {
+        if let Some(state) = self.entities.get_mut(&entity) {
+            state.brightness = Some(percent);
+            state.state = if percent > 0 { "on" } else { "off" }.into();
+        }
+        vec![Out::Ha(Ha::Brightness { entity, percent })]
+    }
+
     /// `turned`: the user moved the knob (startup sync and profile switches never move lights).
     fn apply(&mut self, channel: usize, turned: bool) -> Vec<Out> {
         if let Some(entity) = self.channels()[channel].light.clone() {
@@ -811,7 +843,10 @@ impl Core {
             if !turned || settling {
                 return Vec::new();
             }
-            let previous = previous.unwrap_or(knob);
+            // the first turn of a knob nobody has moved yet (say on screen without a mixer) sets the light outright
+            let Some(previous) = previous else {
+                return self.set_light(entity, knob);
+            };
             if previous == knob {
                 return Vec::new();
             }
@@ -823,14 +858,10 @@ impl Core {
                 return Vec::new();
             }
             let percent = catch_up(light, previous, knob);
-            if let Some(state) = state {
-                state.brightness = Some(percent);
-                state.state = if percent > 0 { "on" } else { "off" }.into();
-            }
             if self.verbose {
                 eprintln!("light {entity}: {light}% -> {percent}% (knob {previous} -> {knob})");
             }
-            return vec![Out::Ha(Ha::Brightness { entity, percent })];
+            return self.set_light(entity, percent);
         }
         let Some(percent) = self.target(channel) else {
             return Vec::new();
@@ -1470,5 +1501,57 @@ mod tests {
         // but turning it up on purpose (even slowly) does
         core.handle(packets(&[(4, 37)]), later + Duration::from_secs(1));
         assert!(!brightness(&core.tick(later + Duration::from_secs(1))).is_empty(), "34 -> 37 counts as a turn");
+    }
+
+    fn sized(count: usize) -> Config {
+        let named = |i: usize| Channel { apps: vec![format!("App{i}")], ..Channel::default() };
+        Config {
+            profiles: vec![Profile {
+                name: "P".into(),
+                channels: (0..count).map(named).collect(),
+                auto_lower: Default::default(),
+            }],
+            ..config()
+        }
+    }
+
+    #[test]
+    fn profiles_can_have_more_knobs_than_the_mixer() {
+        let start = Instant::now();
+        let mut core = Core::new(sized(7), &State::default());
+        core.handle(Event::Stream(stream(1, "App6", 50.0)), start);
+        core.handle(Event::OnScreen(knob_packet(6, 30).to_vec()), start);
+        assert_eq!(set_streams(&core.tick(start)), [(1, 30)], "knob 7 runs its app");
+        assert_eq!(core.snapshot().knobs.len(), 7);
+        // a button on knob 11 (which doesn't exist) does nothing
+        core.handle(Event::OnScreen(button_packet(10, true).to_vec()), start);
+        assert!(core
+            .handle(Event::OnScreen(button_packet(10, false).to_vec()), start + Duration::from_millis(100))
+            .is_empty());
+    }
+
+    #[test]
+    fn fewer_knobs_than_the_mixer_leaves_the_rest_dark_and_idle() {
+        let start = Instant::now();
+        let mut core = Core::new(sized(3), &State::default());
+        core.handle(Event::Stream(stream(1, "App2", 50.0)), start);
+        core.handle(Event::MixerConnected, start);
+        core.handle(packets(&[(0, 50), (1, 40), (2, 60), (3, 70), (4, 30)]), start);
+        let out = core.tick(start + SYNC_QUIET);
+        assert_eq!(set_streams(&out), [(1, 60)]);
+        let frame = out
+            .iter()
+            .find_map(|o| match o {
+                Out::Leds(f) => Some(*f),
+                _ => None,
+            })
+            .unwrap();
+        // knobs 4 and 5 (bytes for LEDs 9..15) stay dark
+        assert!(frame[2 + 9 * 3..2 + 15 * 3].iter().all(|b| *b == 0));
+        assert!(frame[2..2 + 9 * 3].iter().any(|b| *b != 0));
+        // turning the mixer's knob 5 later does nothing
+        let later = start + Duration::from_secs(10);
+        core.handle(packets(&[(4, 90), (4, 90)]), later);
+        assert!(set_streams(&core.tick(later)).is_empty());
     }
 }
