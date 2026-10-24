@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+- Panel widget: the hover tooltip listing every knob's level is now optional when the knobs are shown in the panel
+  (off by default; turn it on in Configure Widget > In a panel, handy when the knobs are small). The icon version
+  keeps it.
+
 ## 2.0.0
 
 Cranked Audio now works the way you want with or without the mixer.
