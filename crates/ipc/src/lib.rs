@@ -31,11 +31,7 @@ pub enum ServerMessage {
     Snapshot(Snapshot),
     Config(settings::Config),
     Entities(Vec<Entity>),
-    UpdateStatus {
-        status: String,
-        latest_version: Option<String>,
-        can_install: bool,
-    },
+    UpdateStatus { status: String, latest_version: Option<String>, can_install: bool },
     Quit,
 }
 

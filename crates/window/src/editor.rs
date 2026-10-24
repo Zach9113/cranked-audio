@@ -99,7 +99,12 @@ pub struct AppChoice {
 /// Every app worth offering for this knob: what it has, what's been seen playing, and what other knobs have.
 /// Each app once, spelled the way this knob spells it. This knob's apps come first, then what's playing, then apps
 /// on no knob, then apps on other knobs; alphabetical (case-insensitive) within each group.
-pub fn app_choices(mine: &[String], known: &[String], playing: &[String], others: &[(String, Vec<String>)]) -> Vec<AppChoice> {
+pub fn app_choices(
+    mine: &[String],
+    known: &[String],
+    playing: &[String],
+    others: &[(String, Vec<String>)],
+) -> Vec<AppChoice> {
     let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
     let mut names: Vec<String> = Vec::new();
     let all = mine.iter().chain(known).chain(playing).chain(others.iter().flat_map(|(_, apps)| apps));

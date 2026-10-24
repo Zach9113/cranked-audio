@@ -123,7 +123,10 @@ fn main() {
             .spawn(move || ha::run_states(for_states, watched, states, generation, mine))
             .unwrap();
         let failures = events.clone();
-        std::thread::Builder::new().name("ha-calls".into()).spawn(move || ha::run_calls(settings, calls_inbox, failures)).unwrap();
+        std::thread::Builder::new()
+            .name("ha-calls".into())
+            .spawn(move || ha::run_calls(settings, calls_inbox, failures))
+            .unwrap();
         Some(calls)
     };
     let mut ha_calls = start_ha(&config);
@@ -171,7 +174,8 @@ fn main() {
     let mut core = Core::new(config, &state);
     core.verbose = verbose;
     core.ha_enabled = ha_calls.is_some();
-    let tray = tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
+    let tray =
+        tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
     let mut tray_shows = (String::new(), Vec::<String>::new(), false);
     let mut latest_release: Option<updater::ReleaseInfo> = None;
     loop {
@@ -361,7 +365,8 @@ fn main() {
         }
         if let Some(config) = new_config {
             eprintln!("settings: applied");
-            let ha_changed = config.home_assistant != core.config().home_assistant || config.ha_entities() != core.config().ha_entities();
+            let ha_changed = config.home_assistant != core.config().home_assistant
+                || config.ha_entities() != core.config().ha_entities();
             restart_ha |= ha_changed;
             core.set_config(config, &mut out);
             clients.send(&ServerMessage::Config(core.config().clone()));
@@ -416,7 +421,9 @@ fn sibling(name: &str) -> PathBuf {
 
 fn spawn_detached(program: &std::path::Path, args: &[&std::ffi::OsStr]) {
     use std::process::{Command, Stdio};
-    if let Err(e) = Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+    if let Err(e) =
+        Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
+    {
         eprintln!("can't start {}: {e}", program.display());
     }
 }

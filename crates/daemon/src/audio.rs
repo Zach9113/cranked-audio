@@ -13,8 +13,8 @@ use pulse::callbacks::ListResult;
 use pulse::context::introspect::{SinkInfo, SinkInputInfo};
 use pulse::context::subscribe::{Facility, InterestMaskSet, Operation};
 use pulse::context::{Context, FlagSet, State};
-use pulse::mainloop::threaded::Mainloop;
 use pulse::def::BufferAttr;
+use pulse::mainloop::threaded::Mainloop;
 use pulse::proplist::{properties, Proplist};
 use pulse::sample::{Format, Spec};
 use pulse::stream::{FlagSet as StreamFlags, PeekResult, Stream as PaStream};
@@ -26,15 +26,30 @@ use crate::Event;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Set a stream's volume in percent (all of its channels).
-    SetStream { index: u32, channels: u8, percent: u8 },
+    SetStream {
+        index: u32,
+        channels: u8,
+        percent: u8,
+    },
     /// Set the default output's volume in percent.
-    SetMaster { percent: u8 },
-    MuteStream { index: u32, mute: bool },
-    MuteMaster { mute: bool },
+    SetMaster {
+        percent: u8,
+    },
+    MuteStream {
+        index: u32,
+        mute: bool,
+    },
+    MuteMaster {
+        mute: bool,
+    },
     /// Make the next real output device the default (apps follow); answers with `Event::OutputSwitched`.
     SwitchOutput,
     /// Start or stop watching how loud a stream plays (it reports `Event::Loud` while it is).
-    Meter { index: u32, sink: u32, on: bool },
+    Meter {
+        index: u32,
+        sink: u32,
+        on: bool,
+    },
 }
 
 /// Level readings per second for each watched stream.
@@ -124,7 +139,8 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
     let mut props = Proplist::new().ok_or_else(|| "no proplist".to_string())?;
     let _ = props.set_str(properties::APPLICATION_NAME, "Cranked Audio");
     let _ = props.set_str(properties::APPLICATION_ID, "cranked-audio");
-    let mut context = Context::new_with_proplist(&mainloop, "Cranked Audio", &props).ok_or_else(|| "no context".to_string())?;
+    let mut context =
+        Context::new_with_proplist(&mainloop, "Cranked Audio", &props).ok_or_else(|| "no context".to_string())?;
     context.connect(None, FlagSet::NOFAIL, None).map_err(|e| format!("{e:?}"))?;
     mainloop.start().map_err(|e| format!("{e:?}"))?;
 
@@ -271,7 +287,12 @@ fn monitor_source(mainloop: &mut Mainloop, context: &Context, sink: u32) -> Opti
 }
 
 /// Peak-level readings of one stream's own output (never a microphone). Call with the mainloop locked.
-fn start_meter(context: &mut Context, index: u32, source: u32, events: &Sender<Event>) -> Result<Rc<RefCell<PaStream>>, String> {
+fn start_meter(
+    context: &mut Context,
+    index: u32,
+    source: u32,
+    events: &Sender<Event>,
+) -> Result<Rc<RefCell<PaStream>>, String> {
     let spec = Spec { format: Format::FLOAT32NE, channels: 1, rate: METER_RATE };
     let mut props = Proplist::new().ok_or_else(|| "no proplist".to_string())?;
     let _ = props.set_str(properties::MEDIA_NAME, "Cranked Audio level meter");
@@ -309,7 +330,8 @@ fn start_meter(context: &mut Context, index: u32, source: u32, events: &Sender<E
                 let _ = events.send(Event::Loud(index));
             }
         })));
-        let attr = BufferAttr { maxlength: u32::MAX, tlength: u32::MAX, prebuf: u32::MAX, minreq: u32::MAX, fragsize: 4 };
+        let attr =
+            BufferAttr { maxlength: u32::MAX, tlength: u32::MAX, prebuf: u32::MAX, minreq: u32::MAX, fragsize: 4 };
         let flags = StreamFlags::PEAK_DETECT | StreamFlags::ADJUST_LATENCY | StreamFlags::DONT_MOVE;
         meter.connect_record(Some(&source.to_string()), Some(&attr), flags).map_err(|e| format!("{e:?}"))?;
     }

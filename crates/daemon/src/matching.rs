@@ -27,8 +27,16 @@ const IGNORED: &[&str] = &["nvbroadcast", "nvidia broadcast", "cranked-selftest-
 /// Never taken by a catch-all channel.
 const SYSTEM: &[&str] = &["libcanberra", "plasmashell", "kwin", "xdg-desktop-portal", "org.kde.", "kded"];
 const VOICE: &[&str] = &[
-    "webrtc voiceengine", "discord", "vesktop", "vencord", "steam voice", "vivox", "teamspeak", "mumble",
-    "partychat", "party chat",
+    "webrtc voiceengine",
+    "discord",
+    "vesktop",
+    "vencord",
+    "steam voice",
+    "vivox",
+    "teamspeak",
+    "mumble",
+    "partychat",
+    "party chat",
 ];
 
 impl Stream {
@@ -107,7 +115,8 @@ mod tests {
     }
 
     fn channels() -> Vec<Channel> {
-        let named = |apps: &[&str]| Channel { apps: apps.iter().map(|s| s.to_string()).collect(), ..Channel::default() };
+        let named =
+            |apps: &[&str]| Channel { apps: apps.iter().map(|s| s.to_string()).collect(), ..Channel::default() };
         vec![
             named(&["Firefox", "mpv"]),
             named(&["Spotify"]),

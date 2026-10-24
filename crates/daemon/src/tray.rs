@@ -2,8 +2,8 @@
 
 use std::sync::mpsc::Sender;
 
-use ksni::menu::{MenuItem, RadioGroup, RadioItem, StandardItem};
 use ksni::blocking::{Handle, TrayMethods};
+use ksni::menu::{MenuItem, RadioGroup, RadioItem, StandardItem};
 
 use crate::Event;
 
@@ -88,7 +88,11 @@ impl ksni::Tray for Tray {
                             tray.send(Action::Profile(name));
                         }
                     }),
-                    options: self.profiles.iter().map(|p| RadioItem { label: p.clone(), ..Default::default() }).collect(),
+                    options: self
+                        .profiles
+                        .iter()
+                        .map(|p| RadioItem { label: p.clone(), ..Default::default() })
+                        .collect(),
                 }
                 .into(),
             );

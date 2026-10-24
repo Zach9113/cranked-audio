@@ -49,10 +49,8 @@ impl Decoder {
             }
             let packet = &self.pending[at..at + length];
             match packet[2] {
-                0x03 => events.push(Event::Knob {
-                    channel: packet[3],
-                    raw: u16::from(packet[4]) << 8 | u16::from(packet[5]),
-                }),
+                0x03 => events
+                    .push(Event::Knob { channel: packet[3], raw: u16::from(packet[4]) << 8 | u16::from(packet[5]) }),
                 0x06 => events.push(Event::ButtonDown { channel: packet[3] }),
                 0x07 => events.push(Event::ButtonUp { channel: packet[3] }),
                 _ => {}

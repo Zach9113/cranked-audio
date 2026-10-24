@@ -1,7 +1,7 @@
 //! In-app update checking and installation.
 
-use std::process::Command;
 use serde_json::Value;
+use std::process::Command;
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const REPO: &str = "Zach9113/cranked-audio";
@@ -110,7 +110,8 @@ fn sha256_of(path: &std::path::Path) -> Result<String, String> {
 }
 
 pub fn apply_update(release: &ReleaseInfo) -> Result<(), String> {
-    let checksum_url = release.checksum_url.as_deref().ok_or("This release has no checksum, so it won't be installed")?;
+    let checksum_url =
+        release.checksum_url.as_deref().ok_or("This release has no checksum, so it won't be installed")?;
     let dir = private_dir()?;
     let result = install_from(&dir, &release.tarball_url, checksum_url);
     let _ = std::fs::remove_dir_all(&dir);
@@ -122,7 +123,11 @@ fn install_from(dir: &std::path::Path, tarball_url: &str, checksum_url: &str) ->
     let tar_path = format!("{tmp_dir}/update.tar.gz");
     let sum_path = dir.join("update.tar.gz.sha256");
     download(checksum_url, &sum_path)?;
-    let expected = std::fs::read_to_string(&sum_path).ok().as_deref().and_then(checksum_in).ok_or("The release's checksum file is unreadable")?;
+    let expected = std::fs::read_to_string(&sum_path)
+        .ok()
+        .as_deref()
+        .and_then(checksum_in)
+        .ok_or("The release's checksum file is unreadable")?;
 
     download(tarball_url, std::path::Path::new(&tar_path))?;
     if sha256_of(std::path::Path::new(&tar_path))? != expected {
@@ -167,9 +172,7 @@ fn install_from(dir: &std::path::Path, tarball_url: &str, checksum_url: &str) ->
     }
 
     // Execute install.sh
-    let install_status = Command::new(&installer)
-        .status()
-        .map_err(|e| format!("Installer execution failed ({e})"))?;
+    let install_status = Command::new(&installer).status().map_err(|e| format!("Installer execution failed ({e})"))?;
 
     if !install_status.success() {
         return Err("Install script exited with an error".into());

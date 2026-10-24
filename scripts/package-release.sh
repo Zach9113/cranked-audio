@@ -91,9 +91,14 @@ systemctl --user restart --no-block "$service"
 command -v update-desktop-database >/dev/null && update-desktop-database "$share/applications" 2>/dev/null || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$share/icons/hicolor" 2>/dev/null || true
 
-echo "✓ Cranked Audio installed successfully!"
-echo "✓ Background service is active and running."
-echo "✓ Open Cranked Audio from your app menu or tray icon."
+echo "✓ Cranked Audio installed."
+sleep 1
+if systemctl --user is-active --quiet "$service" 2>/dev/null; then
+  echo "✓ It's running and will start every time you log in."
+else
+  echo "! It's installed but didn't start; see: journalctl --user -u $service"
+fi
+echo "  Open Cranked Audio from your app menu or the tray icon."
 EOF
 
 chmod +x "$pkg_dir/install.sh"

@@ -40,7 +40,8 @@ pub fn find_port() -> Option<PathBuf> {
 }
 
 fn open(path: &Path) -> serialport::Result<TTYPort> {
-    let mut port = serialport::new(path.to_string_lossy(), 115_200).timeout(Duration::from_millis(500)).open_native()?;
+    let mut port =
+        serialport::new(path.to_string_lossy(), 115_200).timeout(Duration::from_millis(500)).open_native()?;
     port.set_exclusive(true)?;
     Ok(port)
 }

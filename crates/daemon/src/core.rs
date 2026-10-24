@@ -8,8 +8,8 @@ use cranked_protocol::{led_frame, Decoder, Event as Input, KnobFilter, KNOBS};
 use crate::audio::Command as Audio;
 use crate::buttons::{Buttons, Gesture};
 use crate::config::{parse_color, Action, AutoLower, Channel, Config, State};
-use crate::duck::Ducker;
 use crate::desktop::{Command as Desktop, MediaKey};
+use crate::duck::Ducker;
 use crate::ha::{Command as Ha, EntityState};
 use crate::leds::{calibration, colors, KnobLook};
 use crate::matching::{channel_for, Stream};
@@ -326,7 +326,8 @@ impl Core {
             LED_EVERY.min(APPLY_EVERY)
         } else if self.sync.is_some() || self.has_pending() || self.buttons.any_down() || self.ducking {
             APPLY_EVERY
-        } else if self.mixer_connected && !(self.screen_off && self.touched_at.is_none_or(|t| t.elapsed() >= WAKE_FOR)) {
+        } else if self.mixer_connected && !(self.screen_off && self.touched_at.is_none_or(|t| t.elapsed() >= WAKE_FOR))
+        {
             LED_REFRESH
         } else {
             Duration::from_secs(1)
@@ -460,7 +461,9 @@ impl Core {
 
     /// LEDs stay dark while the screen is off, unless the mixer was just touched.
     fn leds_dark(&self, now: Instant) -> bool {
-        self.calibrating.is_none() && self.screen_off && !self.touched_at.is_some_and(|t| now.saturating_duration_since(t) < WAKE_FOR)
+        self.calibrating.is_none()
+            && self.screen_off
+            && !self.touched_at.is_some_and(|t| now.saturating_duration_since(t) < WAKE_FOR)
     }
 
     fn mixer_input(&mut self, input: Input, now: Instant, out: &mut Vec<Out>) {
@@ -876,7 +879,12 @@ mod tests {
                 Profile {
                     name: "Main".into(),
                     channels: channels(),
-                    auto_lower: AutoLower { enabled: true, lower: vec![1, 2], triggers: vec![2, 3], ..AutoLower::default() },
+                    auto_lower: AutoLower {
+                        enabled: true,
+                        lower: vec![1, 2],
+                        triggers: vec![2, 3],
+                        ..AutoLower::default()
+                    },
                 },
                 Profile { name: "Swapped".into(), channels: second, auto_lower: AutoLower::default() },
             ],
@@ -888,7 +896,15 @@ mod tests {
     }
 
     fn stream(index: u32, app: &str, volume: f64) -> Stream {
-        Stream { index, app_name: app.into(), binary: app.to_lowercase(), volume, channels: 2, writable: true, ..Stream::default() }
+        Stream {
+            index,
+            app_name: app.into(),
+            binary: app.to_lowercase(),
+            volume,
+            channels: 2,
+            writable: true,
+            ..Stream::default()
+        }
     }
 
     fn packets(knobs: &[(u8, u8)]) -> Event {
@@ -1333,10 +1349,12 @@ mod tests {
         let start = Instant::now();
         let mut core = synced(start);
         core.handle(Event::OnScreen(knob_packet(1, 66).to_vec()), Instant::now());
-        let saved = |out: &[Out]| out.iter().find_map(|o| match o {
-            Out::SaveState(s) => Some(s.knobs.get("2").copied()),
-            _ => None,
-        });
+        let saved = |out: &[Out]| {
+            out.iter().find_map(|o| match o {
+                Out::SaveState(s) => Some(s.knobs.get("2").copied()),
+                _ => None,
+            })
+        };
         assert_eq!(saved(&core.tick(Instant::now())), None, "not while moving");
         assert_eq!(saved(&core.tick(Instant::now() + SAVE_AFTER)), Some(Some(66)));
     }
@@ -1345,7 +1363,14 @@ mod tests {
     fn leds_go_dark_with_the_screen_and_wake_on_touch() {
         let start = Instant::now();
         let mut core = synced(start);
-        let frames = |out: &[Out]| out.iter().filter_map(|o| match o { Out::Leds(f) => Some(*f), _ => None }).collect::<Vec<_>>();
+        let frames = |out: &[Out]| {
+            out.iter()
+                .filter_map(|o| match o {
+                    Out::Leds(f) => Some(*f),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
         let at = start + Duration::from_secs(1);
         core.handle(Event::ScreenOff(true), at);
         let dark = frames(&core.tick(at));
@@ -1379,7 +1404,12 @@ mod tests {
     fn calibration_shows_each_colour_full_then_dimmed_and_ends_by_itself() {
         let start = Instant::now();
         let mut core = synced(start);
-        let frame = |out: &[Out]| out.iter().find_map(|o| match o { Out::Leds(f) => Some(*f), _ => None });
+        let frame = |out: &[Out]| {
+            out.iter().find_map(|o| match o {
+                Out::Leds(f) => Some(*f),
+                _ => None,
+            })
+        };
         let at = start + Duration::from_secs(1);
         core.calibrate(Some([1.0, 1.0, 1.0]), at);
         let shown = frame(&core.tick(at)).expect("the pattern goes out right away");

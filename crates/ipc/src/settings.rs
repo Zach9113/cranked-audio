@@ -248,21 +248,43 @@ impl Default for File {
     }
 }
 
+/// A first-run layout that works out of the box for common Linux apps (matching is by app name or program,
+/// case-insensitive, so unknown entries do nothing).
 fn default_channels() -> Vec<Channel> {
-    let names = ["Media", "Music", "Chat", "Game", "System"];
-    let presses = [Action::PlayPause, Action::Previous, Action::Next, Action::SwitchOutput, Action::Mute];
-    names
-        .iter()
-        .zip(presses)
-        .enumerate()
-        .map(|(i, (name, press))| Channel {
-            name: (*name).into(),
-            catch_all: i == 3,
-            master: i == 4,
-            press,
-            ..Channel::default()
-        })
-        .collect()
+    let list = |apps: &[&str]| apps.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+    let knob = |name: &str, apps: Vec<String>, press: Action, color: &str, background: &str| Channel {
+        name: name.into(),
+        apps,
+        press,
+        color: color.into(),
+        background: background.into(),
+        ..Channel::default()
+    };
+    vec![
+        knob(
+            "Media",
+            list(&["Firefox", "Chromium", "Google Chrome", "Brave", "mpv", "VLC media player", "vlc", "Celluloid"]),
+            Action::PlayPause,
+            "#FF7A1A",
+            "#2A1200",
+        ),
+        knob(
+            "Music",
+            list(&["Spotify", "Strawberry", "Elisa", "Rhythmbox", "Amberol", "Tidal", "cider"]),
+            Action::Previous,
+            "#22C55E",
+            "#00230F",
+        ),
+        knob(
+            "Chat",
+            list(&["Discord", "Vesktop", "Vencord", "TeamSpeak", "Mumble", "Signal", "Element", "Zoom"]),
+            Action::Next,
+            "#A855F7",
+            "#1A0830",
+        ),
+        Channel { catch_all: true, ..knob("Game", Vec::new(), Action::SwitchOutput, "#06B6D4", "#002A30") },
+        Channel { master: true, ..knob("System", Vec::new(), Action::Mute, "#F4F4F6", "#202024") },
+    ]
 }
 
 impl Default for Config {
@@ -271,7 +293,11 @@ impl Default for Config {
             popups: true,
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
-            profiles: vec![Profile { name: "Default".into(), channels: default_channels(), auto_lower: AutoLower::default() }],
+            profiles: vec![Profile {
+                name: "Default".into(),
+                channels: default_channels(),
+                auto_lower: AutoLower::default(),
+            }],
         }
     }
 }
@@ -293,7 +319,8 @@ impl Config {
         let file: File = toml::from_str(text).map_err(|e| e.to_string())?;
         let mut profiles = file.profiles;
         if !file.channels.is_empty() {
-            profiles.insert(0, Profile { name: "Default".into(), channels: file.channels, auto_lower: file.auto_lower });
+            profiles
+                .insert(0, Profile { name: "Default".into(), channels: file.channels, auto_lower: file.auto_lower });
         }
         if profiles.is_empty() {
             profiles = Self::default().profiles;

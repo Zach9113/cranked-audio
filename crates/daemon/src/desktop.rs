@@ -18,8 +18,14 @@ pub enum MediaKey {
 pub enum Command {
     Media(MediaKey),
     /// Volume popup with a name ("Music 40%").
-    Volume { percent: u8, name: String },
-    Text { icon: String, text: String },
+    Volume {
+        percent: u8,
+        name: String,
+    },
+    Text {
+        icon: String,
+        text: String,
+    },
 }
 
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
@@ -29,9 +35,15 @@ const PLAYER_PATH: &str = "/org/mpris/MediaPlayer2";
 const PLAYER_IFACE: &str = "org.mpris.MediaPlayer2.Player";
 
 fn list_names(bus: &Connection) -> zbus::Result<Vec<String>> {
-    bus.call_method(Some("org.freedesktop.DBus"), "/org/freedesktop/DBus", Some("org.freedesktop.DBus"), "ListNames", &())?
-        .body()
-        .deserialize()
+    bus.call_method(
+        Some("org.freedesktop.DBus"),
+        "/org/freedesktop/DBus",
+        Some("org.freedesktop.DBus"),
+        "ListNames",
+        &(),
+    )?
+    .body()
+    .deserialize()
 }
 
 fn playback_status(bus: &Connection, name: &str) -> Option<String> {
@@ -112,7 +124,8 @@ fn run_one(bus: &Connection, command: Command) -> zbus::Result<()> {
     match command {
         Command::Media(key) => media(bus, key),
         Command::Volume { percent, name } => {
-            if osd(bus, "mediaPlayerVolumeChanged", &(i32::from(percent), name.as_str(), "audio-volume-high")).is_err() {
+            if osd(bus, "mediaPlayerVolumeChanged", &(i32::from(percent), name.as_str(), "audio-volume-high")).is_err()
+            {
                 notify(bus, "audio-volume-high", &format!("{name} {percent}%"), "", Some(i32::from(percent)))?;
             }
             Ok(())
@@ -152,7 +165,8 @@ const SCREEN_EVERY: Duration = Duration::from_secs(2);
 
 /// Every connected monitor is powered down (`dpms` lines from /sys/class/drm/*/), or there are none.
 pub fn monitors_asleep(connectors: &[(String, String)]) -> bool {
-    let connected: Vec<&String> = connectors.iter().filter(|(status, _)| status == "connected").map(|(_, dpms)| dpms).collect();
+    let connected: Vec<&String> =
+        connectors.iter().filter(|(status, _)| status == "connected").map(|(_, dpms)| dpms).collect();
     !connected.is_empty() && connected.iter().all(|dpms| dpms.as_str() != "On")
 }
 

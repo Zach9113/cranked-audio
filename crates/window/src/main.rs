@@ -65,7 +65,11 @@ const EMPTY_RING: Color = Color::from_rgb_u8(0x34, 0x34, 0x3e);
 /// `amount` of `color` over `under`, as one solid colour.
 fn mix(color: Color, under: Color, amount: f32) -> Color {
     let blend = |a: u8, b: u8| (f32::from(a) * amount + f32::from(b) * (1.0 - amount)).round() as u8;
-    Color::from_rgb_u8(blend(color.red(), under.red()), blend(color.green(), under.green()), blend(color.blue(), under.blue()))
+    Color::from_rgb_u8(
+        blend(color.red(), under.red()),
+        blend(color.green(), under.green()),
+        blend(color.blue(), under.blue()),
+    )
 }
 
 fn row(knob: &Knob) -> KnobData {
@@ -144,6 +148,8 @@ struct Editor {
     toggles: Vec<String>,
     /// What the app list offers besides this knob's own apps.
     known_apps: Vec<String>,
+    /// The full app list for the knob being edited (its order is fixed while the page is open).
+    all_rows: Vec<AppRow>,
     playing: Vec<String>,
     other_knobs: Vec<(String, Vec<String>)>,
 }
@@ -162,7 +168,13 @@ fn active_profile(link: &Link) -> usize {
 }
 
 /// Fills the Home Assistant pickers, keeping whatever entities the knob uses selected.
-fn fill_entity_lists(window: &MainWindow, entities: &[Entity], light: Option<&str>, press: Option<&str>, hold: Option<&str>) {
+fn fill_entity_lists(
+    window: &MainWindow,
+    entities: &[Entity],
+    light: Option<&str>,
+    press: Option<&str>,
+    hold: Option<&str>,
+) {
     let lists = window.global::<Lists>();
     let knob = window.global::<KnobSettings>();
     let (light_labels, light_ids) = editor::choices(entities, &["light"], "(none)", &[light.unwrap_or_default()]);
@@ -194,30 +206,47 @@ fn selected_entities(window: &MainWindow) -> (Option<String>, Option<String>, Op
     })
 }
 
-/// Rebuilds the app list from the knob's current apps, keeping everything else the list offers.
-fn refresh_app_rows(window: &MainWindow) {
-    let knob = window.global::<KnobSettings>();
-    let mine: Vec<String> = knob.get_apps().iter().map(|a| a.to_string()).collect();
-    let rows = EDITOR.with(|e| {
-        let e = e.borrow();
-        editor::app_choices(&mine, &e.known_apps, &e.playing, &e.other_knobs)
+/// Builds the full app list for the knob being edited, then shows it.
+fn build_app_rows(window: &MainWindow) {
+    let mine: Vec<String> = window.global::<KnobSettings>().get_apps().iter().map(|a| a.to_string()).collect();
+    EDITOR.with(|e| {
+        let mut e = e.borrow_mut();
+        let rows = editor::app_choices(&mine, &e.known_apps, &e.playing, &e.other_knobs);
+        e.all_rows = rows
+            .into_iter()
+            .map(|r| AppRow {
+                name: r.name.into(),
+                selected: r.selected,
+                playing: r.playing,
+                elsewhere: r.elsewhere.into(),
+            })
+            .collect();
     });
-    let rows: Vec<AppRow> = rows
-        .into_iter()
-        .map(|r| AppRow { name: r.name.into(), selected: r.selected, playing: r.playing, elsewhere: r.elsewhere.into() })
-        .collect();
-    let current = knob.get_app_rows();
-    match current.as_any().downcast_ref::<VecModel<AppRow>>() {
-        // same rows: update in place so the list keeps its scroll position
-        Some(model) if model.row_count() == rows.len() => {
-            for (i, row) in rows.into_iter().enumerate() {
-                if model.row_data(i).as_ref() != Some(&row) {
-                    model.set_row_data(i, row);
-                }
-            }
+    show_app_rows(window);
+}
+
+/// Hands the list the rows to show: all of them, or (collapsed) just this knob's.
+fn show_app_rows(window: &MainWindow) {
+    let knob = window.global::<KnobSettings>();
+    let expanded = knob.get_apps_expanded();
+    let (rows, total) = EDITOR.with(|e| {
+        let e = e.borrow();
+        let rows: Vec<AppRow> = e.all_rows.iter().filter(|r| expanded || r.selected).cloned().collect();
+        (rows, e.all_rows.len())
+    });
+    knob.set_app_total(total as i32);
+    knob.set_app_rows(ModelRc::new(VecModel::from(rows)));
+}
+
+/// Marks `name` on or off this knob in the full list (adding it at the top if it's new).
+fn mark_app(name: &str, selected: bool) {
+    EDITOR.with(|e| {
+        let mut e = e.borrow_mut();
+        match e.all_rows.iter_mut().find(|r| r.name.eq_ignore_ascii_case(name)) {
+            Some(row) => row.selected = selected,
+            None => e.all_rows.insert(0, AppRow { name: name.into(), selected, playing: false, elsewhere: "".into() }),
         }
-        _ => knob.set_app_rows(ModelRc::new(VecModel::from(rows))),
-    }
+    });
 }
 
 fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
@@ -243,11 +272,16 @@ fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
         e.playing = link.snapshot.playing.clone();
         e.other_knobs = other_knobs;
     });
-    knob.set_app_rows(ModelRc::new(VecModel::<AppRow>::default()));
     // collapsed shows just this knob's apps; a knob with none opens on the full list
     knob.set_apps_expanded(channel.apps.is_empty());
-    refresh_app_rows(window);
-    knob.set_kind(if channel.light.is_some() { 2 } else if channel.master { 1 } else { 0 });
+    build_app_rows(window);
+    knob.set_kind(if channel.light.is_some() {
+        2
+    } else if channel.master {
+        1
+    } else {
+        0
+    });
     knob.set_catch_all(channel.catch_all);
     knob.set_min(i32::from(channel.min));
     knob.set_max(i32::from(channel.max));
@@ -295,7 +329,8 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
     general.set_dim_idle(config.leds.dim_idle);
     let auto = &profile.auto_lower;
     general.set_auto_enabled(auto.enabled);
-    let flags = |list: &[usize]| ModelRc::new(VecModel::from((1..=5).map(|k| list.contains(&k)).collect::<Vec<bool>>()));
+    let flags =
+        |list: &[usize]| ModelRc::new(VecModel::from((1..=5).map(|k| list.contains(&k)).collect::<Vec<bool>>()));
     general.set_lower(flags(&auto.lower));
     general.set_triggers(flags(&auto.triggers));
     general.set_voice_chat(auto.voice_chat);
@@ -356,7 +391,8 @@ fn open_settings() {
             let _ = std::fs::write(&path, output.stdout);
         }
     }
-    let _ = Command::new("xdg-open").arg(&path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    let _ =
+        Command::new("xdg-open").arg(&path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
 }
 
 fn show(window: &MainWindow, snapshot: &Snapshot) {
@@ -507,9 +543,11 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             if let Some(model) = apps.as_any().downcast_ref::<VecModel<SharedString>>() {
                 model.push(name.as_str().into());
             }
-            // highlight it where it is, or add it at the top
+            // highlight it where it is, or add it at the top (of the full list and of what's shown)
+            mark_app(&name, true);
             let rows = w.global::<KnobSettings>().get_app_rows();
-            match (0..rows.row_count()).find(|&i| rows.row_data(i).is_some_and(|r| r.name.eq_ignore_ascii_case(&name))) {
+            match (0..rows.row_count()).find(|&i| rows.row_data(i).is_some_and(|r| r.name.eq_ignore_ascii_case(&name)))
+            {
                 Some(i) => {
                     if let Some(row) = rows.row_data(i) {
                         rows.set_row_data(i, AppRow { selected: true, ..row });
@@ -517,10 +555,21 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                 }
                 None => {
                     if let Some(model) = rows.as_any().downcast_ref::<VecModel<AppRow>>() {
-                        model.insert(0, AppRow { name: name.as_str().into(), selected: true, playing: false, elsewhere: "".into() });
+                        model.insert(
+                            0,
+                            AppRow { name: name.as_str().into(), selected: true, playing: false, elsewhere: "".into() },
+                        );
                     }
                 }
             }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        knob.on_set_apps_expanded(move |expanded| {
+            let Some(w) = weak.upgrade() else { return };
+            w.global::<KnobSettings>().set_apps_expanded(expanded);
+            show_app_rows(&w);
         });
     }
     {
@@ -531,7 +580,9 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             let Some(row) = knob.get_app_rows().row_data(index as usize) else { return };
             let apps = knob.get_apps();
             let Some(model) = apps.as_any().downcast_ref::<VecModel<SharedString>>() else { return };
-            let selected = match (0..model.row_count()).find(|&i| model.row_data(i).is_some_and(|a| a.eq_ignore_ascii_case(&row.name))) {
+            let selected = match (0..model.row_count())
+                .find(|&i| model.row_data(i).is_some_and(|a| a.eq_ignore_ascii_case(&row.name)))
+            {
                 Some(i) => {
                     model.remove(i);
                     false
@@ -541,7 +592,8 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                     true
                 }
             };
-            // only the highlight changes; rows stay where they are
+            // only the highlight changes; rows stay where they are (even when collapsed, so it can be ticked back)
+            mark_app(&row.name, selected);
             knob.get_app_rows().set_row_data(index as usize, AppRow { selected, ..row });
         });
     }
@@ -578,7 +630,12 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         general.on_gamma_changed(move || {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
             let general = w.global::<General>();
-            link.send(&format!("calibrate {} {} {}", general.get_gamma_red(), general.get_gamma_green(), general.get_gamma_blue()));
+            link.send(&format!(
+                "calibrate {} {} {}",
+                general.get_gamma_red(),
+                general.get_gamma_green(),
+                general.get_gamma_blue()
+            ));
         });
     }
     {
@@ -600,7 +657,8 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_switch_profile(move |index| {
             let Ok(mut link) = link.lock() else { return };
-            let Some(name) = link.config.as_ref().and_then(|c| c.profiles.get(index as usize)).map(|p| p.name.clone()) else {
+            let Some(name) = link.config.as_ref().and_then(|c| c.profiles.get(index as usize)).map(|p| p.name.clone())
+            else {
                 return;
             };
             link.send(&format!("profile {name}"));
@@ -810,7 +868,12 @@ fn main() -> Result<(), slint::PlatformError> {
             let mut words = open.split_whitespace();
             let (page, index) = (words.next().unwrap_or_default(), words.next().and_then(|n| n.parse::<i32>().ok()));
             match (page, index) {
-                ("knob", Some(i)) => w.invoke_open_knob(i),
+                ("knob", Some(i)) => {
+                    w.invoke_open_knob(i);
+                    if words.next() == Some("all") {
+                        w.global::<KnobSettings>().invoke_set_apps_expanded(true);
+                    }
+                }
                 ("button", Some(i)) => w.invoke_open_button(i),
                 ("settings", _) => w.invoke_open_general(),
                 ("leds", _) => w.global::<General>().invoke_open_calibration(),

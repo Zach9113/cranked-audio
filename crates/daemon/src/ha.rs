@@ -72,11 +72,7 @@ pub fn parse_state(value: &Value) -> Option<EntityState> {
     let entity = value.get("entity_id")?.as_str()?.to_string();
     let state = value.get("state")?.as_str()?.to_string();
     let attributes = value.get("attributes");
-    let name = attributes
-        .and_then(|a| a.get("friendly_name"))
-        .and_then(Value::as_str)
-        .unwrap_or(&entity)
-        .to_string();
+    let name = attributes.and_then(|a| a.get("friendly_name")).and_then(Value::as_str).unwrap_or(&entity).to_string();
     let brightness = entity.starts_with("light.").then(|| {
         if state != "on" {
             return 0;
@@ -188,7 +184,10 @@ pub fn run_calls(settings: Settings, commands: Receiver<Command>, events: Sender
 /// Home Assistant's compact entity updates (`subscribe_entities`): `a` = full states, `c` = changes with `+`
 /// (new values) and `-` (removed attributes), `r` = removed entities. Keeps `known` current and returns the
 /// entities that changed, as ordinary states.
-pub fn apply_update(known: &mut HashMap<String, (String, serde_json::Map<String, Value>)>, event: &Value) -> Vec<EntityState> {
+pub fn apply_update(
+    known: &mut HashMap<String, (String, serde_json::Map<String, Value>)>,
+    event: &Value,
+) -> Vec<EntityState> {
     let mut changed = Vec::new();
     if let Some(added) = event.get("a").and_then(Value::as_object) {
         for (id, full) in added {
@@ -244,7 +243,9 @@ fn read_json(socket: &mut Socket) -> Result<Option<Value>, String> {
     match socket.read() {
         Ok(tungstenite::Message::Text(text)) => Ok(serde_json::from_str(text.as_str()).ok()),
         Ok(_) => Ok(None),
-        Err(tungstenite::Error::Io(e)) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {
+        Err(tungstenite::Error::Io(e))
+            if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) =>
+        {
             Err("timeout".into())
         }
         Err(e) => Err(e.to_string()),
@@ -276,7 +277,13 @@ fn subscribe(settings: &Settings, watched: &[String]) -> Result<Socket, String> 
 
 /// Keeps `watched` entities' state current over Home Assistant's WebSocket (only those entities, with pings to notice
 /// a dead connection); polls while it can't connect. Stops once `generation` moves past `mine`.
-pub fn run_states(settings: Settings, watched: Vec<String>, events: Sender<Event>, generation: Arc<AtomicU64>, mine: u64) {
+pub fn run_states(
+    settings: Settings,
+    watched: Vec<String>,
+    events: Sender<Event>,
+    generation: Arc<AtomicU64>,
+    mine: u64,
+) {
     if watched.is_empty() {
         return;
     }
@@ -288,7 +295,10 @@ pub fn run_states(settings: Settings, watched: Vec<String>, events: Sender<Event
             Ok(socket) => socket,
             Err(e) => {
                 if !reported {
-                    eprintln!("home assistant: live updates unavailable ({e}); checking every {} s", POLL_EVERY.as_secs());
+                    eprintln!(
+                        "home assistant: live updates unavailable ({e}); checking every {} s",
+                        POLL_EVERY.as_secs()
+                    );
                     reported = true;
                 }
                 for entity in &watched {
@@ -353,7 +363,8 @@ mod tests {
         assert_eq!((lamp.name.as_str(), lamp.brightness), ("Desk Lamp", Some(35)));
         let off = parse_state(&json!({"entity_id": "light.x", "state": "off", "attributes": {}})).unwrap();
         assert_eq!(off.brightness, Some(0));
-        let dim = parse_state(&json!({"entity_id": "light.x", "state": "on", "attributes": {"brightness": 1}})).unwrap();
+        let dim =
+            parse_state(&json!({"entity_id": "light.x", "state": "on", "attributes": {"brightness": 1}})).unwrap();
         assert_eq!(dim.brightness, Some(1), "on is never shown as 0");
         let switch = parse_state(&json!({"entity_id": "switch.coffee_maker", "state": "on"})).unwrap();
         assert!(switch.is_on() && switch.brightness.is_none() && switch.name == "switch.coffee_maker");
@@ -370,11 +381,18 @@ mod tests {
     #[test]
     fn compact_updates_keep_state_and_attributes() {
         let mut known = HashMap::new();
-        let added = apply_update(&mut known, &json!({"a": {"light.desk_lamp": {"s": "on", "a": {"brightness": 89, "friendly_name": "Desk Lamp"}, "c": "x", "lc": 1.0}}}));
+        let added = apply_update(
+            &mut known,
+            &json!({"a": {"light.desk_lamp": {"s": "on", "a": {"brightness": 89, "friendly_name": "Desk Lamp"}, "c": "x", "lc": 1.0}}}),
+        );
         assert_eq!((added[0].name.as_str(), added[0].brightness), ("Desk Lamp", Some(35)));
-        let dimmed = apply_update(&mut known, &json!({"c": {"light.desk_lamp": {"+": {"a": {"brightness": 255}, "c": "y"}}}}));
+        let dimmed =
+            apply_update(&mut known, &json!({"c": {"light.desk_lamp": {"+": {"a": {"brightness": 255}, "c": "y"}}}}));
         assert_eq!(dimmed[0].brightness, Some(100), "attributes change without a state change");
-        let off = apply_update(&mut known, &json!({"c": {"light.desk_lamp": {"+": {"s": "off"}, "-": {"a": ["brightness"]}}}}));
+        let off = apply_update(
+            &mut known,
+            &json!({"c": {"light.desk_lamp": {"+": {"s": "off"}, "-": {"a": ["brightness"]}}}}),
+        );
         assert_eq!((off[0].state.as_str(), off[0].brightness, off[0].name.as_str()), ("off", Some(0), "Desk Lamp"));
     }
 

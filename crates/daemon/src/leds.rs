@@ -37,7 +37,8 @@ fn edge(background: Rgb, color: Rgb, amount: f64) -> (Rgb, f64) {
 /// Dims a colour to `factor` of its brightness, correcting each channel by `gamma` so the LED keeps its tint.
 pub fn dim(color: Rgb, factor: f64, gamma: [f64; 3]) -> Rgb {
     let factor = factor.clamp(0.0, 1.0);
-    let channel = |c: u8, g: f64| (f64::from(c) * factor.powf(1.0 / g.clamp(0.1, 10.0))).round().clamp(0.0, 255.0) as u8;
+    let channel =
+        |c: u8, g: f64| (f64::from(c) * factor.powf(1.0 / g.clamp(0.1, 10.0))).round().clamp(0.0, 255.0) as u8;
     (channel(color.0, gamma[0]), channel(color.1, gamma[1]), channel(color.2, gamma[2]))
 }
 
@@ -61,7 +62,12 @@ pub fn knob_colors(look: &KnobLook, brightness: u8, dim_idle: bool, gamma: [f64;
     })
 }
 
-pub fn colors(looks: &[KnobLook; KNOBS], brightness: u8, dim_idle: bool, gamma: [f64; 3]) -> [[Rgb; LEDS_PER_KNOB]; KNOBS] {
+pub fn colors(
+    looks: &[KnobLook; KNOBS],
+    brightness: u8,
+    dim_idle: bool,
+    gamma: [f64; 3],
+) -> [[Rgb; LEDS_PER_KNOB]; KNOBS] {
     std::array::from_fn(|k| knob_colors(&looks[k], brightness, dim_idle, gamma))
 }
 
@@ -69,7 +75,9 @@ pub fn colors(looks: &[KnobLook; KNOBS], brightness: u8, dim_idle: bool, gamma: 
 /// LED's lowest brightness, then dimmer still, so tint drift is easy to see and correct.
 pub fn calibration(colours: &[Rgb; KNOBS], brightness: u8, gamma: [f64; 3]) -> [[Rgb; LEDS_PER_KNOB]; KNOBS] {
     let full = f64::from(brightness.min(100)) / 100.0;
-    std::array::from_fn(|k| [dim(colours[k], full, gamma), dim(colours[k], full * EDGE_FLOOR, gamma), dim(colours[k], full * 0.3, gamma)])
+    std::array::from_fn(|k| {
+        [dim(colours[k], full, gamma), dim(colours[k], full * EDGE_FLOOR, gamma), dim(colours[k], full * 0.3, gamma)]
+    })
 }
 
 #[cfg(test)]
@@ -98,7 +106,9 @@ mod tests {
     fn is_shade_of(led: Rgb, colour: Rgb) -> bool {
         let f = |c: u8| f64::from(c);
         let k = f(led.0.max(led.1).max(led.2)) / f(colour.0.max(colour.1).max(colour.2));
-        (f(led.0) - f(colour.0) * k).abs() <= 1.0 && (f(led.1) - f(colour.1) * k).abs() <= 1.0 && (f(led.2) - f(colour.2) * k).abs() <= 1.0
+        (f(led.0) - f(colour.0) * k).abs() <= 1.0
+            && (f(led.1) - f(colour.1) * k).abs() <= 1.0
+            && (f(led.2) - f(colour.2) * k).abs() <= 1.0
     }
 
     #[test]
@@ -107,7 +117,10 @@ mod tests {
         assert_eq!(knob_colors_plain(&look(0), 100, true), [(0, 0, 255); 3]);
         for level in 0..=100 {
             for led in knob_colors_plain(&look(level), 100, true) {
-                assert!(is_shade_of(led, (255, 0, 0)) || is_shade_of(led, (0, 0, 255)), "{level}%: {led:?} is a new hue");
+                assert!(
+                    is_shade_of(led, (255, 0, 0)) || is_shade_of(led, (0, 0, 255)),
+                    "{level}%: {led:?} is a new hue"
+                );
                 assert!(led.0.max(led.2) >= 150, "{level}%: {led:?} too dark");
             }
         }

@@ -320,6 +320,12 @@ export component MainWindow inherits Window {
                 button-settings => { root.open-button(index); }
             }
         }
+        if root.page == 0: Text {
+            text: "Turn a knob by dragging or scrolling it. Right-click a knob or button to change what it does.";
+            font-size: 12px;
+            color: #6e6e7a;
+            horizontal-alignment: center;
+        }
         if root.page == 1: KnobPage { }
         if root.page == 2: ButtonPage { }
         if root.page == 3: GeneralPage { }
