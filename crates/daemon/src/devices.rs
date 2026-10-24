@@ -102,7 +102,14 @@ fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event
             std::thread::sleep(RETRY);
             continue;
         };
-        let grabbed = grab && device.grab().is_ok();
+        // never take over a device that types: the keyboard would stop working
+        let types = device
+            .supported_keys()
+            .is_some_and(|k| k.contains(evdev::KeyCode::KEY_A) || k.contains(evdev::KeyCode::KEY_SPACE));
+        if grab && types {
+            eprintln!("keyboard knob: {name} also types, so it isn't taken over (the system volume moves too)");
+        }
+        let grabbed = grab && !types && device.grab().is_ok();
         eprintln!(
             "keyboard knob: {name} ({}) on knob {}{}",
             path.display(),
