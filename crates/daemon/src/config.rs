@@ -34,6 +34,8 @@ pub struct State {
     pub profile: String,
     /// Last knob positions by knob number ("1".."5"), used when there's no mixer.
     pub knobs: std::collections::BTreeMap<String, u8>,
+    /// App names seen playing, newest last (offered when picking a knob's apps).
+    pub apps: Vec<String>,
 }
 
 impl State {

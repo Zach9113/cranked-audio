@@ -85,6 +85,53 @@ pub fn index_of(ids: &[String], id: Option<&str>) -> usize {
     id.and_then(|id| ids.iter().position(|known| known == id)).unwrap_or(0)
 }
 
+/// One row of the app picker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppChoice {
+    pub name: String,
+    /// On this knob.
+    pub selected: bool,
+    pub playing: bool,
+    /// Other knobs that have this app ("Music", "Music, Game").
+    pub elsewhere: String,
+}
+
+/// Every app worth offering for this knob: what it has, what's been seen playing, and what other knobs have.
+/// Each app once, spelled the way this knob spells it. This knob's apps come first, then what's playing, then apps
+/// on no knob, then apps on other knobs; alphabetical (case-insensitive) within each group.
+pub fn app_choices(mine: &[String], known: &[String], playing: &[String], others: &[(String, Vec<String>)]) -> Vec<AppChoice> {
+    let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+    let mut names: Vec<String> = Vec::new();
+    let all = mine.iter().chain(known).chain(playing).chain(others.iter().flat_map(|(_, apps)| apps));
+    for name in all.map(|n| n.trim()).filter(|n| !n.is_empty()) {
+        if !names.iter().any(|n| same(n, name)) {
+            names.push(name.to_string());
+        }
+    }
+    let mut rows: Vec<AppChoice> = names
+        .into_iter()
+        .map(|name| AppChoice {
+            selected: mine.iter().any(|m| same(m, &name)),
+            playing: playing.iter().any(|p| same(p, &name)),
+            elsewhere: others
+                .iter()
+                .filter(|(_, apps)| apps.iter().any(|a| same(a, &name)))
+                .map(|(knob, _)| knob.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+            name,
+        })
+        .collect();
+    let group = |r: &AppChoice| match (r.selected, r.playing, r.elsewhere.is_empty()) {
+        (true, _, _) => 0,
+        (false, true, _) => 1,
+        (false, false, true) => 2,
+        _ => 3,
+    };
+    rows.sort_by_key(|r| (group(r), r.name.to_lowercase()));
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -120,5 +167,22 @@ mod tests {
         assert_eq!(index_of(&ids, None), 0);
         assert_eq!(amount_index(30), 1);
         assert_eq!(amount_index(45), 2);
+    }
+
+    #[test]
+    fn app_list_merges_everything_once_and_marks_this_knobs_apps() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let rows = app_choices(
+            &s(&["Firefox", "mpv"]),
+            &s(&["firefox", "Spotify", "vesktop"]),
+            &s(&["vesktop"]),
+            &[("Music".into(), s(&["Spotify"])), ("Game".into(), s(&["Balatro", "spotify"]))],
+        );
+        let names: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+        // this knob's, then playing, then on no knob, then on other knobs
+        assert_eq!(names, ["Firefox", "mpv", "vesktop", "Balatro", "Spotify"]);
+        assert!(rows[0].selected && rows[1].selected && !rows[2].selected);
+        assert!(rows[2].playing && !rows[0].playing);
+        assert_eq!(rows[4].elsewhere, "Music, Game");
     }
 }

@@ -52,6 +52,9 @@ pub struct Snapshot {
     pub profiles: Vec<String>,
     /// Apps playing sound right now (for picking a knob's apps).
     pub playing: Vec<String>,
+    /// Every app seen playing (remembered between runs), for picking a knob's apps.
+    #[serde(default)]
+    pub known_apps: Vec<String>,
     /// Home Assistant is set up.
     pub home_assistant: bool,
     pub knobs: Vec<Knob>,

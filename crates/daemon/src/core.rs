@@ -30,6 +30,8 @@ const RESULT_WITHIN: Duration = Duration::from_secs(10);
 const NO_MIXER_AFTER: Duration = Duration::from_secs(4);
 /// Knob positions are saved once they've been still this long.
 const SAVE_AFTER: Duration = Duration::from_secs(2);
+/// How many seen app names to remember.
+const SEEN_APPS: usize = 200;
 /// While the screen is off, touching a knob or button lights the LEDs for this long.
 const WAKE_FOR: Duration = Duration::from_secs(30);
 /// Knob and light this close together move 1:1 (SPEC.md section 7).
@@ -104,6 +106,8 @@ pub struct Core {
     /// Home Assistant is set up (shown in the window).
     pub ha_enabled: bool,
     saved: [Option<u8>; KNOBS],
+    /// Apps seen playing (for the window's app list), newest last.
+    seen_apps: Vec<String>,
     restored: bool,
     moved_at: Option<Instant>,
     screen_off: bool,
@@ -119,6 +123,7 @@ impl Core {
     pub fn starting_at(config: Config, state: &State, started: Instant) -> Self {
         let profile = config.profile_index(&state.profile);
         let saved = std::array::from_fn(|i| state.knobs.get(&(i + 1).to_string()).map(|p| (*p).min(100)));
+        let seen_apps = state.apps.clone();
         let mut core = Self {
             config,
             profile,
@@ -149,6 +154,7 @@ impl Core {
             started,
             ha_enabled: false,
             saved,
+            seen_apps,
             restored: false,
             moved_at: None,
             screen_off: false,
@@ -281,11 +287,15 @@ impl Core {
             .collect();
         playing.sort_by_key(|n| n.to_lowercase());
         playing.dedup();
+        let mut known_apps = self.seen_apps.clone();
+        known_apps.sort_by_key(|n| n.to_lowercase());
+        known_apps.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
         cranked_ipc::Snapshot {
             mixer: self.mixer_connected,
             profile: self.config.profiles[self.profile].name.clone(),
             profiles: self.config.profiles.iter().map(|p| p.name.clone()).collect(),
             playing,
+            known_apps,
             home_assistant: self.ha_enabled,
             knobs,
             version: format!("v{}", env!("CARGO_PKG_VERSION")),
@@ -368,6 +378,9 @@ impl Core {
                     out.extend(self.guard(&stream, c));
                 }
                 let index = stream.index;
+                if !self.streams.contains_key(&index) {
+                    self.remember_app(&stream);
+                }
                 self.streams.insert(index, (stream, channel));
                 self.sync_meter(index, &mut out);
             }
@@ -411,6 +424,28 @@ impl Core {
         out
     }
 
+    /// Remembers a newly seen app's name for the window's app list (saved with the other state).
+    fn remember_app(&mut self, stream: &Stream) {
+        if stream.is_ignored() || stream.is_system_sound() {
+            return;
+        }
+        let name = if stream.app_name.is_empty() { stream.binary.clone() } else { stream.app_name.clone() };
+        if name.trim().is_empty() {
+            return;
+        }
+        let before = self.seen_apps.len();
+        self.seen_apps.retain(|n| !n.eq_ignore_ascii_case(&name));
+        let is_new = before == self.seen_apps.len();
+        self.seen_apps.push(name);
+        if self.seen_apps.len() > SEEN_APPS {
+            self.seen_apps.remove(0);
+        }
+        if is_new {
+            // saved with the knob positions once things are still
+            self.moved_at.get_or_insert_with(Instant::now);
+        }
+    }
+
     /// LEDs stay dark while the screen is off, unless the mixer was just touched.
     fn leds_dark(&self, now: Instant) -> bool {
         self.screen_off && !self.touched_at.is_some_and(|t| now.saturating_duration_since(t) < WAKE_FOR)
@@ -448,7 +483,7 @@ impl Core {
 
     fn state(&self) -> State {
         let knobs = (0..KNOBS).filter_map(|i| Some(((i + 1).to_string(), self.knobs[i]?))).collect();
-        State { profile: self.config.profiles[self.profile].name.clone(), knobs }
+        State { profile: self.config.profiles[self.profile].name.clone(), knobs, apps: self.seen_apps.clone() }
     }
 
     fn set_knob(&mut self, channel: usize, percent: u8, popup: bool) {
@@ -1303,5 +1338,18 @@ mod tests {
         assert_eq!(frames(&core.tick(touch + WAKE_FOR)).len(), 1, "dark again after a while");
         core.handle(Event::ScreenOff(false), touch + WAKE_FOR);
         assert!(frames(&core.tick(touch + WAKE_FOR + Duration::from_millis(300)))[0][2..47].iter().any(|b| *b != 0));
+    }
+
+    #[test]
+    fn remembers_apps_it_has_seen_once_each() {
+        let start = Instant::now();
+        let mut core = synced(start);
+        core.handle(Event::Stream(stream(1, "Spotify", 40.0)), start);
+        core.handle(Event::Stream(stream(2, "spotify", 40.0)), start);
+        core.handle(Event::Stream(stream(3, "Firefox", 40.0)), start);
+        core.handle(Event::Stream(stream(4, "nvbroadcast", 40.0)), start);
+        core.handle(Event::StreamRemoved(3), start);
+        assert_eq!(core.snapshot().known_apps, ["Firefox", "spotify"]);
+        assert_eq!(core.state().apps, ["spotify", "Firefox"]);
     }
 }

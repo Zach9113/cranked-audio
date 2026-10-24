@@ -1,4 +1,12 @@
-import { Button, CheckBox, ComboBox, LineEdit, SpinBox, Slider, ScrollView, GroupBox } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, SpinBox, Slider, ScrollView, GroupBox, ListView } from "std-widgets.slint";
+
+export struct AppRow {
+    name: string,
+    selected: bool,
+    playing: bool,
+    // other knobs that have it
+    elsewhere: string,
+}
 
 // Choices the pages offer, filled in by the window from the service.
 export global Lists {
@@ -34,8 +42,9 @@ export global KnobSettings {
     in-out property <int> press-entity;
     in-out property <int> hold-kind;
     in-out property <int> hold-entity;
+    in-out property <[AppRow]> app-rows;
     callback add-app(string);
-    callback remove-app(int);
+    callback toggle-app(int);
 }
 
 export global General {
@@ -169,25 +178,68 @@ export component KnobPage inherits ScrollView {
             title: "Apps on this knob";
             VerticalLayout {
                 spacing: 8px;
-                for app[i] in KnobSettings.apps: HorizontalLayout {
-                    spacing: 8px;
-                    Label { text: app; horizontal-stretch: 1; }
-                    Button {
-                        text: "Remove";
-                        clicked => { KnobSettings.remove-app(i); }
-                    }
+                Hint {
+                    text: KnobSettings.apps.length == 0
+                        ? "Click apps to put them on this knob. Apps you've played show up here."
+                        : KnobSettings.apps.length + " on this knob. Click an app to add it or take it off.";
                 }
-                if KnobSettings.apps.length == 0: Hint { text: "No apps yet."; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    playing := ComboBox {
-                        model: Lists.playing;
-                        horizontal-stretch: 1;
-                    }
-                    Button {
-                        text: "Add playing app";
-                        enabled: Lists.playing.length > 0;
-                        clicked => { KnobSettings.add-app(playing.current-value); }
+                Rectangle {
+                    height: 260px;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #34343e;
+                    background: #18181d;
+                    ListView {
+                        for row[i] in KnobSettings.app-rows: Rectangle {
+                            height: 40px;
+                            // the highlight is inset so neighbouring rows read as separate pills
+                            Rectangle {
+                                x: 4px;
+                                y: 2px;
+                                width: parent.width - 8px;
+                                height: parent.height - 4px;
+                                border-radius: 6px;
+                                background: row.selected
+                                    ? (pick.has-hover ? #2f5a3c : #264a32)
+                                    : (pick.has-hover ? #2a2a32 : transparent);
+                            }
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 12px;
+                                spacing: 10px;
+                                Text {
+                                    text: row.selected ? "✓" : "";
+                                    width: 16px;
+                                    color: #6ee08a;
+                                    font-weight: 800;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: row.name;
+                                    color: row.selected ? #ffffff : #d8d8e0;
+                                    font-weight: row.selected ? 600 : 400;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                if row.playing: Text {
+                                    text: "playing now";
+                                    color: #6ee08a;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                                if row.elsewhere != "": Text {
+                                    text: "on " + row.elsewhere;
+                                    color: #8e8e9a;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            pick := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { KnobSettings.toggle-app(i); }
+                            }
+                        }
                     }
                 }
                 HorizontalLayout {
