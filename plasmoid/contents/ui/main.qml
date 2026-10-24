@@ -187,8 +187,10 @@ PlasmoidItem {
     Plasmoid.title: "Cranked Audio"
     // the frame Plasma draws behind a widget on the desktop; off lets the knobs float on the wallpaper
     Plasmoid.backgroundHints: cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground
-    toolTipMainText: "Cranked Audio"
+    // the tooltip sums up the knobs for the icon; when the knobs themselves show, it would only repeat them
+    toolTipMainText: inPanel ? "" : "Cranked Audio"
     toolTipSubText: {
+        if (inPanel) return "";
         if (!running || !snapshot) return "Not running";
         const levels = snapshot.knobs.map(k => k.name + " " + (k.level === null ? "–" : k.level + "%") + (k.muted ? " (muted)" : ""));
         return levels.join("\n") + "\nProfile: " + snapshot.profile;
