@@ -36,4 +36,5 @@ jobs:
         with:
           files: |
             dist/*.tar.gz
+            dist/*.tar.gz.sha256
             dist/*.AppImage

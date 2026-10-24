@@ -238,7 +238,7 @@ fn main() {
                             std::thread::Builder::new()
                                 .name("updater-apply".into())
                                 .spawn(move || {
-                                    let res = updater::apply_update(&info.tarball_url);
+                                    let res = updater::apply_update(&info);
                                     let _ = tx.send(Event::UpdateApplyResult(res));
                                 })
                                 .unwrap();

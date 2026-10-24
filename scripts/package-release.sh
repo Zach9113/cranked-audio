@@ -102,6 +102,8 @@ cp "$root/LICENSE" "$pkg_dir/"
 
 echo "Creating tarball..."
 tar -czf "$dist_dir/${pkg_name}.tar.gz" -C "$dist_dir" "$pkg_name"
+# the in-app updater refuses a release whose tarball doesn't match this
+(cd "$dist_dir" && sha256sum "${pkg_name}.tar.gz" > "${pkg_name}.tar.gz.sha256")
 rm -rf "$pkg_dir"
 
 echo "Created: $dist_dir/${pkg_name}.tar.gz"
