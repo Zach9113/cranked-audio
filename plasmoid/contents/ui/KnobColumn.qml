@@ -20,6 +20,10 @@ Rectangle {
     required property bool showSource
     required property bool showButton
     required property bool showActionLabels
+    required property bool buttonsInDial
+    readonly property bool hasButton: knob.press !== "Nothing" || knob.hold !== "Nothing"
+    // the button lives in the middle of the dial
+    readonly property bool buttonInside: buttonsInDial && showButton && hasButton
 
     signal setLevel(int percent)
     signal step(int delta)
@@ -113,18 +117,31 @@ Rectangle {
                 width: parent.width * 0.66
                 height: width
                 radius: width / 2
-                color: dial.pressed ? Qt.lighter(column.theme.centre, 1.25) : dial.containsMouse ? Qt.lighter(column.theme.centre, 1.12) : column.theme.centre
+                color: column.buttonInside
+                    ? (column.knob.held || inside.pressed ? "#4a3818" : inside.containsMouse ? Qt.lighter(column.theme.centre, 1.15) : column.theme.centre)
+                    : (dial.pressed ? Qt.lighter(column.theme.centre, 1.25) : dial.containsMouse ? Qt.lighter(column.theme.centre, 1.12) : column.theme.centre)
+                border.width: column.buttonInside ? 1 : 0
+                border.color: column.knob.held || inside.pressed ? "#e0a040" : column.theme.edge
             }
 
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: 0
+                Kirigami.Icon {
+                    visible: column.buttonInside
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: column.unit * (column.showPercent ? 1.4 : 1.8)
+                    Layout.preferredHeight: Layout.preferredWidth
+                    source: column.icon(column.knob.press)
+                    color: column.knob.held ? "#ffd38a" : column.theme.text
+                    isMask: true
+                }
                 PlasmaComponents.Label {
                     visible: column.showPercent
                     text: column.level < 0 ? "–" : column.level + "%"
                     color: column.knob.muted ? column.theme.subtle : column.theme.text
                     font.weight: Font.Bold
-                    font.pixelSize: column.unit * 1.15
+                    font.pixelSize: column.unit * (column.buttonInside ? 0.62 : 1.15)
                     Layout.alignment: Qt.AlignHCenter
                 }
                 PlasmaComponents.Label {
@@ -159,6 +176,24 @@ Rectangle {
                 onReleased: dragEnd.restart()
                 onWheel: wheel => column.step((wheel.angleDelta.y > 0 || wheel.angleDelta.x > 0 ? 1 : -1) * (wheel.modifiers & Qt.ShiftModifier ? 5 : 1))
             }
+            // the middle of the dial, when it's the button: click to press, hold for the hold action
+            MouseArea {
+                id: inside
+                enabled: column.buttonInside
+                anchors.centerIn: parent
+                width: parent.width * 0.66
+                height: width
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                pressAndHoldInterval: 500
+                property bool heldDown: false
+                onPressed: heldDown = false
+                onPressAndHold: {
+                    heldDown = true;
+                    column.holdButton();
+                }
+                onClicked: if (!heldDown) column.pressButton()
+            }
             // keep the dragged value a moment so the dial doesn't jump back before the service catches up
             Timer {
                 id: dragEnd
@@ -178,7 +213,7 @@ Rectangle {
         }
 
         Rectangle {
-            visible: column.showButton && (column.knob.press !== "Nothing" || column.knob.hold !== "Nothing")
+            visible: column.showButton && column.hasButton && !column.buttonInside
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: column.unit * 3.4
             Layout.preferredHeight: column.unit * 3.4

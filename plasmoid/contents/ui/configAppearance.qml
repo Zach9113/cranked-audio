@@ -19,6 +19,7 @@ KCM.SimpleKCM {
     property bool cfg_showButton
     property bool cfg_showActionLabels
     property bool cfg_showHeader
+    property bool cfg_buttonsInDial
     property string cfg_hiddenKnobs
     property int cfg_wheelKnob
 
@@ -51,7 +52,11 @@ KCM.SimpleKCM {
     Kirigami.FormLayout {
         QQC2.ComboBox {
             Kirigami.FormData.label: "Style:"
-            model: [ { value: "knobs", text: "Knobs (like the app)" }, { value: "sliders", text: "Sliders (compact list)" } ]
+            model: [
+                { value: "knobs", text: "Knobs (like the app)" },
+                { value: "sliders", text: "Sliders (compact list)" },
+                { value: "faders", text: "Faders (like a mixing desk)" }
+            ]
             textRole: "text"
             valueRole: "value"
             currentIndex: indexOfValue(page.cfg_style)
@@ -75,7 +80,7 @@ KCM.SimpleKCM {
         RowLayout {
             Kirigami.FormData.label: "Size:"
             QQC2.Slider {
-                from: 50
+                from: 30
                 to: 160
                 stepSize: 5
                 value: page.cfg_scale
@@ -98,6 +103,12 @@ KCM.SimpleKCM {
             onToggled: page.cfg_showActionLabels = checked
         }
         QQC2.CheckBox { text: "Title and profile switcher"; checked: page.cfg_showHeader; onToggled: page.cfg_showHeader = checked }
+        QQC2.CheckBox {
+            text: "Buttons inside the dials (more compact)"
+            enabled: page.cfg_showButton && page.cfg_style === "knobs"
+            checked: page.cfg_buttonsInDial
+            onToggled: page.cfg_buttonsInDial = checked
+        }
 
         Item { Kirigami.FormData.isSection: true }
 

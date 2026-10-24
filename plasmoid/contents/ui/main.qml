@@ -178,8 +178,13 @@ PlasmoidItem {
             anchors.margins: full.pad
             // all knobs side by side when there's room; the Flow wraps them when there isn't
             readonly property real allColumns: root.shownKnobs.length * (root.unit * 6.4 + root.unit * 0.5) - root.unit * 0.5
-            implicitWidth: placeholder.visible ? root.unit * 16 : (root.cfg.style === "sliders" ? sliders.implicitWidth : allColumns)
-            implicitHeight: placeholder.visible ? placeholder.implicitHeight : (root.cfg.style === "sliders" ? sliders.implicitHeight : knobs.implicitHeight)
+            readonly property real allFaders: root.shownKnobs.length * (root.unit * 4.2 + root.unit * 0.4) - root.unit * 0.4
+            implicitWidth: placeholder.visible ? root.unit * 16
+                : root.cfg.style === "sliders" ? sliders.implicitWidth
+                : root.cfg.style === "faders" ? allFaders : allColumns
+            implicitHeight: placeholder.visible ? placeholder.implicitHeight
+                : root.cfg.style === "sliders" ? sliders.implicitHeight
+                : root.cfg.style === "faders" ? faders.implicitHeight : knobs.implicitHeight
 
             PlasmaExtras.PlaceholderMessage {
                 id: placeholder
@@ -195,12 +200,12 @@ PlasmoidItem {
             // columns wrap onto more rows when the popup is narrower than all of them
             Flow {
                 id: knobs
-                visible: !placeholder.visible && root.cfg.style !== "sliders"
+                visible: !placeholder.visible && root.cfg.style === "knobs"
                 width: parent.width
                 spacing: root.unit * 0.5
 
                 Repeater {
-                    model: root.cfg.style !== "sliders" ? root.shownKnobs : []
+                    model: root.cfg.style === "knobs" ? root.shownKnobs : []
                     delegate: KnobColumn {
                         required property var modelData
                         knob: modelData.knob
@@ -212,8 +217,34 @@ PlasmoidItem {
                         showSource: root.cfg.showSource
                         showButton: root.cfg.showButton
                         showActionLabels: root.cfg.showActionLabels
+                        buttonsInDial: root.cfg.buttonsInDial
                         onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onStep: delta => root.stepKnob(modelData.index, delta)
+                        onPressButton: root.press(modelData.index)
+                        onHoldButton: root.hold(modelData.index)
+                    }
+                }
+            }
+
+            // "Faders": vertical faders like a mixing desk
+            Flow {
+                id: faders
+                visible: !placeholder.visible && root.cfg.style === "faders"
+                width: parent.width
+                spacing: root.unit * 0.4
+                Repeater {
+                    model: root.cfg.style === "faders" ? root.shownKnobs : []
+                    delegate: FaderColumn {
+                        required property var modelData
+                        knob: modelData.knob
+                        index: modelData.index
+                        unit: root.unit
+                        theme: root.theme
+                        showName: root.cfg.showName
+                        showPercent: root.cfg.showPercent
+                        showSource: root.cfg.showSource
+                        showButton: root.cfg.showButton
+                        onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onPressButton: root.press(modelData.index)
                         onHoldButton: root.hold(modelData.index)
                     }
