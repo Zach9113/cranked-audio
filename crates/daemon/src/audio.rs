@@ -292,8 +292,8 @@ fn start_meter(context: &mut Context, index: u32, source: u32, events: &Sender<E
             loop {
                 match stream.peek() {
                     Ok(PeekResult::Data(data)) => {
-                        for chunk in data.chunks_exact(4) {
-                            peak = peak.max(f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]).abs());
+                        for &chunk in data.as_chunks::<4>().0 {
+                            peak = peak.max(f32::from_ne_bytes(chunk).abs());
                         }
                         let _ = stream.discard();
                     }

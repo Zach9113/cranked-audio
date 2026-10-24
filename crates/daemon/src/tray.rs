@@ -53,7 +53,7 @@ impl ksni::Tray for Tray {
                 width: *size,
                 height: *size,
                 // RGBA -> the ARGB (network byte order) the tray spec wants
-                data: rgba.chunks_exact(4).flat_map(|p| [p[3], p[0], p[1], p[2]]).collect(),
+                data: rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[3], p[0], p[1], p[2]]).collect(),
             })
             .collect()
     }

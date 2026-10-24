@@ -48,7 +48,7 @@ fn list_entities(agent: &Agent, settings: &Settings) -> Result<Vec<cranked_ipc::
         .filter(|s| USABLE.contains(&s.entity.split('.').next().unwrap_or_default()))
         .map(|s| cranked_ipc::Entity { id: s.entity, name: s.name })
         .collect();
-    entities.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entities.sort_by_key(|a| a.name.to_lowercase());
     Ok(entities)
 }
 

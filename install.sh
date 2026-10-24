@@ -22,7 +22,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   exit 0
 fi
 
-(cd "$root" && cargo build --release --locked)
+(cd "$root" && RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=. --remap-path-prefix=$HOME=~" cargo build --release --locked)
 
 install -d "$bin" "$share/applications" "$share/icons/hicolor/scalable/apps" "$units"
 # replace the binaries without disturbing a running copy (it keeps its old file until it restarts)

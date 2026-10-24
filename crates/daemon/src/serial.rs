@@ -1,7 +1,7 @@
 //! The mixer's USB serial port (SPEC.md section 1).
 
 use std::io::{ErrorKind, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -24,7 +24,7 @@ pub fn find_port() -> Option<PathBuf> {
     found.into_iter().next()
 }
 
-fn open(path: &PathBuf) -> serialport::Result<TTYPort> {
+fn open(path: &Path) -> serialport::Result<TTYPort> {
     let mut port = serialport::new(path.to_string_lossy(), 115_200).timeout(Duration::from_millis(500)).open_native()?;
     port.set_exclusive(true)?;
     Ok(port)
