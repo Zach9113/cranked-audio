@@ -520,6 +520,10 @@ fn send_config(link: &mut Link, config: Config) {
     }
 }
 
+fn show_device_choices(_window: &MainWindow, _choices: &cranked_ipc::DeviceChoices) {}
+
+fn show_learned(_window: &MainWindow, _learned: Option<cranked_ipc::LearnedControl>) {}
+
 fn sibling(name: &str) -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).unwrap_or_else(|| name.into())
 }
@@ -682,6 +686,13 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                             general.set_latest_version(v.into());
                         }
                     });
+                }
+                // the Devices page (below) asks for these
+                ServerMessage::Devices(choices) => {
+                    let _ = window.upgrade_in_event_loop(move |w| show_device_choices(&w, &choices));
+                }
+                ServerMessage::MidiLearned(learned) => {
+                    let _ = window.upgrade_in_event_loop(move |w| show_learned(&w, learned));
                 }
                 ServerMessage::Quit => {
                     let _ = slint::quit_event_loop();

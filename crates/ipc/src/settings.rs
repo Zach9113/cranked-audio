@@ -200,6 +200,70 @@ pub enum PopupStyle {
     Notifications,
 }
 
+/// An extra controller besides the 5-knob mixer and the on-screen knobs. Knob numbers count from 1.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Device {
+    /// A volume knob on a keyboard (or any input with volume keys): turning steps a knob, pressing is its button.
+    KeyboardKnob {
+        /// the input device's name, e.g. "BY Tech Gaming Keyboard Consumer Control"
+        name: String,
+        knob: usize,
+        #[serde(default = "default_step")]
+        step: u8,
+        /// take the input over so the system volume doesn't move too (its media keys keep working)
+        #[serde(default = "yes")]
+        grab: bool,
+    },
+    /// A MIDI controller; each mapped control turns a knob or works as its button.
+    Midi {
+        /// part of the MIDI port's name, e.g. "nanoKONTROL2"
+        name: String,
+        #[serde(default)]
+        controls: Vec<MidiControl>,
+    },
+    /// A deej-style Arduino slider box: lines of slider values ("512|1023|0") over USB serial.
+    Deej {
+        /// e.g. "/dev/ttyACM0" or a /dev/serial/by-id/ path
+        port: String,
+        #[serde(default = "default_baud")]
+        baud: u32,
+        /// which knob each slider turns, in order
+        knobs: Vec<usize>,
+        /// sliders that read backwards
+        #[serde(default)]
+        invert: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MidiControl {
+    /// MIDI channel 1..16
+    pub channel: u8,
+    /// "cc" (knobs, faders, buttons sending CC) or "note" (pads and keys)
+    pub kind: String,
+    pub number: u8,
+    pub knob: usize,
+    /// works as the knob's button instead of turning it
+    #[serde(default)]
+    pub button: bool,
+    /// an endless encoder sending up/down steps instead of a position
+    #[serde(default)]
+    pub relative: bool,
+}
+
+fn default_step() -> u8 {
+    2
+}
+
+fn default_baud() -> u32 {
+    9600
+}
+
+fn yes() -> bool {
+    true
+}
+
 /// How the window lays out the knobs (the panel widget has the same options in its own settings).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -282,6 +346,9 @@ pub struct Config {
     pub theme: String,
     #[serde(default)]
     pub look: Look,
+    /// Controllers besides the mixer and the on-screen knobs.
+    #[serde(default, rename = "device")]
+    pub devices: Vec<Device>,
     pub leds: Leds,
     pub home_assistant: HomeAssistant,
     #[serde(rename = "profile")]
@@ -297,6 +364,8 @@ struct File {
     #[serde(default = "default_theme")]
     theme: String,
     look: Look,
+    #[serde(rename = "device")]
+    devices: Vec<Device>,
     leds: Leds,
     home_assistant: HomeAssistant,
     auto_lower: AutoLower,
@@ -313,6 +382,7 @@ impl Default for File {
             popup_style: PopupStyle::default(),
             theme: default_theme(),
             look: Look::default(),
+            devices: Vec::new(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             auto_lower: AutoLower::default(),
@@ -368,6 +438,7 @@ impl Default for Config {
             popup_style: PopupStyle::default(),
             theme: default_theme(),
             look: Look::default(),
+            devices: Vec::new(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             profiles: vec![Profile {
@@ -407,6 +478,7 @@ impl Config {
             popup_style: file.popup_style,
             theme: file.theme,
             look: file.look,
+            devices: file.devices,
             leds: file.leds,
             home_assistant: file.home_assistant,
             profiles,
@@ -567,6 +639,42 @@ mod tests {
         from_window.normalize();
         assert_eq!(from_window, config);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn devices_read_naturally() {
+        let config = Config::parse(
+            r##"
+            [[device]]
+            kind = "keyboard_knob"
+            name = "BY Tech Gaming Keyboard Consumer Control"
+            knob = 4
+
+            [[device]]
+            kind = "midi"
+            name = "nanoKONTROL2"
+            controls = [
+                { channel = 1, kind = "cc", number = 0, knob = 1 },
+                { channel = 1, kind = "cc", number = 32, knob = 1, button = true },
+            ]
+
+            [[device]]
+            kind = "deej"
+            port = "/dev/ttyACM0"
+            knobs = [1, 2, 3]
+
+            [[channel]]
+            name = "Media"
+            "##,
+        )
+        .unwrap();
+        assert_eq!(config.devices.len(), 3);
+        assert!(matches!(&config.devices[0], Device::KeyboardKnob { knob: 4, step: 2, grab: true, .. }));
+        let Device::Midi { controls, .. } = &config.devices[1] else { panic!() };
+        assert!(controls[1].button && !controls[0].button);
+        assert!(matches!(&config.devices[2], Device::Deej { baud: 9600, invert: false, .. }));
+        let again = Config::parse(&toml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(again.devices, config.devices);
     }
 
     #[test]

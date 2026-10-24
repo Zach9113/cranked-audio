@@ -9,6 +9,8 @@
 //! - `token TEXT`: save a new Home Assistant token (readable only by you) and reconnect
 //! - `profile NAME`: switch profile
 //! - `calibrate R G B`: show the LED calibration pattern with that per-channel correction; `calibrate off` ends it
+//! - `list-devices`: answered with [`ServerMessage::Devices`]
+//! - `learn-midi`: answered with [`ServerMessage::MidiLearned`] once a MIDI control moves (or after 15 s)
 //! - `entities`: answered with [`ServerMessage::Entities`] (Home Assistant things buttons and knobs can use)
 
 use std::path::PathBuf;
@@ -31,8 +33,34 @@ pub enum ServerMessage {
     Snapshot(Snapshot),
     Config(settings::Config),
     Entities(Vec<Entity>),
-    UpdateStatus { status: String, latest_version: Option<String>, can_install: bool },
+    UpdateStatus {
+        status: String,
+        latest_version: Option<String>,
+        can_install: bool,
+    },
     Quit,
+    /// Answer to `list-devices`: what could be added as a device.
+    Devices(DeviceChoices),
+    /// Answer to `learn-midi`: the control that moved, if any did in time.
+    MidiLearned(Option<LearnedControl>),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeviceChoices {
+    /// inputs with volume keys (keyboard knobs), by name
+    pub keyboards: Vec<String>,
+    /// MIDI input ports
+    pub midi: Vec<String>,
+    /// serial ports (for deej boxes)
+    pub serial: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LearnedControl {
+    pub port: String,
+    pub channel: u8,
+    pub kind: String,
+    pub number: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

@@ -6,6 +6,7 @@ mod config;
 mod core;
 mod dbus;
 mod desktop;
+mod devices;
 mod duck;
 mod ha;
 mod leds;
@@ -51,6 +52,10 @@ pub enum Event {
     Tray(tray::Action),
     /// A request over the D-Bus API.
     Remote(dbus::Request),
+    /// Input from a keyboard knob, MIDI controller or deej box.
+    Device(devices::Input),
+    /// What the MIDI learn mode heard (None: nothing moved in time).
+    MidiLearned(Option<devices::Learned>),
     AudioReady,
     AudioLost,
     UpdateCheckResult(Result<Option<updater::ReleaseInfo>, String>),
@@ -178,6 +183,8 @@ fn main() {
     core.verbose = verbose;
     core.ha_enabled = ha_calls.is_some();
     let api = dbus::start(events.clone());
+    let device_generation = Arc::new(AtomicU64::new(0));
+    devices::start(&core.config().devices, &events, &device_generation);
     let tray =
         tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
     let mut tray_shows = (String::new(), Vec::<String>::new(), false);
@@ -230,6 +237,15 @@ fn main() {
                         }
                     }
                     "profile" => switch_to = Some(rest.to_string()),
+                    "list-devices" => clients.send(&ServerMessage::Devices(cranked_ipc::DeviceChoices {
+                        keyboards: devices::keyboard_knobs(),
+                        midi: devices::midi_ports(),
+                        serial: devices::serial_ports(),
+                    })),
+                    "learn-midi" => {
+                        let events = events.clone();
+                        std::thread::spawn(move || devices::learn_midi(events, Duration::from_secs(15)));
+                    }
                     // `calibrate R G B` shows the LED calibration pattern with that correction; `calibrate off` ends it
                     "calibrate" => {
                         let values: Vec<f64> = rest.split_whitespace().filter_map(|v| v.parse().ok()).collect();
@@ -320,6 +336,32 @@ fn main() {
                 }
                 _ => None,
             },
+            Some(Event::Device(input)) => match input {
+                devices::Input::Set { knob, percent } if knob < cranked_ipc::settings::MAX_CONTROLS => {
+                    Some(Event::OnScreen(knob_packet(knob as u8, percent).to_vec()))
+                }
+                devices::Input::Step { knob, delta } if knob < cranked_ipc::settings::MAX_CONTROLS => {
+                    let current = i32::from(core.knob(knob).unwrap_or(0));
+                    Some(Event::OnScreen(knob_packet(knob as u8, (current + delta).clamp(0, 100) as u8).to_vec()))
+                }
+                devices::Input::Button { knob, down } if knob < cranked_ipc::settings::MAX_CONTROLS => {
+                    Some(Event::OnScreen(button_packet(knob as u8, down).to_vec()))
+                }
+                devices::Input::Media(key) => {
+                    let _ = desktop.send(desktop::Command::Media(key));
+                    None
+                }
+                _ => None,
+            },
+            Some(Event::MidiLearned(learned)) => {
+                clients.send(&ServerMessage::MidiLearned(learned.map(|l| cranked_ipc::LearnedControl {
+                    port: l.port,
+                    channel: l.channel,
+                    kind: l.kind,
+                    number: l.number,
+                })));
+                None
+            }
             Some(Event::HaEntities(entities)) => {
                 clients.send(&ServerMessage::Entities(entities));
                 None
@@ -395,6 +437,9 @@ fn main() {
             let ha_changed = config.home_assistant != core.config().home_assistant
                 || config.ha_entities() != core.config().ha_entities();
             restart_ha |= ha_changed;
+            if config.devices != core.config().devices {
+                devices::start(&config.devices, &events, &device_generation);
+            }
             core.set_config(config, &mut out);
             clients.send(&ServerMessage::Config(core.config().clone()));
         }

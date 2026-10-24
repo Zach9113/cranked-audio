@@ -15,6 +15,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
 ureq = "3"
+evdev = "0.13"
+midir = "0.11"
+libc = "0.2"
 tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }

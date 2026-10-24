@@ -446,7 +446,9 @@ impl Core {
             | Event::HaEntities(_)
             | Event::UpdateCheckResult(_)
             | Event::UpdateApplyResult(_)
-            | Event::Remote(_) => {}
+            | Event::Remote(_)
+            | Event::Device(_)
+            | Event::MidiLearned(_) => {}
         }
         out
     }
@@ -930,6 +932,7 @@ mod tests {
             popup_style: Default::default(),
             theme: "cranked".into(),
             look: Default::default(),
+            devices: Vec::new(),
             leds: Default::default(),
             home_assistant: Default::default(),
             profiles: vec![
