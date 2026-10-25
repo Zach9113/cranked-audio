@@ -51,7 +51,7 @@ ConfigPage {
         }
         QQC2.CheckBox {
             text: "What they do (press / hold)"
-            enabled: page.cfg_showButton && !page.cfg_buttonsInDial
+            enabled: page.cfg_showButton
             checked: page.cfg_showActionLabels
             onToggled: page.cfg_showActionLabels = checked
         }
