@@ -2,7 +2,7 @@
 #
 # Install both Cranked Audio and the Atoll Dynamic Island (with in-island mixer)
 # Usage:
-#   curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-both.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-both.sh | bash
 #   or: ./install-both.sh
 #
 
@@ -34,35 +34,41 @@ echo ""
 # 1. Cranked Audio
 # -----------------------------------------------------------------------------
 say "Step 1/2: Installing Cranked Audio..."
-curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-release.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-release.sh | bash
 
 # -----------------------------------------------------------------------------
 # 2. Atoll Dynamic Island
 # -----------------------------------------------------------------------------
 say "Step 2/2: Installing Atoll (zach-patches)..."
 
-command -v sudo >/dev/null 2>&1 || die "This installer requires 'sudo' to install Atoll into /usr."
-
 ATOLL_TMP=$(mktemp -d /tmp/atoll-bundle-install.XXXXXX)
 trap 'rm -rf "$ATOLL_TMP"' EXIT
-
-if command -v pacman >/dev/null 2>&1; then
-    runtime="qt6-base qt6-declarative qt6-svg layer-shell-qt kcoreaddons ki18n dbus wayland"
-    building="cmake ninja gcc pkgconf qt6-shadertools extra-cmake-modules git"
-    say "Installing system dependencies via pacman..."
-    sudo pacman -S --needed --noconfirm $runtime $building
-fi
 
 say "Fetching Atoll source..."
 git clone --depth 1 --branch zach-patches https://github.com/Zach9113/atoll.git "$ATOLL_TMP/atoll"
 
-cd "$ATOLL_TMP/atoll"
-say "Building Atoll..."
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-cmake --build build
-
-say "Installing Atoll into /usr..."
-sudo cmake --install build
+if command -v pacman >/dev/null 2>&1 && command -v makepkg >/dev/null 2>&1; then
+    # Arch and friends: build the fork's package, so pacman owns the files and can update or remove them later.
+    if [ "$(pacman -Qq atoll 2>/dev/null)" = "atoll" ]; then
+        die "The stock 'atoll' package is installed. Remove it first (sudo pacman -R atoll), then run this again."
+    fi
+    say "Installing build tools via pacman..."
+    sudo pacman -S --needed --noconfirm base-devel git
+    say "Building and installing the atoll-git package..."
+    cd "$ATOLL_TMP/atoll/packaging"
+    cp PKGBUILD-git PKGBUILD
+    makepkg -si --noconfirm
+else
+    warn "No pacman/makepkg here: building with CMake and installing into /usr (install the Qt 6, layer-shell-qt,"
+    warn "KF6 CoreAddons/I18n and Wayland development packages first if the build fails)."
+    command -v sudo >/dev/null 2>&1 || die "This installer requires 'sudo' to install Atoll into /usr."
+    cd "$ATOLL_TMP/atoll"
+    say "Building Atoll..."
+    cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+    cmake --build build
+    say "Installing Atoll into /usr..."
+    sudo cmake --install build
+fi
 
 say "Starting Atoll user service..."
 systemctl --user daemon-reload
@@ -74,9 +80,9 @@ systemctl --user enable --now atoll.service
 echo ""
 good "Installation complete!"
 echo ""
-echo "Both services are active and will start automatically at login:"
-echo "  - Cranked Audio : $(systemctl --user is-active cranked-audio.service 2>/dev/null || echo 'active')"
-echo "  - Atoll Island  : $(systemctl --user is-active atoll.service 2>/dev/null || echo 'active')"
+echo "Both services start automatically at login. Right now:"
+echo "  - Cranked Audio : $(systemctl --user is-active cranked-audio.service 2>/dev/null || true)"
+echo "  - Atoll Island  : $(systemctl --user is-active atoll.service 2>/dev/null || true)"
 echo ""
 echo "Click the dynamic island at the top of your screen to expand it, then"
 echo "click 'Mixer' to see your live Cranked Audio knobs inside the island!"

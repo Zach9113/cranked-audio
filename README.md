@@ -70,7 +70,7 @@ curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-
 To install both **Cranked Audio** and the **Atoll Dynamic Island** (with the in-island mixer card ready to go) in one command:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-both.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-both.sh | bash
 ```
 
 Both install to `~/.local` (no root needed), add Cranked Audio to your app menu and start it at every login.
