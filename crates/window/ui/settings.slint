@@ -312,73 +312,79 @@ export component KnobPage inherits ScrollView {
                         clicked => { KnobSettings.set-apps-expanded(!KnobSettings.apps-expanded); }
                     }
                 }
-                Rectangle {
-                    // the window hands the list only the rows to show; every row keeps its height
-                    height: min(300px, KnobSettings.app-rows.length * 40px + 8px);
-                    visible: KnobSettings.app-rows.length > 0;
-                    animate height { duration: 160ms; easing: ease-out; }
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Palette.track;
-                    background: Palette.list;
-                    ListView {
-                        for row[i] in KnobSettings.app-rows: Rectangle {
-                            height: 40px;
-                            // the highlight is inset so neighbouring rows read as separate pills
-                            Rectangle {
-                                x: 4px;
-                                y: 2px;
-                                width: parent.width - 8px;
-                                height: parent.height - 4px;
-                                border-radius: 6px;
-                                background: row.selected
-                                    ? (pick.has-hover ? Palette.selected-hover : Palette.selected)
-                                    : (pick.has-hover ? Palette.centre : transparent);
-                            }
-                            HorizontalLayout {
-                                padding-left: 10px;
-                                padding-right: 12px;
-                                spacing: 10px;
-                                Text {
-                                    text: row.selected ? "✓" : "";
-                                    width: 16px;
-                                    color: Palette.check;
-                                    font-weight: 800;
-                                    vertical-alignment: center;
+                HorizontalLayout {
+                    alignment: start;
+                    Rectangle {
+                        // narrower and more compact so it's easy to scroll past the list
+                        max-width: 560px;
+                        height: min(180px, KnobSettings.app-rows.length * 36px + 8px);
+                        visible: KnobSettings.app-rows.length > 0;
+                        animate height { duration: 160ms; easing: ease-out; }
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Palette.track;
+                        background: Palette.list;
+                        ListView {
+                            for row[i] in KnobSettings.app-rows: Rectangle {
+                                height: 36px;
+                                // the highlight is inset so neighbouring rows read as separate pills
+                                Rectangle {
+                                    x: 4px;
+                                    y: 2px;
+                                    width: parent.width - 8px;
+                                    height: parent.height - 4px;
+                                    border-radius: 6px;
+                                    background: row.selected
+                                        ? (pick.has-hover ? Palette.selected-hover : Palette.selected)
+                                        : (pick.has-hover ? Palette.centre : transparent);
                                 }
-                                Text {
-                                    text: row.name;
-                                    color: row.selected ? Palette.text-strong : Palette.text-dim;
-                                    font-weight: row.selected ? 600 : 400;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 12px;
+                                    spacing: 10px;
+                                    Text {
+                                        text: row.selected ? "✓" : "";
+                                        width: 16px;
+                                        color: Palette.check;
+                                        font-weight: 800;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: row.name;
+                                        color: row.selected ? Palette.text-strong : Palette.text-dim;
+                                        font-weight: row.selected ? 600 : 400;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    if row.playing: Text {
+                                        text: "playing now";
+                                        color: Palette.check;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                    }
+                                    if row.elsewhere != "": Text {
+                                        text: "on " + row.elsewhere;
+                                        color: Palette.faint;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                    }
                                 }
-                                if row.playing: Text {
-                                    text: "playing now";
-                                    color: Palette.check;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
+                                pick := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { KnobSettings.toggle-app(i); }
                                 }
-                                if row.elsewhere != "": Text {
-                                    text: "on " + row.elsewhere;
-                                    color: Palette.faint;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            pick := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { KnobSettings.toggle-app(i); }
                             }
                         }
                     }
                 }
                 HorizontalLayout {
                     spacing: 8px;
+                    alignment: start;
                     typed := LineEdit {
-                        placeholder-text: "Or type an app or program name";
+                        max-width: 460px;
                         horizontal-stretch: 1;
+                        placeholder-text: "Or type an app or program name";
                         accepted(text) => {
                             KnobSettings.add-app(text);
                             self.text = "";
