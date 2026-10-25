@@ -558,13 +558,16 @@ fn get_device_hint(choice: &KnobDeviceChoice, knob_num: usize) -> String {
         KnobDeviceChoice::Keyboard { name } => {
             format!("Turning the volume knob/wheel on \"{name}\" steps this knob; pressing it triggers its button.")
         }
-        KnobDeviceChoice::Midi { name } => format!("Connected to MIDI controller \"{name}\"."),
+        KnobDeviceChoice::Midi { name } => {
+            format!("MIDI controller \"{name}\": its controls are learned in Settings > Devices (MIDI Learn).")
+        }
         KnobDeviceChoice::Deej { port } => format!("Connected to deej slider box on {port}."),
         KnobDeviceChoice::None => {
             if knob_num <= 5 {
-                format!("Mixer physical knob {knob_num} is unmapped; this knob only turns on-screen and in Atoll.")
+                format!("No extra controller. The mixer's knob {knob_num} still turns it, as do the window, widget and Atoll.")
             } else {
-                "This knob turns on-screen and in Atoll. To connect a keyboard knob or controller, pick one above.".to_string()
+                "This knob turns on-screen and in Atoll. To connect a keyboard knob or controller, pick one above."
+                    .to_string()
             }
         }
     }
@@ -572,29 +575,15 @@ fn get_device_hint(choice: &KnobDeviceChoice, knob_num: usize) -> String {
 
 fn populate_knob_device_choices(window: &MainWindow, config: &Config, index: usize) {
     let knob_num = index + 1;
-    let mut current_connected = KnobDeviceChoice::None;
-    let mut current_step = 2u8;
-    let mut current_grab = true;
-
-    for d in &config.devices {
-        match d {
-            Device::KeyboardKnob { name, knob: k, step, grab } if *k == knob_num => {
-                current_connected = KnobDeviceChoice::Keyboard { name: name.clone() };
-                current_step = *step;
-                current_grab = *grab;
-                break;
-            }
-            Device::Midi { name, controls } if controls.iter().any(|c| c.knob == knob_num) => {
-                current_connected = KnobDeviceChoice::Midi { name: name.clone() };
-                break;
-            }
-            Device::Deej { port, knobs, .. } if knobs.contains(&knob_num) => {
-                current_connected = KnobDeviceChoice::Deej { port: port.clone() };
-                break;
-            }
-            _ => {}
-        }
-    }
+    let mut current_connected = connected_device(&config.devices, knob_num);
+    let (current_step, current_grab) = config
+        .devices
+        .iter()
+        .find_map(|d| match d {
+            Device::KeyboardKnob { knob, step, grab, .. } if *knob == knob_num => Some((*step, *grab)),
+            _ => None,
+        })
+        .unwrap_or((2, true));
 
     if current_connected == KnobDeviceChoice::None && index < 5 {
         current_connected = KnobDeviceChoice::Mixer(knob_num);
@@ -693,12 +682,49 @@ fn populate_knob_device_choices(window: &MainWindow, config: &Config, index: usi
     KNOB_DEVICE_CHOICES.with(|c| *c.borrow_mut() = choices_list);
 }
 
-fn update_device_for_knob(
-    devices: &mut Vec<Device>,
-    knob_num: usize,
-    choice: &KnobDeviceChoice,
-    window: &MainWindow,
-) {
+/// The device a knob is connected to: the first keyboard knob, MIDI control or deej slider that drives it.
+fn connected_device(devices: &[Device], knob_num: usize) -> KnobDeviceChoice {
+    for device in devices {
+        match device {
+            Device::KeyboardKnob { name, knob, .. } if *knob == knob_num => {
+                return KnobDeviceChoice::Keyboard { name: name.clone() };
+            }
+            Device::Midi { name, controls } if controls.iter().any(|c| c.knob == knob_num) => {
+                return KnobDeviceChoice::Midi { name: name.clone() };
+            }
+            Device::Deej { port, knobs, .. } if knobs.contains(&knob_num) => {
+                return KnobDeviceChoice::Deej { port: port.clone() };
+            }
+            _ => {}
+        }
+    }
+    KnobDeviceChoice::None
+}
+
+/// Applies the device picked on a knob's page. An unchanged choice keeps every mapping as it is (only a keyboard
+/// knob's step and take-over follow the page), so saving a knob never loses its learned MIDI control or reorders
+/// a deej box's sliders.
+fn apply_knob_device(devices: &mut Vec<Device>, knob_num: usize, choice: &KnobDeviceChoice, step: u8, grab: bool) {
+    let choice = match choice {
+        // the mixer's own knobs always drive knobs 1 to 5; there is nothing to save for them
+        KnobDeviceChoice::Mixer(_) => KnobDeviceChoice::None,
+        other => other.clone(),
+    };
+    if choice == connected_device(devices, knob_num) {
+        for device in devices.iter_mut() {
+            if let Device::KeyboardKnob { knob, step: s, grab: g, .. } = device {
+                if *knob == knob_num {
+                    *s = step;
+                    *g = grab;
+                }
+            }
+        }
+        return;
+    }
+    // a MIDI control has to be learned first (Settings > Devices), so picking a MIDI device changes nothing yet
+    if matches!(choice, KnobDeviceChoice::Midi { .. }) {
+        return;
+    }
     devices.retain_mut(|d| match d {
         Device::KeyboardKnob { knob, .. } => *knob != knob_num,
         Device::Midi { controls, .. } => {
@@ -710,35 +736,17 @@ fn update_device_for_knob(
             !knobs.is_empty()
         }
     });
-
     match choice {
-        KnobDeviceChoice::None | KnobDeviceChoice::Mixer(_) => {}
-        KnobDeviceChoice::Keyboard { name } => {
-            let knob = window.global::<KnobSettings>();
-            let step = knob.get_keyboard_step().clamp(1, 20) as u8;
-            let grab = knob.get_keyboard_grab();
-            devices.push(Device::KeyboardKnob {
-                name: name.clone(),
-                knob: knob_num,
-                step,
-                grab,
-            });
-        }
-        KnobDeviceChoice::Midi { .. } => {}
+        KnobDeviceChoice::None | KnobDeviceChoice::Mixer(_) | KnobDeviceChoice::Midi { .. } => {}
+        KnobDeviceChoice::Keyboard { name } => devices.push(Device::KeyboardKnob { name, knob: knob_num, step, grab }),
         KnobDeviceChoice::Deej { port } => {
-            if let Some(d) = devices.iter_mut().find(|d| matches!(d, Device::Deej { port: p, .. } if p == port)) {
-                if let Device::Deej { knobs, .. } = d {
-                    if !knobs.contains(&knob_num) {
-                        knobs.push(knob_num);
-                    }
-                }
-            } else {
-                devices.push(Device::Deej {
-                    port: port.clone(),
-                    baud: 9600,
-                    knobs: vec![knob_num],
-                    invert: false,
-                });
+            let existing = devices.iter_mut().find_map(|d| match d {
+                Device::Deej { port: p, knobs, .. } if *p == port => Some(knobs),
+                _ => None,
+            });
+            match existing {
+                Some(knobs) => knobs.push(knob_num),
+                None => devices.push(Device::Deej { port, baud: 9600, knobs: vec![knob_num], invert: false }),
             }
         }
     }
@@ -1540,7 +1548,9 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                     let selected_idx = w.global::<KnobSettings>().get_device_index() as usize;
                     let selected_choice = KNOB_DEVICE_CHOICES.with(|c| c.borrow().get(selected_idx).cloned());
                     if let Some(choice) = selected_choice {
-                        update_device_for_knob(&mut config.devices, knob_num, &choice, &w);
+                        let knob = w.global::<KnobSettings>();
+                        let step = knob.get_keyboard_step().clamp(1, 20) as u8;
+                        apply_knob_device(&mut config.devices, knob_num, &choice, step, knob.get_keyboard_grab());
                     }
                 }
                 4 => {
@@ -1654,6 +1664,38 @@ fn main() -> Result<(), slint::PlatformError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn saving_a_knob_keeps_its_device_mappings() {
+        use cranked_ipc::settings::MidiControl;
+        let midi =
+            |knob| MidiControl { kind: "cc".into(), number: 7, button: false, relative: false, knob, channel: 1 };
+        let devices = vec![
+            Device::Midi { name: "Pad".into(), controls: vec![midi(1), midi(3)] },
+            Device::Deej { port: "/dev/ttyUSB0".into(), baud: 9600, knobs: vec![1, 2, 3], invert: false },
+            Device::KeyboardKnob { name: "Board".into(), knob: 6, step: 2, grab: true },
+        ];
+        // unchanged choices change nothing (MIDI kept, deej order kept)
+        let mut saved = devices.clone();
+        apply_knob_device(&mut saved, 1, &connected_device(&devices, 1), 2, true);
+        apply_knob_device(&mut saved, 2, &KnobDeviceChoice::Deej { port: "/dev/ttyUSB0".into() }, 2, true);
+        assert_eq!(saved, devices);
+        // a keyboard knob's step and take-over follow the page
+        apply_knob_device(&mut saved, 6, &KnobDeviceChoice::Keyboard { name: "Board".into() }, 5, false);
+        assert_eq!(saved[2], Device::KeyboardKnob { name: "Board".into(), knob: 6, step: 5, grab: false });
+        // picking a MIDI device that has nothing learned yet changes nothing
+        let before = saved.clone();
+        apply_knob_device(&mut saved, 2, &KnobDeviceChoice::Midi { name: "Pad".into() }, 2, true);
+        assert_eq!(saved, before);
+        // switching knob 3 to a keyboard drops its MIDI control and deej slider
+        apply_knob_device(&mut saved, 3, &KnobDeviceChoice::Keyboard { name: "Dial".into() }, 2, true);
+        assert_eq!(connected_device(&saved, 3), KnobDeviceChoice::Keyboard { name: "Dial".into() });
+        assert!(matches!(&saved[0], Device::Midi { controls, .. } if controls.len() == 1));
+        assert!(matches!(&saved[1], Device::Deej { knobs, .. } if knobs == &vec![1, 2]));
+        // "none" and the mixer's own knob both just disconnect
+        apply_knob_device(&mut saved, 3, &KnobDeviceChoice::Mixer(3), 2, true);
+        assert_eq!(connected_device(&saved, 3), KnobDeviceChoice::None);
+    }
+
     use super::*;
 
     #[test]

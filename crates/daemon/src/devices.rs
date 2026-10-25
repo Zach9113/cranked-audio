@@ -80,7 +80,6 @@ pub fn is_bad_name(name: &str) -> bool {
         "hdmi/dp",
         "hda intel",
         "hda nvidia",
-        "alc",
         "power button",
         "sleep button",
         "video bus",
@@ -90,7 +89,11 @@ pub fn is_bad_name(name: &str) -> bool {
         "webcam",
         "headset mic",
     ];
-    BAD.iter().any(|b| lower.contains(b))
+    // Realtek codec jack endpoints ("ALC1220 Headphone"), matched as a word so names like "Falcon" stay
+    let realtek = lower.split(|c: char| !c.is_ascii_alphanumeric()).any(|word| {
+        word.strip_prefix("alc").is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    });
+    realtek || BAD.iter().any(|b| lower.contains(b))
 }
 
 /// Whether an evdev device is a bogus candidate (virtual device, monitor audio jack, microphone, system button).
@@ -114,18 +117,16 @@ pub fn has_knob_capabilities(device: &evdev::Device) -> bool {
         return false;
     }
 
-    let has_volume_keys = device.supported_keys().is_some_and(|k| {
-        k.contains(evdev::KeyCode::KEY_VOLUMEUP) || k.contains(evdev::KeyCode::KEY_VOLUMEDOWN)
-    });
+    let has_volume_keys = device
+        .supported_keys()
+        .is_some_and(|k| k.contains(evdev::KeyCode::KEY_VOLUMEUP) || k.contains(evdev::KeyCode::KEY_VOLUMEDOWN));
 
-    let has_dial = device.supported_relative_axes().is_some_and(|axes| {
-        axes.contains(evdev::RelativeAxisCode::REL_DIAL)
-    });
+    let has_dial =
+        device.supported_relative_axes().is_some_and(|axes| axes.contains(evdev::RelativeAxisCode::REL_DIAL));
 
     let has_standalone_wheel = !is_pointer(device)
         && device.supported_relative_axes().is_some_and(|axes| {
-            axes.contains(evdev::RelativeAxisCode::REL_WHEEL)
-                || axes.contains(evdev::RelativeAxisCode::REL_HWHEEL)
+            axes.contains(evdev::RelativeAxisCode::REL_WHEEL) || axes.contains(evdev::RelativeAxisCode::REL_HWHEEL)
         });
 
     has_volume_keys || has_dial || has_standalone_wheel
@@ -159,11 +160,8 @@ pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
         }
     }
 
-    let typing: Vec<String> = names
-        .iter()
-        .filter(|n| typing_candidates.contains(*n) && !non_typing.contains(*n))
-        .cloned()
-        .collect();
+    let typing: Vec<String> =
+        names.iter().filter(|n| typing_candidates.contains(*n) && !non_typing.contains(*n)).cloned().collect();
 
     (names, typing)
 }
@@ -216,24 +214,18 @@ fn readable(fd: std::os::fd::RawFd, timeout: Duration) -> bool {
 
 /// Finds the best matching evdev node for a configured knob device name.
 /// 1. Finds all device nodes that match knob capabilities.
-/// 2. Matches exact name if possible; if not found, matches case-insensitively or by substring.
+/// 2. Matches the exact name if possible; if not found, the same name in a different capitalisation.
 /// 3. If multiple nodes match, prefers non-typing nodes so grab succeeds and typing is not interrupted.
 pub fn find_knob_device(name: &str) -> Option<(std::path::PathBuf, evdev::Device)> {
-    let mut candidates: Vec<(std::path::PathBuf, evdev::Device)> = evdev::enumerate()
-        .filter(|(_, d)| has_knob_capabilities(d))
-        .filter(|(_, d)| d.name() == Some(name))
-        .collect();
+    let mut candidates: Vec<(std::path::PathBuf, evdev::Device)> =
+        evdev::enumerate().filter(|(_, d)| has_knob_capabilities(d)).filter(|(_, d)| d.name() == Some(name)).collect();
 
     if candidates.is_empty() {
-        let name_lower = name.to_lowercase();
+        // only a different capitalisation counts: a partial name could pick up an unrelated device
+        // ("Consumer Control") while the configured one is unplugged
         candidates = evdev::enumerate()
             .filter(|(_, d)| has_knob_capabilities(d))
-            .filter(|(_, d)| {
-                d.name().is_some_and(|n| {
-                    let nl = n.to_lowercase();
-                    nl == name_lower || nl.contains(&name_lower) || name_lower.contains(&nl)
-                })
-            })
+            .filter(|(_, d)| d.name().is_some_and(|n| n.eq_ignore_ascii_case(name)))
             .collect();
     }
 
@@ -594,6 +586,8 @@ mod tests {
         assert!(is_bad_name("Video Bus"));
         assert!(is_bad_name("PC Speaker"));
         assert!(is_bad_name("Cranked Audio Virtual"));
+        assert!(is_bad_name("HDA Intel PCH ALC1220 Headphone"));
+        assert!(is_bad_name("ALC897 Front Mic"));
 
         // Good devices
         assert!(!is_bad_name("BY Tech Gaming Keyboard Consumer Control"));
@@ -602,6 +596,8 @@ mod tests {
         assert!(!is_bad_name("Keychron Q1 Pro"));
         assert!(!is_bad_name("Griffin PowerMate"));
         assert!(!is_bad_name("Surface Dial"));
+        assert!(!is_bad_name("Corsair Falcon Keyboard"));
+        assert!(!is_bad_name("Valcom Knob"));
     }
 
     #[test]
