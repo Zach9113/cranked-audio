@@ -65,6 +65,14 @@ Or install a prebuilt release (no compiler needed; the download is checked again
 curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-release.sh | bash
 ```
 
+### Install with Atoll Dynamic Island (All-in-One)
+
+To install both **Cranked Audio** and the **Atoll Dynamic Island** (with the in-island mixer card ready to go) in one command:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-both.sh | bash
+```
+
 Both install to `~/.local` (no root needed), add Cranked Audio to your app menu and start it at every login.
 
 To remove it (your settings stay in `~/.config/cranked-audio`):
