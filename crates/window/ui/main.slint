@@ -483,6 +483,7 @@ export component MainWindow inherits Window {
     callback save();
     callback back();
     callback add-knob();
+    callback toggle-buttons-in-dial();
     // the one-time tip for new users
     in property <bool> show-welcome;
     callback dismiss-welcome();
@@ -534,6 +535,10 @@ export component MainWindow inherits Window {
                 font-size: 14px * max(0.75, Look.scale);
                 color: Palette.text-dim;
                 vertical-alignment: center;
+            }
+            if root.page == 0 && Look.style == 0: Button {
+                text: Look.buttons-in-dial ? "Buttons below" : "Buttons in dials";
+                clicked => { root.toggle-buttons-in-dial(); }
             }
             if root.page == 0 && Lists.knob-names.length < 16: Button {
                 text: "+ Add";

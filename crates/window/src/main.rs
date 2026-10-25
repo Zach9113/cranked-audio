@@ -1487,6 +1487,26 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     window.global::<General>().on_add_knob(add_knob);
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
+        let toggle = move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let Some(mut config) = link.config.clone() else { return };
+            let next = !config.look.buttons_in_dial;
+            config.look.buttons_in_dial = next;
+            if next {
+                config.look.show_button = true;
+                config.look.show_percent = true;
+            }
+            send_config(&mut link, config.clone());
+            apply_look(&w, &config.look);
+            w.global::<General>().set_look_buttons_in_dial(next);
+            w.global::<General>().set_look_show_percent(config.look.show_percent);
+            show(&w, &link.snapshot);
+        };
+        window.on_toggle_buttons_in_dial(toggle.clone());
+        window.global::<KnobSettings>().on_toggle_buttons_in_dial(toggle);
+    }
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_open_general(move || {
             let (Ok(link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
             if load_general(&w, &link) {

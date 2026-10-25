@@ -95,6 +95,7 @@ export global KnobSettings {
     in-out property <bool> keyboard-grab: true;
     in-out property <string> device-hint;
     callback device-changed(int);
+    callback toggle-buttons-in-dial();
     callback set-apps-expanded(bool);
     callback add-app(string);
     callback toggle-app(int);
@@ -281,6 +282,11 @@ export component KnobPage inherits ScrollView {
                         text: "Take it over (so system volume doesn't move)";
                         checked <=> KnobSettings.keyboard-grab;
                     }
+                }
+                if Look.style == 0: CheckBox {
+                    text: "Button inside knob with percentage (compact layout)";
+                    checked: Look.buttons-in-dial;
+                    toggled => { KnobSettings.toggle-buttons-in-dial(); }
                 }
                 Hint {
                     text: KnobSettings.device-hint;
@@ -507,7 +513,7 @@ export component GeneralPage inherits ScrollView {
                 alignment: start;
                 CheckBox { text: "Buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
                 CheckBox {
-                    text: "Buttons inside the dials";
+                    text: "Buttons inside knobs with % (compact)";
                     enabled: General.look-show-button && General.look-style == 0;
                     checked <=> General.look-buttons-in-dial;
                     toggled => { General.look-changed(); }
