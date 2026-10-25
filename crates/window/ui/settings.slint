@@ -313,11 +313,13 @@ export component KnobPage inherits ScrollView {
                     }
                 }
                 HorizontalLayout {
-                    alignment: start;
+                    spacing: 0;
                     Rectangle {
-                        // narrower and more compact so it's easy to scroll past the list
-                        max-width: 560px;
-                        height: min(180px, KnobSettings.app-rows.length * 36px + 8px);
+                        // comfortable width with a dedicated gutter on the right to scroll past
+                        horizontal-stretch: 1;
+                        max-width: 640px;
+                        min-width: 300px;
+                        height: min(210px, KnobSettings.app-rows.length * 36px + 8px);
                         visible: KnobSettings.app-rows.length > 0;
                         animate height { duration: 160ms; easing: ease-out; }
                         border-radius: 8px;
@@ -377,12 +379,14 @@ export component KnobPage inherits ScrollView {
                             }
                         }
                     }
+                    Rectangle {
+                        width: 36px;
+                    }
                 }
                 HorizontalLayout {
                     spacing: 8px;
-                    alignment: start;
                     typed := LineEdit {
-                        max-width: 460px;
+                        max-width: 560px;
                         horizontal-stretch: 1;
                         placeholder-text: "Or type an app or program name";
                         accepted(text) => {
@@ -396,6 +400,9 @@ export component KnobPage inherits ScrollView {
                             KnobSettings.add-app(typed.text);
                             typed.text = "";
                         }
+                    }
+                    Rectangle {
+                        width: 36px;
                     }
                 }
                 CheckBox {
