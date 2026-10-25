@@ -886,13 +886,13 @@ export component DevicesPage inherits ScrollView {
         }
 
         GroupBox {
-            title: "Keyboard knob";
+            title: "Keyboard knob / Controller";
             VerticalLayout {
                 spacing: 8px;
-                Hint { text: "A volume knob on a keyboard (or anything with volume keys): turning it turns a knob, pressing it is that knob's button."; }
+                Hint { text: "A volume knob or wheel on a keyboard, or a USB rotary controller: turning it turns a knob, pressing it is that knob's button."; }
                 HorizontalLayout {
                     spacing: 8px;
-                    Label { text: "Keyboard"; width: 110px; }
+                    Label { text: "Device"; width: 110px; }
                     ComboBox { model: Devices.keyboards; current-index <=> Devices.keyboard-index; }
                 }
                 HorizontalLayout {
@@ -910,7 +910,7 @@ export component DevicesPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button {
-                        text: "Add keyboard knob";
+                        text: "Add knob controller";
                         enabled: Devices.keyboards.length > 0;
                         clicked => { Devices.add-keyboard(); }
                     }

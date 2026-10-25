@@ -612,14 +612,21 @@ fn populate_knob_device_choices(window: &MainWindow, config: &Config, index: usi
         labels_list.push(format!("Mixer physical knob {}", knob_num));
     }
 
-    // 3. Keyboards from CHOICES
+    // 3. Keyboards / Controllers from CHOICES
     CHOICES.with(|c| {
         let choices = c.borrow();
         for k in &choices.keyboards {
             let choice = KnobDeviceChoice::Keyboard { name: k.clone() };
             if !choices_list.contains(&choice) {
                 let typing_hint = if choices.typing.contains(k) { " (also types)" } else { "" };
-                labels_list.push(format!("Keyboard: {k}{typing_hint}"));
+                let prefix = if choices.typing.contains(k) {
+                    "Keyboard"
+                } else if k.to_lowercase().contains("keyboard") {
+                    "Keyboard knob"
+                } else {
+                    "Controller / knob"
+                };
+                labels_list.push(format!("{prefix}: {k}{typing_hint}"));
                 choices_list.push(choice);
             }
         }
@@ -628,7 +635,8 @@ fn populate_knob_device_choices(window: &MainWindow, config: &Config, index: usi
     if let KnobDeviceChoice::Keyboard { ref name } = current_connected {
         let choice = KnobDeviceChoice::Keyboard { name: name.clone() };
         if !choices_list.contains(&choice) {
-            labels_list.push(format!("Keyboard: {name}"));
+            let prefix = if name.to_lowercase().contains("keyboard") { "Keyboard knob" } else { "Controller / knob" };
+            labels_list.push(format!("{prefix}: {name}"));
             choices_list.push(choice);
         }
     }

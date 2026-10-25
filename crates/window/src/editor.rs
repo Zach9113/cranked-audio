@@ -221,7 +221,7 @@ pub fn device_summary(device: &cranked_ipc::settings::Device, knob: &dyn Fn(usiz
     use cranked_ipc::settings::Device;
     match device {
         Device::KeyboardKnob { name, knob: k, step, grab } => format!(
-            "Keyboard knob \u{2014} {name}: turns {} by {step}%{}",
+            "Knob controller \u{2014} {name}: turns {} by {step}%{}",
             knob(*k),
             if *grab { "" } else { " (the system volume moves too)" }
         ),
