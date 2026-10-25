@@ -21,7 +21,7 @@ ConfigPage {
         QQC2.ComboBox {
             Kirigami.FormData.label: "Style:"
             model: [
-                { value: "knobs", text: "Knobs (like the app)" },
+                { value: "knobs", text: "Knobs (dials)" },
                 { value: "sliders", text: "Sliders (compact list)" },
                 { value: "faders", text: "Faders (like a mixing desk)" }
             ]

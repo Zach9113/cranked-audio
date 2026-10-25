@@ -1520,8 +1520,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             w.global::<General>().set_look_show_percent(config.look.show_percent);
             show(&w, &link.snapshot);
         };
-        window.on_toggle_buttons_in_dial(toggle.clone());
-        window.global::<KnobSettings>().on_toggle_buttons_in_dial(toggle);
+        window.on_toggle_buttons_in_dial(toggle);
     }
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());

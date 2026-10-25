@@ -1,4 +1,4 @@
-// Settings > Desktop & popup: the title row and the background.
+// Settings > Desktop & popup: the title row. Backgrounds are on Look, since they apply in a panel too.
 
 import QtQuick
 import QtQuick.Controls as QQC2
@@ -21,17 +21,6 @@ ConfigPage {
             text: "Title and profile switcher"
             checked: page.cfg_showHeader
             onToggled: page.cfg_showHeader = checked
-        }
-        QQC2.CheckBox {
-            Kirigami.FormData.label: "Backgrounds:"
-            text: "Widget background"
-            checked: page.cfg_showBackground
-            onToggled: page.cfg_showBackground = checked
-        }
-        QQC2.CheckBox {
-            text: "Card backgrounds behind knobs"
-            checked: page.cfg_showCardBackground
-            onToggled: page.cfg_showCardBackground = checked
         }
     }
 }

@@ -96,7 +96,6 @@ export global KnobSettings {
     in-out property <string> device-hint;
     in-out property <bool> confirming-remove: false;
     callback device-changed(int);
-    callback toggle-buttons-in-dial();
     callback set-apps-expanded(bool);
     callback add-app(string);
     callback toggle-app(int);
@@ -261,7 +260,7 @@ export component KnobPage inherits ScrollView {
         }
 
         GroupBox {
-            title: "Controller / Device";
+            title: "Controller";
             VerticalLayout {
                 spacing: 10px;
                 HorizontalLayout {
@@ -283,11 +282,6 @@ export component KnobPage inherits ScrollView {
                         text: "Take it over (so system volume doesn't move)";
                         checked <=> KnobSettings.keyboard-grab;
                     }
-                }
-                if Look.style == 0: CheckBox {
-                    text: "Button inside knob with percentage (compact layout)";
-                    checked: Look.buttons-in-dial;
-                    toggled => { KnobSettings.toggle-buttons-in-dial(); }
                 }
                 Hint {
                     text: KnobSettings.device-hint;
@@ -509,20 +503,20 @@ export component GeneralPage inherits ScrollView {
                 spacing: 10px;
                 HorizontalLayout {
                     spacing: 8px;
-                    Label { text: "Theme"; width: 110px; }
-                    ComboBox {
-                        model: General.theme-names;
-                        current-index <=> General.theme-index;
-                        selected => { General.theme-changed(self.current-index); }
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
                     Label { text: "Style"; width: 110px; }
                     ComboBox {
                         model: ["Knobs (dials)", "Sliders (compact list)", "Faders (like a mixing desk)"];
                         current-index <=> General.look-style;
                         selected => { General.look-changed(); }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Theme"; width: 110px; }
+                    ComboBox {
+                        model: General.theme-names;
+                        current-index <=> General.theme-index;
+                        selected => { General.theme-changed(self.current-index); }
                     }
                 }
                 HorizontalLayout {
@@ -536,26 +530,27 @@ export component GeneralPage inherits ScrollView {
                     }
                     Label { text: round(General.look-scale) + "%"; width: 44px; }
                 }
-                Label { text: "Show:"; }
                 HorizontalLayout {
                     spacing: 12px;
                     alignment: start;
-                    CheckBox { text: "Names"; checked <=> General.look-show-name; toggled => { General.look-changed(); } }
+                    Label { text: "Text"; width: 110px; }
+                    CheckBox { text: "Knob names"; checked <=> General.look-show-name; toggled => { General.look-changed(); } }
                     CheckBox { text: "Percentages"; checked <=> General.look-show-percent; toggled => { General.look-changed(); } }
                     CheckBox { text: "What's playing"; checked <=> General.look-show-source; toggled => { General.look-changed(); } }
                 }
                 HorizontalLayout {
                     spacing: 12px;
                     alignment: start;
-                    CheckBox { text: "Buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
+                    Label { text: "Buttons"; width: 110px; }
+                    CheckBox { text: "Show the buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
                     CheckBox {
-                        text: "Buttons inside knobs with % (compact)";
+                        text: "Inside the dials";
                         enabled: General.look-show-button && General.look-style == 0;
                         checked <=> General.look-buttons-in-dial;
                         toggled => { General.look-changed(); }
                     }
                     CheckBox {
-                        text: "What the buttons do";
+                        text: "What they do (press / hold)";
                         enabled: General.look-show-button;
                         checked <=> General.look-show-action-labels;
                         toggled => { General.look-changed(); }
@@ -564,12 +559,13 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     spacing: 12px;
                     alignment: start;
-                    CheckBox { text: "Title bar"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
+                    Label { text: "Window"; width: 110px; }
+                    CheckBox { text: "Title bar and tips"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
                 }
-                Label { text: "Knobs in the window:"; }
                 HorizontalLayout {
                     spacing: 12px;
                     alignment: start;
+                    Label { text: "Knobs shown"; width: 110px; }
                     for name[i] in Lists.knob-names: CheckBox {
                         text: name;
                         checked: General.look-shown[i];
@@ -580,7 +576,7 @@ export component GeneralPage inherits ScrollView {
         }
 
         GroupBox {
-            title: "Knobs";
+            title: "Knobs and controllers";
             VerticalLayout {
                 spacing: 8px;
                 Hint {
@@ -599,6 +595,11 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button { text: "Devices… (keyboard knob, MIDI, deej)"; clicked => { General.open-devices(); } }
+                }
+                Hint { text: "Every knob can also be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window. No keys are set at first: pick your own in System Settings (on KDE Plasma)."; }
+                HorizontalLayout {
+                    alignment: start;
+                    Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
                 }
             }
         }
@@ -709,18 +710,6 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button { text: "Calibrate LED colours…"; clicked => { General.open-calibration(); } }
-                }
-            }
-        }
-
-        GroupBox {
-            title: "Keyboard shortcuts";
-            VerticalLayout {
-                spacing: 8px;
-                Hint { text: "Every knob can be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window. No keys are set at first: pick your own in System Settings (on KDE Plasma)."; }
-                HorizontalLayout {
-                    alignment: start;
-                    Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
                 }
             }
         }

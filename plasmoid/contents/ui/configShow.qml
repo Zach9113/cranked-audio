@@ -60,7 +60,7 @@ ConfigPage {
 
         // one column, so the form lays it out as a single row however many knobs there are
         ColumnLayout {
-            Kirigami.FormData.label: "Knobs:"
+            Kirigami.FormData.label: "Knobs shown:"
             spacing: 0
             Repeater {
                 model: page.knobNames
