@@ -371,6 +371,7 @@ fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
         return false;
     };
     let knob = window.global::<KnobSettings>();
+    knob.set_confirming_remove(false);
     knob.set_index(index as i32);
     knob.set_name(channel.name.as_str().into());
     knob.set_apps(strings(channel.apps.iter().map(String::as_str)));
@@ -1295,6 +1296,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_back(move || {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            w.global::<KnobSettings>().set_confirming_remove(false);
             if w.get_page() == 3 {
                 // leaving Settings without saving: back to the saved theme
                 let theme = link.config.as_ref().map_or("cranked".to_string(), |c| c.theme.clone());

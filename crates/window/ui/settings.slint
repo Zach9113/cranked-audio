@@ -94,6 +94,7 @@ export global KnobSettings {
     in-out property <int> keyboard-step: 2;
     in-out property <bool> keyboard-grab: true;
     in-out property <string> device-hint;
+    in-out property <bool> confirming-remove: false;
     callback device-changed(int);
     callback toggle-buttons-in-dial();
     callback set-apps-expanded(bool);
@@ -449,10 +450,30 @@ export component KnobPage inherits ScrollView {
 
         HorizontalLayout {
             alignment: start;
-            Button {
+            spacing: 12px;
+            if !KnobSettings.confirming-remove: Button {
                 text: "Remove this knob";
                 enabled: Lists.knob-names.length > 1;
-                clicked => { KnobSettings.remove-knob(); }
+                clicked => { KnobSettings.confirming-remove = true; }
+            }
+            if KnobSettings.confirming-remove: Text {
+                text: "Are you sure? Remove " + (KnobSettings.name == "" ? "Knob " + (KnobSettings.index + 1) : KnobSettings.name) + "?";
+                color: Palette.text-strong;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            if KnobSettings.confirming-remove: Button {
+                text: "Yes, remove";
+                clicked => {
+                    KnobSettings.confirming-remove = false;
+                    KnobSettings.remove-knob();
+                }
+            }
+            if KnobSettings.confirming-remove: Button {
+                text: "Cancel";
+                clicked => {
+                    KnobSettings.confirming-remove = false;
+                }
             }
         }
     }
