@@ -27,6 +27,7 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
   and goes dark when the screen locks. Built-in calibration keeps dimmed colours true on your LEDs.
 - **Your look:** dials, sliders or mixing-desk faders; themes (Cranked, Midnight, Graphite, Light, or your desktop's
   colours); size from tiny to large; choose which text shows, hide knobs, put the buttons inside the dials.
+- **Atoll Dynamic Island integration:** Works natively with the [Atoll](https://github.com/Zach9113/atoll) dynamic island (`zach-patches` branch). Atoll shows volume feedback popups when knobs turn, and includes an embedded **Mixer** card in its expanded view to display, scroll, and drag your Cranked Audio knobs directly inside the island.
 - **Popups where you want them:** KDE's on-screen display, the Atoll dynamic island, or standard
   notifications (automatic picks the island when it's running).
 - **Panel widget (KDE Plasma):** your knobs right in a panel (sized to it; give it its own auto-hide panel to slide
@@ -90,6 +91,22 @@ keys to the actions you want: "Knob 1: turn up", "Knob 1: button" and so on. Non
 
 On KDE Plasma, right-click the panel or desktop, choose **Add Widgets…** and add **Cranked Audio**. In a panel it
 shows the knobs themselves (a thin panel gets compact dials); its settings choose an icon with a popup instead.
+
+### In-Island Mixer (Atoll Dynamic Island)
+
+If you use the [Atoll](https://github.com/Zach9113/atoll) dynamic island, your Cranked Audio knobs can live right inside the island's expanded dashboard.
+
+To install Atoll with the Cranked Audio integration:
+
+```bash
+git clone https://github.com/Zach9113/atoll.git
+cd atoll
+./scripts/install.sh
+```
+
+*(On Arch Linux / CachyOS, you can also run `makepkg -si` inside `packaging/`)*.
+
+Once running, click Atoll to expand it and toggle **Mixer**: you get 270° dial gauges, custom LED colors, mute toggles, and smooth mouse-wheel volume adjustment synced with your mixer.
 
 Everything is saved in `~/.config/cranked-audio/config.toml` (editing it by hand works too; changes apply at once).
 The Home Assistant token is kept in its own file, readable only by you.
