@@ -77,7 +77,7 @@ pub fn check_for_update() -> Result<Option<ReleaseInfo>, String> {
 /// A fresh folder only this user can open (never in a shared place like /tmp, never one that already existed),
 /// so nothing else on the machine can swap the installer between unpacking and running it.
 fn private_dir() -> Result<std::path::PathBuf, String> {
-    use std::os::unix::fs::DirBuilderExt;
+    use std::os::unix::fs::DirBuilderExt as _;
     let base = std::env::var_os("XDG_RUNTIME_DIR")
         .map(std::path::PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".cache")))
@@ -163,7 +163,7 @@ fn install_from(dir: &std::path::Path, tarball_url: &str, checksum_url: &str) ->
 
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::fs::PermissionsExt as _;
         if let Ok(meta) = std::fs::metadata(&installer) {
             let mut perms = meta.permissions();
             perms.set_mode(0o755);

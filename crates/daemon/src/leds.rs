@@ -1,6 +1,7 @@
 //! Knob LED colours (SPEC.md section 5).
 
 use cranked_ipc::settings::LedBlend;
+use cranked_protocol::convert::{round_u8, saturate_u8};
 use cranked_protocol::{Rgb, KNOBS, LEDS_PER_KNOB};
 
 const IDLE_DIM: f64 = 0.25;
@@ -31,15 +32,15 @@ fn edge(background: Rgb, color: Rgb, amount: f64) -> (Rgb, f64) {
     if background == (0, 0, 0) {
         return (color, x);
     }
-    let (colour, share) = if x >= 0.5 { (color, x) } else { (background, 1.0 - x) };
-    (colour, EDGE_FLOOR + (1.0 - EDGE_FLOOR) * (share - 0.5) * 2.0)
+    let (lit, share) = if x >= 0.5 { (color, x) } else { (background, 1.0 - x) };
+    (lit, EDGE_FLOOR + (1.0 - EDGE_FLOOR) * (share - 0.5) * 2.0)
 }
 
 /// The edge LED's colour and brightness for `blend`, `amount` of the way from background to level colour.
 fn edge_for(blend: LedBlend, background: Rgb, color: Rgb, amount: f64) -> (Rgb, f64) {
     let x = amount.clamp(0.0, 1.0);
     let mix = |w_bg: f64, w_fill: f64| {
-        let m = |b: u8, f: u8| (f64::from(b) * w_bg + f64::from(f) * w_fill).round().clamp(0.0, 255.0) as u8;
+        let m = |b: u8, f: u8| round_u8(f64::from(b) * w_bg + f64::from(f) * w_fill);
         (m(background.0, color.0), m(background.1, color.1), m(background.2, color.2))
     };
     match blend {
@@ -56,8 +57,7 @@ fn edge_for(blend: LedBlend, background: Rgb, color: Rgb, amount: f64) -> (Rgb, 
 /// Dims a colour to `factor` of its brightness, correcting each channel by `gamma` so the LED keeps its tint.
 pub fn dim(color: Rgb, factor: f64, gamma: [f64; 3]) -> Rgb {
     let factor = factor.clamp(0.0, 1.0);
-    let channel =
-        |c: u8, g: f64| (f64::from(c) * factor.powf(1.0 / g.clamp(0.1, 10.0))).round().clamp(0.0, 255.0) as u8;
+    let channel = |c: u8, g: f64| round_u8(f64::from(c) * factor.powf(1.0 / g.clamp(0.1, 10.0)));
     (channel(color.0, gamma[0]), channel(color.1, gamma[1]), channel(color.2, gamma[2]))
 }
 
@@ -79,9 +79,9 @@ pub fn knob_colors(
     if look.muted {
         return [dim(look.muted_color, factor, gamma); LEDS_PER_KNOB];
     }
-    let per_led = 100.0 / LEDS_PER_KNOB as f64;
+    let per_led = 100.0 / f64::from(saturate_u8(LEDS_PER_KNOB));
     std::array::from_fn(|i| {
-        let fill = ((level - i as f64 * per_led) / per_led).clamp(0.0, 1.0);
+        let fill = ((level - f64::from(saturate_u8(i)) * per_led) / per_led).clamp(0.0, 1.0);
         let (colour, share) = edge_for(blend, look.background, look.color, fill);
         dim(colour, factor * share, gamma)
     })

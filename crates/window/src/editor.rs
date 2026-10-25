@@ -203,7 +203,7 @@ pub fn device_summary(device: &cranked_ipc::settings::Device, knob: &dyn Fn(usiz
             let list = if parts.is_empty() { "nothing mapped yet".to_string() } else { parts.join(", ") };
             format!("MIDI \u{2014} {name}: {list}")
         }
-        Device::Deej { port, knobs, invert, .. } => {
+        Device::Deej { port, knobs, invert, baud: _ } => {
             let list: Vec<String> = knobs.iter().map(|k| knob(*k)).collect();
             format!(
                 "deej box \u{2014} {port}: sliders turn {}{}",
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn app_list_merges_everything_once_and_marks_this_knobs_apps() {
-        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let s = |v: &[&str]| v.iter().map(std::string::ToString::to_string).collect::<Vec<_>>();
         let rows = app_choices(
             &s(&["Firefox", "mpv"]),
             &s(&["firefox", "Spotify", "vesktop"]),
@@ -324,7 +324,7 @@ mod tests {
         add_midi_control(&mut devices, "nanoKONTROL2", control(0, 3));
         add_midi_control(&mut devices, "Other", control(0, 1));
         assert_eq!(devices.len(), 2);
-        let Device::Midi { controls, .. } = &devices[0] else { panic!() };
+        let Device::Midi { controls, name: _ } = &devices[0] else { panic!() };
         assert_eq!(controls.iter().map(|c| (c.number, c.knob)).collect::<Vec<_>>(), [(1, 2), (0, 3)]);
         let name = |k: usize| format!("K{k}");
         assert_eq!(device_summary(&devices[1], &name), "MIDI \u{2014} Other: CC 0 ch1 \u{2192} K1's knob");

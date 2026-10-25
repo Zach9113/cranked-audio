@@ -1,6 +1,6 @@
 //! The mixer's USB serial port (SPEC.md section 1).
 
-use std::io::{ErrorKind, Read, Write};
+use std::io::{ErrorKind, Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -69,7 +69,7 @@ impl Writer {
 }
 
 /// Runs forever on its own thread: waits for the mixer, forwards its bytes, starts over when it goes away.
-pub fn run(events: Sender<Event>, writer: Writer) {
+pub fn run(events: &Sender<Event>, writer: &Writer) {
     let mut announced_missing = false;
     loop {
         let Some(path) = find_port() else {
@@ -102,7 +102,7 @@ pub fn run(events: Sender<Event>, writer: Writer) {
         if events.send(Event::MixerConnected).is_err() {
             return;
         }
-        let mut buffer = [0u8; 256];
+        let mut buffer = [0_u8; 256];
         loop {
             match port.read(&mut buffer) {
                 Ok(0) if !path.exists() => {

@@ -110,7 +110,7 @@ pub fn start(events: Sender<Event>) -> Option<(zbus::blocking::Connection, Arc<M
     let connection = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(name))
         .and_then(|b| b.serve_at(PATH, api))
-        .and_then(|b| b.build());
+        .and_then(zbus::blocking::connection::Builder::build);
     match connection {
         Ok(connection) => Some((connection, state)),
         Err(e) => {
@@ -121,12 +121,12 @@ pub fn start(events: Sender<Event>) -> Option<(zbus::blocking::Connection, Arc<M
 }
 
 /// Stores the new state and tells listeners.
-pub fn publish(connection: &zbus::blocking::Connection, state: &Mutex<String>, json: String) {
+pub fn publish(connection: &zbus::blocking::Connection, state: &Mutex<String>, json: &str) {
     if let Ok(mut current) = state.lock() {
         if *current == json {
             return;
         }
-        current.clone_from(&json);
+        json.clone_into(&mut current);
     }
-    let _ = connection.emit_signal(None::<&str>, PATH, INTERFACE, "StateChanged", &(json.as_str(),));
+    let _ = connection.emit_signal(None::<&str>, PATH, INTERFACE, "StateChanged", &(json,));
 }

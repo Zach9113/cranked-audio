@@ -17,13 +17,14 @@ mod shortcuts;
 mod tray;
 mod updater;
 
-use std::io::BufRead;
+use std::io::BufRead as _;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant, SystemTime};
 
 use cranked_ipc::ServerMessage;
+use cranked_protocol::convert::saturate_u8;
 use cranked_protocol::{button_packet, knob_packet, led_frame};
 
 use crate::config::{Config, State};
@@ -86,6 +87,7 @@ fn parse_line(line: &str) -> Option<Vec<u8>> {
     }
 }
 
+#[expect(clippy::cognitive_complexity, reason = "startup plus the event loop; splitting it up is its own change")]
 fn main() {
     let mut config_path = Config::default_path();
     let (mut use_mixer, mut use_stdin, mut verbose, mut print_config, mut dry_run) = (true, false, false, false, false);
@@ -132,12 +134,12 @@ fn main() {
         let for_states = settings.clone();
         std::thread::Builder::new()
             .name("home-assistant-states".into())
-            .spawn(move || home_assistant::run_states(for_states, watched, states, generation, mine))
+            .spawn(move || home_assistant::run_states(&for_states, &watched, &states, &generation, mine))
             .unwrap();
         let failures = events.clone();
         std::thread::Builder::new()
             .name("home-assistant-calls".into())
-            .spawn(move || home_assistant::run_calls(settings, calls_inbox, failures))
+            .spawn(move || home_assistant::run_calls(&settings, &calls_inbox, &failures))
             .unwrap();
         Some(calls)
     };
@@ -145,16 +147,16 @@ fn main() {
     std::thread::Builder::new().name("desktop".into()).spawn(move || desktop::run(desktop_inbox)).unwrap();
     {
         let events = events.clone();
-        std::thread::Builder::new().name("screen".into()).spawn(move || desktop::watch_screen(events)).unwrap();
+        std::thread::Builder::new().name("screen".into()).spawn(move || desktop::watch_screen(&events)).unwrap();
     }
     {
         let events = events.clone();
-        std::thread::Builder::new().name("audio".into()).spawn(move || audio::run(audio_inbox, events)).unwrap();
+        std::thread::Builder::new().name("audio".into()).spawn(move || audio::run(&audio_inbox, &events)).unwrap();
     }
     if use_mixer {
         let events = events.clone();
         let leds = leds.clone();
-        std::thread::Builder::new().name("mixer".into()).spawn(move || serial::run(events, leds)).unwrap();
+        std::thread::Builder::new().name("mixer".into()).spawn(move || serial::run(&events, &leds)).unwrap();
     }
     if use_stdin {
         let events = events.clone();
@@ -176,7 +178,7 @@ fn main() {
     }
     {
         let events = events.clone();
-        std::thread::Builder::new().name("windows".into()).spawn(move || server::run(listener, events)).unwrap();
+        std::thread::Builder::new().name("windows".into()).spawn(move || server::run(&listener, &events)).unwrap();
     }
     let modified = |path: &PathBuf| std::fs::metadata(path).and_then(|m| m.modified()).ok();
     let mut config_modified: Option<SystemTime> = modified(&config_path);
@@ -255,7 +257,7 @@ fn main() {
                     }
                     "learn-midi" => {
                         let events = events.clone();
-                        std::thread::spawn(move || devices::learn_midi(events, Duration::from_secs(15)));
+                        std::thread::spawn(move || devices::learn_midi(&events, Duration::from_secs(15)));
                     }
                     // `calibrate R G B` shows the LED calibration pattern with that correction; `calibrate off` ends it
                     "calibrate" => {
@@ -326,14 +328,16 @@ fn main() {
             }
             Some(Event::Remote(request)) => match request {
                 dbus::Request::SetKnob { knob, percent } if knob < cranked_ipc::settings::MAX_CONTROLS => {
-                    Some(Event::OnScreen(knob_packet(knob as u8, percent).to_vec()))
+                    Some(Event::OnScreen(knob_packet(saturate_u8(knob), percent).to_vec()))
                 }
                 dbus::Request::StepKnob { knob, delta } if knob < cranked_ipc::settings::MAX_CONTROLS => {
                     let current = i32::from(core.knob(knob).unwrap_or(0));
-                    Some(Event::OnScreen(knob_packet(knob as u8, (current + delta).clamp(0, 100) as u8).to_vec()))
+                    Some(Event::OnScreen(
+                        knob_packet(saturate_u8(knob), saturate_u8((current + delta).clamp(0, 100))).to_vec(),
+                    ))
                 }
                 dbus::Request::Button { button, down } if button < cranked_ipc::settings::MAX_CONTROLS => {
-                    Some(Event::OnScreen(button_packet(button as u8, down).to_vec()))
+                    Some(Event::OnScreen(button_packet(saturate_u8(button), down).to_vec()))
                 }
                 dbus::Request::Profile(name) => {
                     switch_to = Some(name);
@@ -361,14 +365,16 @@ fn main() {
             },
             Some(Event::Device(input)) => match input {
                 devices::Input::Set { knob, percent } if knob < cranked_ipc::settings::MAX_CONTROLS => {
-                    Some(Event::OnScreen(knob_packet(knob as u8, percent).to_vec()))
+                    Some(Event::OnScreen(knob_packet(saturate_u8(knob), percent).to_vec()))
                 }
                 devices::Input::Step { knob, delta } if knob < cranked_ipc::settings::MAX_CONTROLS => {
                     let current = i32::from(core.knob(knob).unwrap_or(0));
-                    Some(Event::OnScreen(knob_packet(knob as u8, (current + delta).clamp(0, 100) as u8).to_vec()))
+                    Some(Event::OnScreen(
+                        knob_packet(saturate_u8(knob), saturate_u8((current + delta).clamp(0, 100))).to_vec(),
+                    ))
                 }
                 devices::Input::Button { knob, down } if knob < cranked_ipc::settings::MAX_CONTROLS => {
-                    Some(Event::OnScreen(button_packet(knob as u8, down).to_vec()))
+                    Some(Event::OnScreen(button_packet(saturate_u8(knob), down).to_vec()))
                 }
                 devices::Input::Media(key) => {
                     let _ = desktop.send(desktop::Command::Media(key));
@@ -480,7 +486,7 @@ fn main() {
         if !clients.is_empty() || api.is_some() {
             let snapshot = core.snapshot();
             if let Some((connection, state)) = &api {
-                dbus::publish(connection, state, serde_json::to_string(&snapshot).unwrap_or_default());
+                dbus::publish(connection, state, &serde_json::to_string(&snapshot).unwrap_or_default());
             }
             if !clients.is_empty() {
                 clients.update(&snapshot);
@@ -537,8 +543,8 @@ fn spawn_detached(program: &std::path::Path, args: &[&std::ffi::OsStr]) {
 
 /// Writes a file only you can read (created that way, never readable by others for a moment).
 fn save_secret(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
+    use std::io::Write as _;
+    use std::os::unix::fs::OpenOptionsExt as _;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

@@ -24,7 +24,7 @@ pub fn socket_path() -> PathBuf {
     if let Some(path) = std::env::var_os("CRANKED_SOCKET") {
         return PathBuf::from(path);
     }
-    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").map_or_else(std::env::temp_dir, PathBuf::from);
     dir.join("cranked-audio.sock")
 }
 
@@ -49,14 +49,14 @@ pub enum ServerMessage {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceChoices {
-    /// inputs with volume keys (keyboard knobs), by name
+    /// inputs with volume keys (keyboard knobs), by name.
     pub keyboards: Vec<String>,
-    /// those of `keyboards` that also type (they're never taken over)
+    /// those of `keyboards` that also type (they're never taken over).
     #[serde(default)]
     pub typing: Vec<String>,
-    /// MIDI input ports
+    /// MIDI input ports.
     pub midi: Vec<String>,
-    /// serial ports (for deej boxes)
+    /// serial ports (for deej boxes).
     pub serial: Vec<String>,
 }
 

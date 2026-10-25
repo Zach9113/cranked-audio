@@ -138,6 +138,9 @@ target/release/cranked-audiod --dry-run -v     # show which app goes on which kn
 cargo test && tests/live.sh && tests/live_home_assistant.sh && tests/live_duck.sh && tests/live_dbus.sh
 ```
 
+Before pushing, `cargo fmt --all --check` and `cargo clippy --workspace --all-targets -- -D warnings` must be
+clean (CI runs both).
+
 The live tests require a running PipeWire/PulseAudio server and a D-Bus session on the host.
 The development shell supplies client tools; it does not start these services.
 

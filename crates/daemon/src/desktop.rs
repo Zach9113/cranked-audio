@@ -163,7 +163,7 @@ fn notify(bus: &Connection, icon: &str, summary: &str, body: &str, value: Option
         "/org/freedesktop/Notifications",
         Some("org.freedesktop.Notifications"),
         "Notify",
-        &("Cranked Audio", 0u32, icon, summary, body, actions, hints, 1000i32),
+        &("Cranked Audio", 0_u32, icon, summary, body, actions, hints, 1000_i32),
     )?;
     Ok(())
 }
@@ -253,7 +253,7 @@ fn screen_locked(bus: &Connection) -> Option<bool> {
 }
 
 /// Reports `Event::ScreenOff(true)` while the screen is locked or all monitors sleep, `false` when it's back.
-pub fn watch_screen(events: Sender<crate::Event>) {
+pub fn watch_screen(events: &Sender<crate::Event>) {
     let bus = Connection::session().ok();
     let mut last = None;
     loop {
@@ -274,7 +274,7 @@ mod tests {
     use super::*;
 
     fn names(list: &[&str]) -> Vec<String> {
-        list.iter().map(|s| s.to_string()).collect()
+        list.iter().map(std::string::ToString::to_string).collect()
     }
 
     #[test]

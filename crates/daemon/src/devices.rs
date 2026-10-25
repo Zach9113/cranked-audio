@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cranked_ipc::settings::{Device, MidiControl};
+use cranked_protocol::convert::saturate_u8;
 
 use crate::desktop::MediaKey;
 use crate::Event;
@@ -89,15 +90,16 @@ pub fn keyboard_input(code: evdev::KeyCode, value: i32, knob: usize, step: u8, g
 }
 
 /// Waits up to `timeout` for the device to have something to read.
-fn readable(fd: std::os::fd::RawFd, timeout: Duration) -> bool {
-    let mut poll = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
-    // SAFETY: one valid pollfd for the duration of the call
-    let ready = unsafe { libc::poll(&mut poll, 1, timeout.as_millis() as i32) };
-    ready > 0 && poll.revents & libc::POLLIN != 0
+fn readable(fd: std::os::fd::BorrowedFd, timeout: Duration) -> bool {
+    use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+    let mut fds = [PollFd::new(fd, PollFlags::POLLIN)];
+    let timeout = PollTimeout::try_from(timeout).unwrap_or(PollTimeout::MAX);
+    poll(&mut fds, timeout).is_ok_and(|ready| ready > 0)
+        && fds[0].revents().is_some_and(|events| events.contains(PollFlags::POLLIN))
 }
 
 fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
-    use std::os::fd::AsRawFd;
+    use std::os::fd::AsFd as _;
     let knob = knob.saturating_sub(1);
     let mut reported = false;
     while current() {
@@ -123,9 +125,8 @@ fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event
             if grabbed { ", taken over" } else { "" }
         );
         reported = false;
-        let fd = device.as_raw_fd();
         'read: while current() {
-            if !readable(fd, Duration::from_secs(1)) {
+            if !readable(device.as_fd(), Duration::from_secs(1)) {
                 continue;
             }
             let Ok(batch) = device.fetch_events() else { break 'read };
@@ -173,7 +174,7 @@ pub fn midi_input(controls: &[MidiControl], message: &[u8]) -> Option<Input> {
         let delta = if value < 64 { i32::from(value) } else { i32::from(value) - 128 };
         return (delta != 0).then_some(Input::Step { knob, delta });
     }
-    Some(Input::Set { knob, percent: ((u32::from(value) * 100 + 63) / 127) as u8 })
+    Some(Input::Set { knob, percent: saturate_u8((u32::from(value) * 100 + 63) / 127) })
 }
 
 pub fn midi_ports() -> Vec<String> {
@@ -222,7 +223,7 @@ fn midi(name: &str, controls: &[MidiControl], events: &Sender<Event>, current: &
         let connection = input.connect(
             &port,
             "Cranked Audio",
-            move |_, message, _| {
+            move |_, message, ()| {
                 if let Some(input) = midi_input(&controls_for_callback, message) {
                     let _ = sender.send(Event::Device(input));
                 }
@@ -244,7 +245,7 @@ fn midi(name: &str, controls: &[MidiControl], events: &Sender<Event>, current: &
 }
 
 /// Listens on every MIDI port for up to `wait` and reports the first knob, fader, button or pad that moves.
-pub fn learn_midi(events: Sender<Event>, wait: Duration) {
+pub fn learn_midi(events: &Sender<Event>, wait: Duration) {
     let Ok(probe) = midir::MidiInput::new("Cranked Audio") else { return };
     let ports = probe.ports();
     let (found, heard) = std::sync::mpsc::channel::<Learned>();
@@ -260,7 +261,7 @@ pub fn learn_midi(events: Sender<Event>, wait: Duration) {
         if let Ok(connection) = input.connect(
             &port,
             "Cranked Audio learn",
-            move |_, message, _| {
+            move |_, message, ()| {
                 if let Some((channel, kind, number, _)) = midi_message(message) {
                     let _ = found.send(Learned { port: port_name.clone(), channel, kind: kind.into(), number });
                 }
@@ -284,7 +285,7 @@ pub fn deej_line(line: &str, invert: bool) -> Vec<Option<u8>> {
         .map(|v| v.trim().parse::<u32>().ok().filter(|v| *v <= 1023))
         .map(|raw| {
             raw.map(|raw| {
-                let percent = ((raw * 100 + 511) / 1023) as u8;
+                let percent = saturate_u8((raw * 100 + 511) / 1023);
                 if invert {
                     100 - percent
                 } else {
@@ -297,7 +298,7 @@ pub fn deej_line(line: &str, invert: bool) -> Vec<Option<u8>> {
 
 /// Serial ports a deej box could be on.
 /// USB vendors whose serial ports are boards a deej box is built on: Arduino, Arduino clones' USB chips (CH340,
-/// FTDI, CP210x, PL2303), Adafruit, SparkFun, Teensy, Raspberry Pi (Pico) and Espressif (ESP32).
+/// FTDI, `CP210x`, PL2303), Adafruit, `SparkFun`, Teensy, Raspberry Pi (Pico) and Espressif (ESP32).
 const BOARD_VENDORS: [&str; 11] =
     ["2341", "2a03", "1a86", "0403", "10c4", "067b", "239a", "1b4f", "16c0", "2e8a", "303a"];
 
@@ -328,7 +329,7 @@ pub fn serial_ports() -> Vec<String> {
 }
 
 fn deej(port: &str, baud: u32, knobs: &[usize], invert: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
-    use std::io::{BufRead, BufReader};
+    use std::io::{BufRead as _, BufReader};
     let mut reported = false;
     while current() {
         let opened = serialport::new(port, baud).timeout(Duration::from_secs(1)).open();

@@ -99,7 +99,7 @@ mod tests {
             ducker.loud(now);
             now += Duration::from_millis(200);
         }
-        now - Duration::from_millis(200)
+        now.checked_sub(Duration::from_millis(200)).unwrap()
     }
 
     #[test]

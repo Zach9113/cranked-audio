@@ -1,4 +1,4 @@
-//! PipeWire through its PulseAudio layer, in-process: stream events in, volume changes out. No helper processes.
+//! `PipeWire` through its `PulseAudio` layer, in-process: stream events in, volume changes out. No helper processes.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -22,6 +22,7 @@ use pulse::volume::{ChannelVolumes, Volume};
 
 use crate::matching::Stream;
 use crate::Event;
+use cranked_protocol::convert::round_u8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -89,7 +90,7 @@ pub fn next_output<'a>(outputs: &'a [Output], current: &str) -> Option<&'a Outpu
 }
 
 fn percent_to_volume(percent: u8) -> Volume {
-    Volume((u64::from(Volume::NORMAL.0) * u64::from(percent) / 100) as u32)
+    Volume(u32::try_from(u64::from(Volume::NORMAL.0) * u64::from(percent) / 100).unwrap_or(u32::MAX))
 }
 
 fn volume_to_percent(volume: Volume) -> f64 {
@@ -116,9 +117,9 @@ fn stream_from(info: &SinkInputInfo) -> Stream {
 }
 
 /// Runs forever on its own thread; reconnects when the sound server restarts.
-pub fn run(commands: Receiver<Command>, events: Sender<Event>) {
+pub fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
     loop {
-        match session(&commands, &events) {
+        match session(commands, events) {
             Ok(()) => return,
             Err(e) => eprintln!("audio: {e}; reconnecting"),
         }
@@ -127,8 +128,8 @@ pub fn run(commands: Receiver<Command>, events: Sender<Event>) {
     }
 }
 
-fn send_stream(events: &Sender<Event>, result: ListResult<&SinkInputInfo>) {
-    if let ListResult::Item(info) = result {
+fn send_stream(events: &Sender<Event>, result: &ListResult<&SinkInputInfo>) {
+    if let ListResult::Item(info) = *result {
         let _ = events.send(Event::Stream(stream_from(info)));
     }
 }
@@ -178,7 +179,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
                 }
                 Some(_) => {
                     let events = events.clone();
-                    lookup.get_sink_input_info(index, move |result| send_stream(&events, result));
+                    lookup.get_sink_input_info(index, move |result| send_stream(&events, &result));
                 }
                 None => {}
             }
@@ -187,14 +188,14 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
     context.subscribe(InterestMaskSet::SINK_INPUT, |_| {});
     {
         let events = events.clone();
-        introspect.get_sink_input_info_list(move |result| send_stream(&events, result));
+        introspect.get_sink_input_info_list(move |result| send_stream(&events, &result));
     }
     // the output's volume, so a System knob without a mixer starts where it is
     {
         let events = events.clone();
         introspect.get_sink_info_by_name("@DEFAULT_SINK@", move |result| {
             if let ListResult::Item(sink) = result {
-                let percent = volume_to_percent(sink.volume.avg()).round().clamp(0.0, 100.0) as u8;
+                let percent = round_u8(volume_to_percent(sink.volume.avg()).clamp(0.0, 100.0));
                 let _ = events.send(Event::OutputVolume(percent));
             }
         });
@@ -266,12 +267,13 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
             Command::MuteMaster { mute } => {
                 introspect.set_sink_mute_by_name("@DEFAULT_SINK@", mute, None);
             }
-            Command::SwitchOutput | Command::Meter { .. } => {}
+            Command::SwitchOutput | Command::Meter { index: _, sink: _, on: _ } => {}
         }
         mainloop.unlock();
     };
 
     mainloop.lock();
+    #[expect(clippy::iter_over_hash_type, reason = "stopping every meter; order doesn't matter")]
     for meter in meters.values() {
         stop_meter(meter);
     }
@@ -315,11 +317,11 @@ fn start_meter(
         meter.set_monitor_stream(index).map_err(|e| format!("{e:?}"))?;
         let weak = Rc::downgrade(&stream);
         let events = events.clone();
-        let (mut loud_run, mut last_report) = (0u8, None::<Instant>);
+        let (mut loud_run, mut last_report) = (0_u8, None::<Instant>);
         meter.set_read_callback(Some(Box::new(move |_| {
             let Some(stream) = weak.upgrade() else { return };
             let Ok(mut stream) = stream.try_borrow_mut() else { return };
-            let mut peak = 0f32;
+            let mut peak = 0_f32;
             loop {
                 match stream.peek() {
                     Ok(PeekResult::Data(data)) => {

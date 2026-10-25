@@ -1,5 +1,6 @@
 //! Window themes: every colour role in the `Palette` global, per theme. "system" reads the KDE colour scheme.
 
+use cranked_protocol::convert::round_u8;
 use slint::Color;
 
 /// Theme names in the order the Settings page lists them.
@@ -35,12 +36,13 @@ pub struct Theme {
 }
 
 fn hex(value: u32) -> Color {
-    Color::from_rgb_u8((value >> 16) as u8, (value >> 8) as u8, value as u8)
+    let [_, red, green, blue] = value.to_be_bytes();
+    Color::from_rgb_u8(red, green, blue)
 }
 
 /// `amount` of `a` over `b`.
 pub fn mix(a: Color, b: Color, amount: f32) -> Color {
-    let m = |x: u8, y: u8| (f32::from(x) * amount + f32::from(y) * (1.0 - amount)).round() as u8;
+    let m = |x: u8, y: u8| round_u8(f64::from(f32::from(x) * amount + f32::from(y) * (1.0 - amount)));
     Color::from_rgb_u8(m(a.red(), b.red()), m(a.green(), b.green()), m(a.blue(), b.blue()))
 }
 
@@ -136,9 +138,12 @@ fn system() -> Option<Theme> {
 }
 
 pub fn from_kdeglobals(file: &str) -> Option<Theme> {
-    let get = |group: &str, key: &str| kde_value(file, group, key).and_then(|v| rgb(&v));
+    let get = |group: &str, key: &str| {
+        let v = kde_value(file, group, key)?;
+        rgb(&v)
+    };
     let background = get("Colors:Window", "BackgroundNormal")?;
-    let card = get("Colors:View", "BackgroundNormal").map(|v| mix(v, background, 0.5)).unwrap_or(background);
+    let card = get("Colors:View", "BackgroundNormal").map_or(background, |v| mix(v, background, 0.5));
     let text = get("Colors:Window", "ForegroundNormal")?;
     let accent = get("General", "AccentColor")
         .or_else(|| get("Colors:Selection", "BackgroundNormal"))

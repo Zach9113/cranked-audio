@@ -1,6 +1,6 @@
 //! The window's connection (see the `cranked-ipc` crate). Also makes sure only one service runs.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead as _, BufReader, Write as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
@@ -25,7 +25,7 @@ pub fn listen() -> Option<UnixListener> {
     }
 }
 
-pub fn run(listener: UnixListener, events: Sender<Event>) {
+pub fn run(listener: &UnixListener, events: &Sender<Event>) {
     for client in listener.incoming().map_while(Result::ok) {
         let Ok(writer) = client.try_clone() else { continue };
         let _ = writer.set_write_timeout(Some(Duration::from_millis(200)));

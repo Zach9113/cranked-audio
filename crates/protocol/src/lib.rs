@@ -2,6 +2,10 @@
 //!
 //! No I/O here: feed bytes in, get events out, so everything is unit-testable without hardware.
 
+pub mod convert;
+
+use convert::{saturate_u16, saturate_u8};
+
 pub const KNOBS: usize = 5;
 pub const LEDS_PER_KNOB: usize = 3;
 pub const RAW_MAX: u16 = 1023;
@@ -21,6 +25,7 @@ pub struct Decoder {
 }
 
 impl Decoder {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -48,11 +53,12 @@ impl Decoder {
                 break;
             }
             let packet = &self.pending[at..at + length];
-            match packet[2] {
-                0x03 => events
-                    .push(Event::Knob { channel: packet[3], raw: u16::from(packet[4]) << 8 | u16::from(packet[5]) }),
-                0x06 => events.push(Event::ButtonDown { channel: packet[3] }),
-                0x07 => events.push(Event::ButtonUp { channel: packet[3] }),
+            match *packet {
+                [_, _, 0x03, channel, high, low] => {
+                    events.push(Event::Knob { channel, raw: u16::from_be_bytes([high, low]) });
+                }
+                [_, _, 0x06, channel, ..] => events.push(Event::ButtonDown { channel }),
+                [_, _, 0x07, channel, ..] => events.push(Event::ButtonUp { channel }),
                 _ => {}
             }
             at += length;
@@ -68,11 +74,13 @@ impl Decoder {
 }
 
 /// Encode a knob position the way the mixer reports it (used by the on-screen controls).
+#[must_use]
 pub fn knob_packet(channel: u8, percent: u8) -> [u8; 6] {
-    let raw = percent_to_raw(percent);
-    [0xFF, 0xFE, 0x03, channel, (raw >> 8) as u8, (raw & 0xFF) as u8]
+    let [high, low] = percent_to_raw(percent).to_be_bytes();
+    [0xFF, 0xFE, 0x03, channel, high, low]
 }
 
+#[must_use]
 pub fn button_packet(channel: u8, down: bool) -> [u8; 4] {
     [0xFF, 0xFE, if down { 0x06 } else { 0x07 }, channel]
 }
@@ -80,8 +88,9 @@ pub fn button_packet(channel: u8, down: bool) -> [u8; 4] {
 pub type Rgb = (u8, u8, u8);
 
 /// LED frame: `FE 05`, then knobs 0..4 x LEDs left/middle/right x RGB, then `FF` (48 bytes).
+#[must_use]
 pub fn led_frame(colors: &[[Rgb; LEDS_PER_KNOB]; KNOBS]) -> [u8; 48] {
-    let mut frame = [0u8; 48];
+    let mut frame = [0_u8; 48];
     frame[0] = 0xFE;
     frame[1] = 0x05;
     let mut at = 2;
@@ -103,16 +112,18 @@ const RAW_LOW: u16 = 20;
 const RAW_HIGH: u16 = 1000;
 
 /// Raw 0..1023 to percent.
+#[must_use]
 pub fn raw_to_percent(raw: u16) -> u8 {
     let span = u32::from(RAW_HIGH - RAW_LOW);
     let above = u32::from(raw.clamp(RAW_LOW, RAW_HIGH) - RAW_LOW);
-    ((above * 100 + span / 2) / span) as u8
+    saturate_u8((above * 100 + span / 2) / span)
 }
 
 /// The raw reading that means `percent` (the inverse of [`raw_to_percent`]).
+#[must_use]
 pub fn percent_to_raw(percent: u8) -> u16 {
     let span = u32::from(RAW_HIGH - RAW_LOW);
-    RAW_LOW + ((u32::from(percent.min(100)) * span + 50) / 100) as u16
+    RAW_LOW + saturate_u16((u32::from(percent.min(100)) * span + 50) / 100)
 }
 
 const JUMP_CONFIRM: i16 = 25;
@@ -128,6 +139,7 @@ pub struct KnobFilter {
 }
 
 impl KnobFilter {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -171,6 +183,7 @@ impl KnobFilter {
         Some(percent)
     }
 
+    #[must_use]
     pub fn position(&self, channel: usize) -> Option<u8> {
         self.accepted.get(channel).copied().flatten().map(|(p, _)| p)
     }
@@ -273,7 +286,7 @@ mod tests {
     fn knob_on_a_boundary_does_not_flicker() {
         let mut filter = KnobFilter::new();
         filter.seed(1, 512);
-        let changes: Vec<_> = [516u16, 517].repeat(10).into_iter().filter_map(|raw| filter.feed(1, raw)).collect();
+        let changes: Vec<_> = [516_u16, 517].repeat(10).into_iter().filter_map(|raw| filter.feed(1, raw)).collect();
         assert!(changes.is_empty(), "{changes:?}");
     }
 }

@@ -2,7 +2,7 @@
 
 use std::sync::mpsc::Sender;
 
-use ksni::blocking::{Handle, TrayMethods};
+use ksni::blocking::{Handle, TrayMethods as _};
 use ksni::menu::{MenuItem, RadioGroup, RadioItem, StandardItem};
 
 use crate::Event;
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn tray_images_are_complete() {
         for (size, rgba) in ICONS {
-            assert_eq!(rgba.len(), (size * size * 4) as usize);
+            assert_eq!(rgba.len(), usize::try_from(size * size * 4).unwrap());
         }
     }
 }

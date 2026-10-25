@@ -147,7 +147,7 @@ fn listen(connection: &zbus::blocking::Connection, events: &Sender<Event>) {
         .msg_type(zbus::message::Type::Signal)
         .interface("org.kde.kglobalaccel.Component")
         .and_then(|r| r.path(COMPONENT_PATH))
-        .map(|r| r.build());
+        .map(zbus::match_rule::Builder::build);
     let Ok(rule) = rule else { return };
     let Ok(messages) = zbus::blocking::MessageIterator::for_match_rule(rule, connection, None) else {
         eprintln!("shortcuts: can't listen for them");
@@ -155,7 +155,7 @@ fn listen(connection: &zbus::blocking::Connection, events: &Sender<Event>) {
     };
     for message in messages.flatten() {
         let header = message.header();
-        let down = match header.member().map(|m| m.as_str()) {
+        let down = match header.member().map(zbus::names::MemberName::as_str) {
             Some("globalShortcutPressed") => Some(true),
             Some("globalShortcutReleased") => Some(false),
             Some("globalShortcutRepeated") => None,

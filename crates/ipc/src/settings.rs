@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use cranked_protocol::convert::saturate_u8;
 use cranked_protocol::Rgb;
 
 /// A profile has 1 to this many knobs (the mixer drives the first five).
@@ -87,26 +88,30 @@ impl Default for Channel {
 }
 
 impl Channel {
+    #[must_use]
     pub fn volume_for(&self, knob: u8) -> u8 {
         let (low, high) = (self.min.min(self.max), self.max.max(self.min));
         let span = u32::from(high - low);
-        low + ((span * u32::from(knob.min(100)) + 50) / 100) as u8
+        low + saturate_u8((span * u32::from(knob.min(100)) + 50) / 100)
     }
 
     /// The knob position that gives `volume` (the other way round from `volume_for`), clamped to the range.
+    #[must_use]
     pub fn knob_for(&self, volume: u8) -> u8 {
         let (low, high) = (self.min.min(self.max), self.max.max(self.min));
         if high == low {
             return 100;
         }
         let span = u32::from(high - low);
-        ((u32::from(volume.clamp(low, high) - low) * 100 + span / 2) / span) as u8
+        saturate_u8((u32::from(volume.clamp(low, high) - low) * 100 + span / 2) / span)
     }
 
+    #[must_use]
     pub fn controls_audio(&self) -> bool {
         self.light.is_none() && (self.master || self.catch_all || !self.apps.is_empty())
     }
 
+    #[must_use]
     pub fn label(&self, index: usize) -> String {
         if self.name.trim().is_empty() {
             format!("Knob {}", index + 1)
@@ -116,13 +121,14 @@ impl Channel {
     }
 }
 
+#[must_use]
 pub fn parse_color(text: &str) -> Option<Rgb> {
     let hex = text.trim().strip_prefix('#')?;
     if hex.len() != 6 {
         return None;
     }
-    let value = u32::from_str_radix(hex, 16).ok()?;
-    Some(((value >> 16) as u8, (value >> 8) as u8, value as u8))
+    let [_, red, green, blue] = u32::from_str_radix(hex, 16).ok()?.to_be_bytes();
+    Some((red, green, blue))
 }
 
 /// Turn some knobs down while others play or someone talks in voice chat. Knobs are numbered 1 to 5 here.
@@ -134,7 +140,7 @@ pub struct AutoLower {
     pub lower: Vec<usize>,
     /// Knobs whose apps playing sound turn the others down.
     pub triggers: Vec<usize>,
-    /// Anyone talking in voice chat (Discord, Steam, TeamSpeak, ...) also counts.
+    /// Anyone talking in voice chat (Discord, Steam, `TeamSpeak`, ...) also counts.
     pub voice_chat: bool,
     /// How far down, in percent of the knob's volume.
     pub amount: u8,
@@ -149,19 +155,23 @@ impl Default for AutoLower {
 }
 
 impl AutoLower {
+    #[must_use]
     pub fn active(&self) -> bool {
         self.enabled && self.amount > 0 && !self.lower.is_empty()
     }
 
+    #[must_use]
     pub fn lowers(&self, channel: usize) -> bool {
         self.active() && self.lower.contains(&(channel + 1))
     }
 
+    #[must_use]
     pub fn triggered_by(&self, channel: usize) -> bool {
         self.active() && self.triggers.contains(&(channel + 1)) && !self.lowers(channel)
     }
 
     /// The volume factor when fully lowered.
+    #[must_use]
     pub fn low(&self) -> f64 {
         1.0 - f64::from(self.amount.min(100)) / 100.0
     }
@@ -179,7 +189,7 @@ pub struct Profile {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Leds {
-    /// 0..100
+    /// 0..100.
     pub brightness: u8,
     /// Dim a knob to a quarter when none of its apps are playing.
     pub dim_idle: bool,
@@ -234,31 +244,31 @@ pub enum PopupStyle {
 pub enum Device {
     /// A volume knob on a keyboard (or any input with volume keys): turning steps a knob, pressing is its button.
     KeyboardKnob {
-        /// the input device's name, e.g. "BY Tech Gaming Keyboard Consumer Control"
+        /// the input device's name, e.g. "BY Tech Gaming Keyboard Consumer Control".
         name: String,
         knob: usize,
         #[serde(default = "default_step")]
         step: u8,
-        /// take the input over so the system volume doesn't move too (its media keys keep working)
+        /// take the input over so the system volume doesn't move too (its media keys keep working).
         #[serde(default = "yes")]
         grab: bool,
     },
     /// A MIDI controller; each mapped control turns a knob or works as its button.
     Midi {
-        /// part of the MIDI port's name, e.g. "nanoKONTROL2"
+        /// part of the MIDI port's name, e.g. "nanoKONTROL2".
         name: String,
         #[serde(default)]
         controls: Vec<MidiControl>,
     },
     /// A deej-style Arduino slider box: lines of slider values ("512|1023|0") over USB serial.
     Deej {
-        /// e.g. "/dev/ttyACM0" or a /dev/serial/by-id/ path
+        /// e.g. "/dev/ttyACM0" or a /dev/serial/by-id/ path.
         port: String,
         #[serde(default = "default_baud")]
         baud: u32,
-        /// which knob each slider turns, in order
+        /// which knob each slider turns, in order.
         knobs: Vec<usize>,
-        /// sliders that read backwards
+        /// sliders that read backwards.
         #[serde(default)]
         invert: bool,
     },
@@ -266,16 +276,16 @@ pub enum Device {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MidiControl {
-    /// MIDI channel 1..16
+    /// MIDI channel 1..16.
     pub channel: u8,
-    /// "cc" (knobs, faders, buttons sending CC) or "note" (pads and keys)
+    /// "cc" (knobs, faders, buttons sending CC) or "note" (pads and keys).
     pub kind: String,
     pub number: u8,
     pub knob: usize,
-    /// works as the knob's button instead of turning it
+    /// works as the knob's button instead of turning it.
     #[serde(default)]
     pub button: bool,
-    /// an endless encoder sending up/down steps instead of a position
+    /// an endless encoder sending up/down steps instead of a position.
     #[serde(default)]
     pub relative: bool,
 }
@@ -295,21 +305,22 @@ fn yes() -> bool {
 /// How the window lays out the knobs (the panel widget has the same options in its own settings).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+#[expect(clippy::struct_excessive_bools, reason = "each one is its own on/off setting in config.toml")]
 pub struct Look {
-    /// "knobs" (dials), "sliders" (a compact list) or "faders" (vertical, like a mixing desk)
+    /// "knobs" (dials), "sliders" (a compact list) or "faders" (vertical, like a mixing desk).
     pub style: String,
-    /// size in percent (30..160)
+    /// size in percent (30..160).
     pub scale: u8,
     pub show_name: bool,
     pub show_percent: bool,
     pub show_source: bool,
     pub show_button: bool,
     pub show_action_labels: bool,
-    /// the button sits in the middle of the dial instead of under it (more compact)
+    /// the button sits in the middle of the dial instead of under it (more compact).
     pub buttons_in_dial: bool,
-    /// the window's title bar (name, profile, status, Settings) and the hint line
+    /// the window's title bar (name, profile, status, Settings) and the hint line.
     pub show_header: bool,
-    /// knob numbers (from 1) left out of the window
+    /// knob numbers (from 1) left out of the window.
     pub hidden_knobs: Vec<usize>,
 }
 
@@ -345,6 +356,7 @@ pub struct HomeAssistant {
 
 impl Config {
     /// Every Home Assistant entity any profile uses (lights on knobs, entities on buttons).
+    #[must_use]
     pub fn home_assistant_entities(&self) -> Vec<String> {
         let mut entities: Vec<String> = Vec::new();
         for channel in self.profiles.iter().flat_map(|p| &p.channels) {
@@ -423,7 +435,7 @@ impl Default for File {
 /// A first-run layout that works out of the box for common Linux apps (matching is by app name or program,
 /// case-insensitive, so unknown entries do nothing).
 fn default_channels() -> Vec<Channel> {
-    let list = |apps: &[&str]| apps.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+    let list = |apps: &[&str]| apps.iter().map(std::string::ToString::to_string).collect::<Vec<_>>();
     let knob = |name: &str, apps: Vec<String>, press: Action, color: &str, background: &str| Channel {
         name: name.into(),
         apps,
@@ -487,6 +499,7 @@ pub fn base_dir(variable: &str, fallback: &str) -> PathBuf {
 }
 
 impl Config {
+    #[must_use]
     pub fn default_path() -> PathBuf {
         base_dir("XDG_CONFIG_HOME", ".config").join("config.toml")
     }
@@ -539,6 +552,7 @@ impl Config {
     }
 
     /// Where the Home Assistant token is kept.
+    #[must_use]
     pub fn token_path(&self, config_path: &Path) -> PathBuf {
         self.home_assistant.token_file.clone().unwrap_or_else(|| config_path.with_file_name("ha-token"))
     }
@@ -551,6 +565,7 @@ impl Config {
         Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))
     }
 
+    #[must_use]
     pub fn profile_index(&self, name: &str) -> usize {
         self.profiles.iter().position(|p| p.name == name).unwrap_or(0)
     }
@@ -581,7 +596,7 @@ mod tests {
     #[test]
     fn plain_channels_are_one_profile_and_actions_read_naturally() {
         let config = Config::parse(
-            r##"
+            r#"
             [[channel]]
             name = "Lamp"
             light = "light.desk_lamp"
@@ -593,7 +608,7 @@ mod tests {
             [[profile.channel]]
             apps = ["Steam"]
             press = "next_profile"
-            "##,
+            "#,
         )
         .unwrap();
         assert_eq!(config.profiles.len(), 2);
@@ -613,9 +628,8 @@ mod tests {
             (Action::HomeAssistantToggle("switch.fan".into()), "ha_toggle"),
             (Action::HomeAssistantOff("light.desk_lamp".into()), "ha_off"),
         ] {
-            let entity = match &action {
-                Action::HomeAssistantToggle(entity) | Action::HomeAssistantOff(entity) => entity,
-                _ => unreachable!(),
+            let (Action::HomeAssistantToggle(entity) | Action::HomeAssistantOff(entity)) = &action else {
+                unreachable!()
             };
             let json = serde_json::json!({ wire_name: entity });
             assert_eq!(serde_json::to_value(&action).unwrap(), json);
@@ -626,31 +640,31 @@ mod tests {
     #[test]
     fn home_assistant_entities_are_collected_once() {
         let config = Config::parse(
-            r##"
+            r#"
             [home_assistant]
             url = "http://home-assistant.local:8123/"
             [[channel]]
             light = "light.desk_lamp"
             press = { ha_toggle = "switch.coffee_maker" }
             hold = { ha_toggle = "light.desk_lamp" }
-            "##,
+            "#,
         )
         .unwrap();
         assert_eq!(config.home_assistant_entities(), ["light.desk_lamp", "switch.coffee_maker"]);
-        assert!(Config::default().home_assistant_entities().is_empty());
+        assert_eq!(Config::default().home_assistant_entities(), [] as [std::string::String; 0]);
     }
 
     #[test]
     fn auto_lower_settings() {
         let config = Config::parse(
-            r##"
+            r#"
             [auto_lower]
             enabled = true
             lower = [1, 2]
             triggers = [2, 3]
             [[channel]]
             name = "Media"
-            "##,
+            "#,
         )
         .unwrap();
         let auto = &config.profiles[0].auto_lower;
@@ -663,7 +677,7 @@ mod tests {
     #[test]
     fn saved_settings_read_back_the_same() {
         let mut config = Config::parse(
-            r##"
+            r#"
             [home_assistant]
             url = "http://home-assistant.local:8123"
             [auto_lower]
@@ -673,7 +687,7 @@ mod tests {
             name = "Lamp"
             light = "light.desk_lamp"
             press = { ha_toggle = "switch.fan" }
-            "##,
+            "#,
         )
         .unwrap();
         config.profiles.push(Profile { name: "Two".into(), ..config.profiles[0].clone() });
@@ -691,7 +705,7 @@ mod tests {
     #[test]
     fn devices_read_naturally() {
         let config = Config::parse(
-            r##"
+            r#"
             [[device]]
             kind = "keyboard_knob"
             name = "BY Tech Gaming Keyboard Consumer Control"
@@ -712,14 +726,14 @@ mod tests {
 
             [[channel]]
             name = "Media"
-            "##,
+            "#,
         )
         .unwrap();
         assert_eq!(config.devices.len(), 3);
-        assert!(matches!(&config.devices[0], Device::KeyboardKnob { knob: 4, step: 2, grab: true, .. }));
-        let Device::Midi { controls, .. } = &config.devices[1] else { panic!() };
+        assert!(matches!(&config.devices[0], Device::KeyboardKnob { knob: 4, step: 2, grab: true, name: _ }));
+        let Device::Midi { controls, name: _ } = &config.devices[1] else { panic!() };
         assert!(controls[1].button && !controls[0].button);
-        assert!(matches!(&config.devices[2], Device::Deej { baud: 9600, invert: false, .. }));
+        assert!(matches!(&config.devices[2], Device::Deej { baud: 9600, invert: false, port: _, knobs: _ }));
         let again = Config::parse(&toml::to_string(&config).unwrap()).unwrap();
         assert_eq!(again.devices, config.devices);
     }

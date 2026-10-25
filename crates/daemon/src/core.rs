@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use cranked_ipc::settings::MAX_CONTROLS as MAX;
+use cranked_protocol::convert::{round_u8, saturate_u8};
 use cranked_protocol::{led_frame, raw_to_percent, Decoder, Event as Input, KnobFilter, KNOBS};
 
 use crate::audio::Command as Audio;
@@ -60,17 +61,17 @@ pub enum Out {
 pub fn catch_up(light: u8, previous: u8, knob: u8) -> u8 {
     let (light, previous, knob) = (i32::from(light.min(100)), i32::from(previous.min(100)), i32::from(knob.min(100)));
     if knob == previous {
-        return light as u8;
+        return saturate_u8(light);
     }
     if knob == 0 || knob == 100 || (light - previous).abs() <= PICKUP_TOLERANCE {
-        return knob as u8;
+        return saturate_u8(knob);
     }
     let moved = if knob > previous {
         light + ((knob - previous) * (100 - light) + (100 - previous) / 2) / (100 - previous)
     } else {
         light - ((previous - knob) * light + previous / 2) / previous
     };
-    moved.clamp(0, 100) as u8
+    saturate_u8(moved.clamp(0, 100))
 }
 
 struct StartupSync {
@@ -79,6 +80,7 @@ struct StartupSync {
     seen: [bool; KNOBS],
 }
 
+#[expect(clippy::struct_excessive_bools, reason = "independent flags of the running state, not a mode")]
 pub struct Core {
     config: Config,
     profile: usize,
@@ -122,7 +124,7 @@ pub struct Core {
     touched_at: Option<Instant>,
     /// LED calibration in progress: when it last changed, and the correction being tried.
     calibrating: Option<(Instant, [f64; 3])>,
-    /// Lights ignore the mixer's knobs until then (see LIGHTS_SETTLE).
+    /// Lights ignore the mixer's knobs until then (see `LIGHTS_SETTLE`).
     lights_settle_until: Option<Instant>,
     /// The time of the current tick.
     now: Option<Instant>,
@@ -242,6 +244,7 @@ impl Core {
         self.profile = self.config.profile_index(&current);
         self.update_holds();
         let channels = self.config.profiles[self.profile].channels.clone();
+        #[expect(clippy::iter_over_hash_type, reason = "each stream is matched on its own; order doesn't matter")]
         for (stream, channel) in self.streams.values_mut() {
             *channel = channel_for(stream, &channels);
         }
@@ -415,7 +418,7 @@ impl Core {
                     self.remember_app(&stream);
                 }
                 if let Some(c) = channel {
-                    let volume = stream.volume.round().clamp(0.0, 100.0) as u8;
+                    let volume = round_u8(stream.volume.clamp(0.0, 100.0));
                     let knob = self.channels()[c].knob_for(volume);
                     self.adopt(c, knob);
                 }
@@ -447,7 +450,7 @@ impl Core {
                 self.entities.insert(state.entity.clone(), state);
             }
             Event::HomeAssistantFailed => {
-                out.extend(self.popup_text("dialog-warning", "Home Assistant didn't respond".into()))
+                out.extend(self.popup_text("dialog-warning", "Home Assistant didn't respond".into()));
             }
             Event::AudioReady => {}
             Event::OutputVolume(percent) => {
@@ -508,7 +511,7 @@ impl Core {
     fn leds_dark(&self, now: Instant) -> bool {
         self.calibrating.is_none()
             && self.screen_off
-            && !self.touched_at.is_some_and(|t| now.saturating_duration_since(t) < WAKE_FOR)
+            && self.touched_at.is_none_or(|t| now.saturating_duration_since(t) >= WAKE_FOR)
     }
 
     fn mixer_input(&mut self, input: Input, now: Instant, out: &mut Vec<Out>) {
@@ -537,7 +540,7 @@ impl Core {
                     self.gesture(gesture, now, out);
                 }
             }
-            Input::Knob { .. } => {}
+            Input::Knob { channel: _, raw: _ } => {}
         }
     }
 
@@ -680,6 +683,7 @@ impl Core {
         self.profile = index.min(self.config.profiles.len() - 1);
         self.update_holds();
         let channels = self.config.profiles[self.profile].channels.clone();
+        #[expect(clippy::iter_over_hash_type, reason = "each stream is matched on its own; order doesn't matter")]
         for (stream, channel) in self.streams.values_mut() {
             *channel = channel_for(stream, &channels);
         }
@@ -873,7 +877,7 @@ impl Core {
         config.controls_audio().then_some(())?;
         let volume = config.volume_for(self.knob(channel)?);
         if self.auto_lower().lowers(channel) {
-            return Some((f64::from(volume) * self.ducker.factor()).round() as u8);
+            return Some(round_u8(f64::from(volume) * self.ducker.factor()));
         }
         Some(volume)
     }
@@ -953,7 +957,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Profile;
+    use crate::config::{Leds, Look, PopupStyle, Profile};
     use cranked_protocol::{button_packet, knob_packet};
 
     fn channels() -> Vec<Channel> {
@@ -979,12 +983,12 @@ mod tests {
         second[1].apps = vec!["Firefox".into()];
         Config {
             popups: true,
-            popup_style: Default::default(),
+            popup_style: PopupStyle::default(),
             theme: "cranked".into(),
-            look: Default::default(),
+            look: Look::default(),
             devices: Vec::new(),
-            leds: Default::default(),
-            home_assistant: Default::default(),
+            leds: Leds::default(),
+            home_assistant: crate::config::HomeAssistant::default(),
             profiles: vec![
                 Profile {
                     name: "Main".into(),
@@ -1025,19 +1029,19 @@ mod tests {
         let mut found: Vec<_> = out
             .iter()
             .filter_map(|o| match o {
-                Out::Audio(Audio::SetStream { index, percent, .. }) => Some((*index, *percent)),
+                Out::Audio(Audio::SetStream { index, percent, channels: _ }) => Some((*index, *percent)),
                 _ => None,
             })
             .collect();
-        found.sort();
+        found.sort_unstable();
         found
     }
 
     fn popups(out: &[Out]) -> Vec<String> {
         out.iter()
             .filter_map(|o| match o {
-                Out::Desktop(Desktop::Text { text, .. }) => Some(text.clone()),
-                Out::Desktop(Desktop::Volume { percent, name, .. }) => Some(format!("{name} {percent}%")),
+                Out::Desktop(Desktop::Text { text, icon: _, style: _ }) => Some(text.clone()),
+                Out::Desktop(Desktop::Volume { percent, name, style: _ }) => Some(format!("{name} {percent}%")),
                 _ => None,
             })
             .collect()
@@ -1063,7 +1067,7 @@ mod tests {
         let mut core = core();
         core.handle(Event::Stream(stream(7, "Firefox", 100.0)), start);
         core.handle(Event::MixerConnected, start);
-        for step in [10u8, 30, 50] {
+        for step in [10_u8, 30, 50] {
             core.handle(packets(&[(0, step), (1, step), (2, step), (3, step), (4, step)]), start);
             assert!(set_streams(&core.tick(start + Duration::from_millis(100))).is_empty(), "nothing during the ramp");
         }
@@ -1151,7 +1155,7 @@ mod tests {
     fn brightness(out: &[Out]) -> Vec<u8> {
         out.iter()
             .filter_map(|o| match o {
-                Out::HomeAssistant(HomeAssistant::Brightness { percent, .. }) => Some(*percent),
+                Out::HomeAssistant(HomeAssistant::Brightness { percent, entity: _ }) => Some(*percent),
                 _ => None,
             })
             .collect()
@@ -1252,7 +1256,7 @@ mod tests {
                 Out::Desktop(Desktop::Text {
                     icon: "home".into(),
                     text: "Toggling switch.fan".into(),
-                    style: Default::default()
+                    style: PopupStyle::default()
                 }),
                 Out::HomeAssistant(HomeAssistant::Call { service: "toggle", entity: "switch.fan".into() })
             ]
@@ -1330,7 +1334,7 @@ mod tests {
     fn meters(out: &[Out]) -> Vec<(u32, bool)> {
         out.iter()
             .filter_map(|o| match o {
-                Out::Audio(Audio::Meter { index, on, .. }) => Some((*index, *on)),
+                Out::Audio(Audio::Meter { index, on, sink: _ }) => Some((*index, *on)),
                 _ => None,
             })
             .collect()
@@ -1610,7 +1614,7 @@ mod tests {
             profiles: vec![Profile {
                 name: "P".into(),
                 channels: (0..count).map(named).collect(),
-                auto_lower: Default::default(),
+                auto_lower: AutoLower::default(),
             }],
             ..config()
         }

@@ -1,9 +1,9 @@
-//! Test helper for tests/live_devices.sh: publishes a virtual MIDI controller called "Cranked Test MIDI" and sends
+//! Test helper for `tests/live_devices.sh`: publishes a virtual MIDI controller called "Cranked Test MIDI" and sends
 //! each stdin line as one MIDI message, written as hex bytes ("b0 00 7f").
 
-use std::io::BufRead;
+use std::io::BufRead as _;
 
-use midir::os::unix::VirtualOutput;
+use midir::os::unix::VirtualOutput as _;
 
 fn main() {
     let output = midir::MidiOutput::new("Cranked test").expect("MIDI");

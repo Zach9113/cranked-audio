@@ -64,6 +64,7 @@ impl Stream {
     }
 
     /// 3 = exact app name or program, 2 = exact other name, 1 = the target appears inside the app name.
+    #[expect(clippy::bool_to_int_with_if, reason = "a ladder of scores reads clearer spelled out")]
     fn score(&self, target: &str) -> u8 {
         let target = target.trim().to_lowercase();
         if target.is_empty() {
@@ -115,8 +116,10 @@ mod tests {
     }
 
     fn channels() -> Vec<Channel> {
-        let named =
-            |apps: &[&str]| Channel { apps: apps.iter().map(|s| s.to_string()).collect(), ..Channel::default() };
+        let named = |apps: &[&str]| Channel {
+            apps: apps.iter().map(std::string::ToString::to_string).collect(),
+            ..Channel::default()
+        };
         vec![
             named(&["Firefox", "mpv"]),
             named(&["Spotify"]),

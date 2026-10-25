@@ -1,6 +1,7 @@
 //! The service's own view of settings: Home Assistant access and what it remembers between runs
 //! (`~/.local/state/cranked-audio/state.toml`, so the settings file is never rewritten behind the user's back).
 
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
 pub use cranked_ipc::settings::*;
@@ -20,7 +21,6 @@ pub fn home_assistant_settings(config: &Config, config_path: &Path) -> Option<cr
             return None;
         }
     };
-    use std::os::unix::fs::PermissionsExt;
     if std::fs::metadata(&token_path).is_ok_and(|m| m.permissions().mode() & 0o077 != 0) {
         eprintln!("home assistant: {} is readable by other users; run chmod 600 on it", token_path.display());
     }

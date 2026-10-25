@@ -3,13 +3,13 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use ureq::Agent;
 
 use crate::Event;
+use cranked_protocol::convert::round_u8;
 
 /// Light changes go out at most this often per light; the newest value wins.
 const LIGHT_EVERY: Duration = Duration::from_millis(150);
@@ -78,7 +78,7 @@ pub fn parse_state(value: &Value) -> Option<EntityState> {
             return 0;
         }
         let raw = attributes.and_then(|a| a.get("brightness")).and_then(Value::as_f64).unwrap_or(255.0);
-        ((raw * 100.0 / 255.0).round() as u8).clamp(1, 100)
+        round_u8(raw * 100.0 / 255.0).clamp(1, 100)
     });
     Some(EntityState { entity, name, state, brightness })
 }
@@ -99,7 +99,7 @@ fn agent(timeout: Option<Duration>) -> Agent {
     Agent::config_builder().timeout_global(timeout).http_status_as_error(true).build().into()
 }
 
-fn post(agent: &Agent, settings: &Settings, path: &str, body: Value) -> Result<(), String> {
+fn post(agent: &Agent, settings: &Settings, path: &str, body: &Value) -> Result<(), String> {
     agent
         .post(format!("{}{path}", settings.url))
         .header("Authorization", format!("Bearer {}", settings.token))
@@ -122,24 +122,24 @@ fn get_state(agent: &Agent, settings: &Settings, entity: &str) -> Option<EntityS
 fn call(agent: &Agent, settings: &Settings, command: &Command) -> Result<(), String> {
     match command {
         Command::Brightness { entity, percent: 0 } => {
-            post(agent, settings, "/api/services/light/turn_off", json!({ "entity_id": entity }))
+            post(agent, settings, "/api/services/light/turn_off", &json!({ "entity_id": entity }))
         }
         Command::Brightness { entity, percent } => post(
             agent,
             settings,
             "/api/services/light/turn_on",
-            json!({ "entity_id": entity, "brightness_pct": percent }),
+            &json!({ "entity_id": entity, "brightness_pct": percent }),
         ),
         Command::Call { service, entity } => {
             let (domain, service) = service_for(entity, service);
-            post(agent, settings, &format!("/api/services/{domain}/{service}"), json!({ "entity_id": entity }))
+            post(agent, settings, &format!("/api/services/{domain}/{service}"), &json!({ "entity_id": entity }))
         }
         Command::ListEntities => Ok(()),
     }
 }
 
 /// Sends service calls, holding back light changes so each light gets at most one per `LIGHT_EVERY`.
-pub fn run_calls(settings: Settings, commands: Receiver<Command>, events: Sender<Event>) {
+pub fn run_calls(settings: &Settings, commands: &Receiver<Command>, events: &Sender<Event>) {
     let agent = agent(Some(Duration::from_secs(10)));
     let mut waiting: HashMap<String, u8> = HashMap::new();
     let mut last_sent: HashMap<String, Instant> = HashMap::new();
@@ -149,14 +149,14 @@ pub fn run_calls(settings: Settings, commands: Receiver<Command>, events: Sender
             Ok(Command::Brightness { entity, percent }) => {
                 waiting.insert(entity, percent);
             }
-            Ok(Command::ListEntities) => match list_entities(&agent, &settings) {
+            Ok(Command::ListEntities) => match list_entities(&agent, settings) {
                 Ok(entities) => {
                     let _ = events.send(Event::HomeAssistantEntities(entities));
                 }
                 Err(e) => eprintln!("home assistant: can't list entities ({e})"),
             },
             Ok(command) => {
-                if let Err(e) = call(&agent, &settings, &command) {
+                if let Err(e) = call(&agent, settings, &command) {
                     eprintln!("home assistant: {e}");
                     let _ = events.send(Event::HomeAssistantFailed);
                 }
@@ -173,7 +173,7 @@ pub fn run_calls(settings: Settings, commands: Receiver<Command>, events: Sender
         for entity in due {
             let Some(percent) = waiting.remove(&entity) else { continue };
             last_sent.insert(entity.clone(), now);
-            if let Err(e) = call(&agent, &settings, &Command::Brightness { entity, percent }) {
+            if let Err(e) = call(&agent, settings, &Command::Brightness { entity, percent }) {
                 eprintln!("home assistant: {e}");
                 let _ = events.send(Event::HomeAssistantFailed);
             }
@@ -252,7 +252,7 @@ fn read_json(socket: &mut Socket) -> Result<Option<Value>, String> {
     }
 }
 
-fn send_json(socket: &mut Socket, value: Value) -> Result<(), String> {
+fn send_json(socket: &mut Socket, value: &Value) -> Result<(), String> {
     socket.send(tungstenite::Message::text(value.to_string())).map_err(|e| e.to_string())
 }
 
@@ -266,24 +266,18 @@ fn subscribe(settings: &Settings, watched: &[String]) -> Result<Socket, String> 
     };
     tcp.set_read_timeout(Some(PING_AFTER)).map_err(|e| e.to_string())?;
     let _ = read_json(&mut socket)?; // auth_required
-    send_json(&mut socket, json!({ "type": "auth", "access_token": settings.token }))?;
+    send_json(&mut socket, &json!({ "type": "auth", "access_token": settings.token }))?;
     match read_json(&mut socket)? {
         Some(reply) if reply["type"] == "auth_ok" => {}
         _ => return Err("Home Assistant didn't accept the token".into()),
     }
-    send_json(&mut socket, json!({ "id": 1, "type": "subscribe_entities", "entity_ids": watched }))?;
+    send_json(&mut socket, &json!({ "id": 1, "type": "subscribe_entities", "entity_ids": watched }))?;
     Ok(socket)
 }
 
 /// Keeps `watched` entities' state current over Home Assistant's WebSocket (only those entities, with pings to notice
 /// a dead connection); polls while it can't connect. Stops once `generation` moves past `mine`.
-pub fn run_states(
-    settings: Settings,
-    watched: Vec<String>,
-    events: Sender<Event>,
-    generation: Arc<AtomicU64>,
-    mine: u64,
-) {
+pub fn run_states(settings: &Settings, watched: &[String], events: &Sender<Event>, generation: &AtomicU64, mine: u64) {
     if watched.is_empty() {
         return;
     }
@@ -291,7 +285,7 @@ pub fn run_states(
     let poller = agent(Some(Duration::from_secs(10)));
     let mut reported = false;
     while current() {
-        let mut socket = match subscribe(&settings, &watched) {
+        let mut socket = match subscribe(settings, watched) {
             Ok(socket) => socket,
             Err(e) => {
                 if !reported {
@@ -301,8 +295,8 @@ pub fn run_states(
                     );
                     reported = true;
                 }
-                for entity in &watched {
-                    if let Some(state) = get_state(&poller, &settings, entity) {
+                for entity in watched {
+                    if let Some(state) = get_state(&poller, settings, entity) {
                         if events.send(Event::HomeAssistantState(state)).is_err() {
                             return;
                         }
@@ -315,7 +309,7 @@ pub fn run_states(
         eprintln!("home assistant: live updates connected");
         reported = false;
         let mut known = HashMap::new();
-        let (mut next_id, mut waiting_for_pong) = (2u64, false);
+        let (mut next_id, mut waiting_for_pong) = (2_u64, false);
         let reason = loop {
             if !current() {
                 let _ = socket.close(None);
@@ -337,7 +331,7 @@ pub fn run_states(
                 Ok(None) => {}
                 Err(e) if e == "timeout" && !waiting_for_pong => {
                     waiting_for_pong = true;
-                    if let Err(e) = send_json(&mut socket, json!({ "id": next_id, "type": "ping" })) {
+                    if let Err(e) = send_json(&mut socket, &json!({ "id": next_id, "type": "ping" })) {
                         break e;
                     }
                     next_id += 1;

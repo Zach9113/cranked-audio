@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Development
+- The workspace lint set (clippy pedantic plus most of restriction) is now switched on for every crate and clean.
+  Warnings fail CI (new `CI` workflow: fmt, `clippy -D warnings`, unit tests) but not plain builds, so a newer Rust
+  can't break source builds for users and packagers. A few pure-style rules are parked in `Cargo.toml` for now.
+- Number conversions go through checked helpers (`cranked_protocol::convert`) that saturate instead of wrapping.
+- No `unsafe` left: the keyboard knob waits for input with nix's safe `poll` instead of raw libc.
+
 ## 2.0.1
 
 - Panel widget: the hover tooltip listing every knob's level is now optional when the knobs are shown in the panel

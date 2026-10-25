@@ -16,8 +16,10 @@ panic = "abort"
 strip = true
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
-warnings = "deny"
+# deny, not forbid: Slint's generated UI code needs to allow its own unsafe blocks; ours still can't have any.
+unsafe_code = "deny"
+# Warnings fail CI (`cargo clippy -- -D warnings`), not plain builds: a newer Rust that adds a
+# warning must not break source builds for users and packagers.
 
 [workspace.lints.clippy]
 alloc_instead_of_core = "allow"
@@ -105,3 +107,15 @@ unwrap_in_result = "allow"
 unwrap_used = "allow"
 use_debug = "allow"
 wildcard_enum_match_arm = "allow"
+
+# Pure style rules, parked until Zach and acortiv agree on them (each touches 50-350 places).
+absolute_paths = "allow"
+assert_is_empty = "allow"
+default_numeric_fallback = "allow"
+min_ident_chars = "allow"
+pattern_type_mismatch = "allow"
+str_to_string = "allow"
+unreadable_literal = "allow"
+# Contradicts rest_pattern_accessible_field (one wants `..`, the other wants the fields named); naming them wins,
+# so adding a field makes every match that should care about it show up.
+unneeded_field_pattern = "allow"
