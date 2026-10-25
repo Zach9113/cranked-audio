@@ -471,73 +471,76 @@ export component GeneralPage inherits ScrollView {
 
         GroupBox {
             title: "Look";
-            HorizontalLayout {
-                spacing: 8px;
-                Label { text: "Theme"; width: 110px; }
-                ComboBox {
-                    model: General.theme-names;
-                    current-index <=> General.theme-index;
-                    selected => { General.theme-changed(self.current-index); }
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Theme"; width: 110px; }
+                    ComboBox {
+                        model: General.theme-names;
+                        current-index <=> General.theme-index;
+                        selected => { General.theme-changed(self.current-index); }
+                    }
                 }
-            }
-            HorizontalLayout {
-                spacing: 8px;
-                Label { text: "Style"; width: 110px; }
-                ComboBox {
-                    model: ["Knobs (dials)", "Sliders (compact list)", "Faders (like a mixing desk)"];
-                    current-index <=> General.look-style;
-                    selected => { General.look-changed(); }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Style"; width: 110px; }
+                    ComboBox {
+                        model: ["Knobs (dials)", "Sliders (compact list)", "Faders (like a mixing desk)"];
+                        current-index <=> General.look-style;
+                        selected => { General.look-changed(); }
+                    }
                 }
-            }
-            HorizontalLayout {
-                spacing: 8px;
-                Label { text: "Size"; width: 110px; }
-                Slider {
-                    minimum: 30;
-                    maximum: 160;
-                    value <=> General.look-scale;
-                    released => { General.look-changed(); }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Size"; width: 110px; }
+                    Slider {
+                        minimum: 30;
+                        maximum: 160;
+                        value <=> General.look-scale;
+                        released => { General.look-changed(); }
+                    }
+                    Label { text: round(General.look-scale) + "%"; width: 44px; }
                 }
-                Label { text: round(General.look-scale) + "%"; width: 44px; }
-            }
-            Label { text: "Show:"; }
-            HorizontalLayout {
-                spacing: 12px;
-                alignment: start;
-                CheckBox { text: "Names"; checked <=> General.look-show-name; toggled => { General.look-changed(); } }
-                CheckBox { text: "Percentages"; checked <=> General.look-show-percent; toggled => { General.look-changed(); } }
-                CheckBox { text: "What's playing"; checked <=> General.look-show-source; toggled => { General.look-changed(); } }
-            }
-            HorizontalLayout {
-                spacing: 12px;
-                alignment: start;
-                CheckBox { text: "Buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
-                CheckBox {
-                    text: "Buttons inside knobs with % (compact)";
-                    enabled: General.look-show-button && General.look-style == 0;
-                    checked <=> General.look-buttons-in-dial;
-                    toggled => { General.look-changed(); }
+                Label { text: "Show:"; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    CheckBox { text: "Names"; checked <=> General.look-show-name; toggled => { General.look-changed(); } }
+                    CheckBox { text: "Percentages"; checked <=> General.look-show-percent; toggled => { General.look-changed(); } }
+                    CheckBox { text: "What's playing"; checked <=> General.look-show-source; toggled => { General.look-changed(); } }
                 }
-                CheckBox {
-                    text: "What the buttons do";
-                    enabled: General.look-show-button;
-                    checked <=> General.look-show-action-labels;
-                    toggled => { General.look-changed(); }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    CheckBox { text: "Buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
+                    CheckBox {
+                        text: "Buttons inside knobs with % (compact)";
+                        enabled: General.look-show-button && General.look-style == 0;
+                        checked <=> General.look-buttons-in-dial;
+                        toggled => { General.look-changed(); }
+                    }
+                    CheckBox {
+                        text: "What the buttons do";
+                        enabled: General.look-show-button;
+                        checked <=> General.look-show-action-labels;
+                        toggled => { General.look-changed(); }
+                    }
                 }
-            }
-            HorizontalLayout {
-                spacing: 12px;
-                alignment: start;
-                CheckBox { text: "Title bar"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
-            }
-            Label { text: "Knobs in the window:"; }
-            HorizontalLayout {
-                spacing: 12px;
-                alignment: start;
-                for name[i] in Lists.knob-names: CheckBox {
-                    text: name;
-                    checked: General.look-shown[i];
-                    toggled => { General.toggle-shown(i); }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    CheckBox { text: "Title bar"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
+                }
+                Label { text: "Knobs in the window:"; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    for name[i] in Lists.knob-names: CheckBox {
+                        text: name;
+                        checked: General.look-shown[i];
+                        toggled => { General.toggle-shown(i); }
+                    }
                 }
             }
         }
