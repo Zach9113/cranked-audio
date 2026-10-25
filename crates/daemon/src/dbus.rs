@@ -87,6 +87,11 @@ impl Api {
         self.send(Request::Profile(name.to_string()));
     }
 
+    /// Cycles to the next profile.
+    fn next_profile(&self) {
+        self.send(Request::NextProfile);
+    }
+
     fn open_window(&self) {
         self.send(Request::OpenWindow);
     }
