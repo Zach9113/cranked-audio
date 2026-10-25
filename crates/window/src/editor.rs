@@ -162,11 +162,12 @@ pub fn remove_knob(config: &mut cranked_ipc::settings::Config, profile: usize, i
         return false;
     }
     p.channels.remove(index);
+    let knob_num = index + 1;
     // knob numbers in settings count from 1
     let renumber = |list: &mut Vec<usize>| {
-        list.retain(|&n| n != index + 1);
+        list.retain(|&n| n != knob_num);
         for n in list.iter_mut() {
-            if *n > index + 1 {
+            if *n > knob_num {
                 *n -= 1;
             }
         }
@@ -174,6 +175,44 @@ pub fn remove_knob(config: &mut cranked_ipc::settings::Config, profile: usize, i
     renumber(&mut p.auto_lower.lower);
     renumber(&mut p.auto_lower.triggers);
     renumber(&mut config.look.hidden_knobs);
+    config.devices.retain_mut(|d| match d {
+        cranked_ipc::settings::Device::KeyboardKnob { knob, .. } => {
+            if *knob == knob_num {
+                false
+            } else {
+                if *knob > knob_num {
+                    *knob -= 1;
+                }
+                true
+            }
+        }
+        cranked_ipc::settings::Device::Midi { controls, .. } => {
+            controls.retain_mut(|c| {
+                if c.knob == knob_num {
+                    false
+                } else {
+                    if c.knob > knob_num {
+                        c.knob -= 1;
+                    }
+                    true
+                }
+            });
+            !controls.is_empty()
+        }
+        cranked_ipc::settings::Device::Deej { knobs, .. } => {
+            knobs.retain_mut(|k| {
+                if *k == knob_num {
+                    false
+                } else {
+                    if *k > knob_num {
+                        *k -= 1;
+                    }
+                    true
+                }
+            });
+            !knobs.is_empty()
+        }
+    });
     true
 }
 
@@ -300,9 +339,24 @@ mod tests {
         assert_eq!(config.profiles[0].channels[start].name, format!("Knob {}", start + 1));
         config.profiles[0].auto_lower.lower = vec![1, 3, 6];
         config.look.hidden_knobs = vec![2, 6];
+        config.devices.push(cranked_ipc::settings::Device::KeyboardKnob {
+            name: "TestKeyboard".into(),
+            knob: 6,
+            step: 2,
+            grab: true,
+        });
         assert!(remove_knob(&mut config, 0, 2), "remove knob 3");
         assert_eq!(config.profiles[0].auto_lower.lower, [1, 5], "knob 3 gone, knob 6 is now knob 5");
         assert_eq!(config.look.hidden_knobs, [2, 5]);
+        assert_eq!(
+            config.devices,
+            vec![cranked_ipc::settings::Device::KeyboardKnob {
+                name: "TestKeyboard".into(),
+                knob: 5,
+                step: 2,
+                grab: true,
+            }]
+        );
         while config.profiles[0].channels.len() > 1 {
             assert!(remove_knob(&mut config, 0, 0));
         }

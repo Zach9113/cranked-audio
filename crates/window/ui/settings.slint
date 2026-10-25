@@ -87,6 +87,14 @@ export global KnobSettings {
     in-out property <bool> apps-expanded;
     // how many apps the full list has
     in-out property <int> app-total;
+    // Connected controller / device
+    in-out property <[string]> device-choices;
+    in-out property <int> device-index;
+    in-out property <bool> device-is-keyboard;
+    in-out property <int> keyboard-step: 2;
+    in-out property <bool> keyboard-grab: true;
+    in-out property <string> device-hint;
+    callback device-changed(int);
     callback set-apps-expanded(bool);
     callback add-app(string);
     callback toggle-app(int);
@@ -246,6 +254,36 @@ export component KnobPage inherits ScrollView {
                             : ["Apps", "Output volume (everything)"];
                         current-index <=> KnobSettings.kind;
                     }
+                }
+            }
+        }
+
+        GroupBox {
+            title: "Controller / Device";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Connected to"; width: 110px; }
+                    ComboBox {
+                        model: KnobSettings.device-choices;
+                        current-index <=> KnobSettings.device-index;
+                        selected => { KnobSettings.device-changed(self.current-index); }
+                    }
+                }
+                if KnobSettings.device-is-keyboard: HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Step"; width: 110px; }
+                    SpinBox { minimum: 1; maximum: 20; value <=> KnobSettings.keyboard-step; }
+                    Label { text: "% a click"; }
+                    Rectangle { horizontal-stretch: 1; }
+                    CheckBox {
+                        text: "Take it over (so system volume doesn't move)";
+                        checked <=> KnobSettings.keyboard-grab;
+                    }
+                }
+                Hint {
+                    text: KnobSettings.device-hint;
                 }
             }
         }
