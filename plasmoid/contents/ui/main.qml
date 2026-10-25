@@ -186,7 +186,7 @@ PlasmoidItem {
     Plasmoid.icon: "io.github.zach9113.CrankedAudio"
     Plasmoid.title: "Cranked Audio"
     // the frame Plasma draws behind a widget on the desktop; off lets the knobs float on the wallpaper
-    Plasmoid.backgroundHints: cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground
+    Plasmoid.backgroundHints: (cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground) | PlasmaCore.Types.ConfigurableBackground
     // the tooltip sums up the knobs for the icon; with the knobs in the panel it's optional (handy when they're small)
     readonly property bool noTooltip: inPanel && !cfg.panelTooltip
     toolTipMainText: noTooltip ? "" : "Cranked Audio"
@@ -274,7 +274,7 @@ PlasmoidItem {
 
     fullRepresentation: PlasmaExtras.Representation {
         id: full
-        readonly property real pad: root.unit * 0.6
+        readonly property real pad: root.cfg.showBackground ? root.unit * 0.6 : root.unit * 0.2
         Layout.preferredWidth: content.implicitWidth + pad * 2
         Layout.preferredHeight: content.implicitHeight + pad * 2 + (header && header.visible ? header.implicitHeight : 0)
         Layout.minimumWidth: Math.min(Layout.preferredWidth, root.unit * 8)
@@ -385,6 +385,7 @@ PlasmoidItem {
                         showButton: root.cfg.showButton
                         showActionLabels: root.showActionLabels
                         buttonsInDial: root.buttonsInDial
+                        showCardBackground: root.cfg.showCardBackground
                         onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onStep: delta => root.stepKnob(modelData.index, delta)
                         onPressButton: root.press(modelData.index)
@@ -412,6 +413,7 @@ PlasmoidItem {
                         showPercent: root.cfg.showPercent
                         showSource: root.showSource
                         showButton: root.cfg.showButton
+                        showCardBackground: root.cfg.showCardBackground
                         onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onPressButton: root.press(modelData.index)
                         onHoldButton: root.hold(modelData.index)

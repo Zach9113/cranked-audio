@@ -27,6 +27,8 @@ KCM.SimpleKCM {
     property bool cfg_showHeaderDefault
     property bool cfg_showBackground
     property bool cfg_showBackgroundDefault
+    property bool cfg_showCardBackground
+    property bool cfg_showCardBackgroundDefault
     property bool cfg_showInPanel
     property bool cfg_showInPanelDefault
     property bool cfg_panelTooltip

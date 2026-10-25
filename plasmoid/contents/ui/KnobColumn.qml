@@ -21,6 +21,7 @@ Rectangle {
     required property bool showButton
     required property bool showActionLabels
     required property bool buttonsInDial
+    property bool showCardBackground: true
     readonly property bool hasButton: knob.press !== "Nothing" || knob.hold !== "Nothing"
     // the button lives in the middle of the dial
     readonly property bool buttonInside: buttonsInDial && showButton && hasButton
@@ -42,8 +43,8 @@ Rectangle {
     implicitWidth: unit * 6.4
     implicitHeight: content.implicitHeight + unit
     radius: unit * 0.8
-    color: theme.card
-    border.width: theme.border ? 1 : 0
+    color: showCardBackground ? theme.card : "transparent"
+    border.width: showCardBackground && theme.border ? 1 : 0
     border.color: theme.border
 
     ColumnLayout {

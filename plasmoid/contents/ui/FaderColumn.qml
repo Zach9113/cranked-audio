@@ -16,6 +16,7 @@ Rectangle {
     required property bool showPercent
     required property bool showSource
     required property bool showButton
+    property bool showCardBackground: true
     readonly property bool hasButton: knob.press !== "Nothing" || knob.hold !== "Nothing"
 
     signal setLevel(int percent)
@@ -25,8 +26,8 @@ Rectangle {
     implicitWidth: unit * 4.2
     implicitHeight: content.implicitHeight + unit
     radius: unit * 0.7
-    color: theme.card
-    border.width: theme.border ? 1 : 0
+    color: showCardBackground ? theme.card : "transparent"
+    border.width: showCardBackground && theme.border ? 1 : 0
     border.color: theme.border
 
     ColumnLayout {

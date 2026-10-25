@@ -23,11 +23,15 @@ ConfigPage {
             onToggled: page.cfg_showHeader = checked
         }
         QQC2.CheckBox {
-            Kirigami.FormData.label: "On the desktop:"
-            text: "Background behind the widget"
-            enabled: page.place !== "panel"
+            Kirigami.FormData.label: "Backgrounds:"
+            text: "Widget background"
             checked: page.cfg_showBackground
             onToggled: page.cfg_showBackground = checked
+        }
+        QQC2.CheckBox {
+            text: "Card backgrounds behind knobs"
+            checked: page.cfg_showCardBackground
+            onToggled: page.cfg_showCardBackground = checked
         }
     }
 }

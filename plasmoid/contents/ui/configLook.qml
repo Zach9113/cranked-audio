@@ -46,6 +46,18 @@ ConfigPage {
             onActivated: page.cfg_theme = currentValue
         }
 
+        QQC2.CheckBox {
+            Kirigami.FormData.label: "Backgrounds:"
+            text: "Widget background"
+            checked: page.cfg_showBackground
+            onToggled: page.cfg_showBackground = checked
+        }
+        QQC2.CheckBox {
+            text: "Card backgrounds behind knobs"
+            checked: page.cfg_showCardBackground
+            onToggled: page.cfg_showCardBackground = checked
+        }
+
         RowLayout {
             Kirigami.FormData.label: "Size:"
             enabled: !page.panelSized
