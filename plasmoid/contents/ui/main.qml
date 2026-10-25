@@ -52,16 +52,26 @@ PlasmoidItem {
     readonly property var theme: {
         const text = Kirigami.Theme.textColor;
         const faint = (a) => Qt.rgba(text.r, text.g, text.b, a);
+        const isDark = text.r + text.g + text.b > 1.5;
         switch (cfg.theme) {
         case "cranked":
-            return { base: "#1b1b21", card: "#1b1b21", centre: "#2a2a32", track: "#34343e", edge: "#3a3a44", text: "#f0f0f4", subtle: "#a8a8b4", border: "" };
+            return { base: "#1b1b21", card: "#151519", centre: "#2a2a32", track: "#34343e", edge: "#3a3a44", text: "#f0f0f4", subtle: "#a8a8b4", border: "#08080b" };
         case "glass":
-            return { base: "#202024", card: Qt.rgba(1, 1, 1, 0.05), centre: Qt.rgba(1, 1, 1, 0.08), track: Qt.rgba(1, 1, 1, 0.14),
-                     edge: Qt.rgba(1, 1, 1, 0.18), text: "#ffffff", subtle: Qt.rgba(1, 1, 1, 0.65), border: Qt.rgba(1, 1, 1, 0.16) };
+            return { base: "#202024", card: Qt.rgba(0.08, 0.08, 0.10, 0.70), centre: Qt.rgba(1, 1, 1, 0.08), track: Qt.rgba(1, 1, 1, 0.14),
+                     edge: Qt.rgba(1, 1, 1, 0.18), text: "#ffffff", subtle: Qt.rgba(1, 1, 1, 0.65), border: Qt.rgba(0, 0, 0, 0.75) };
         case "minimal":
             return { base: Kirigami.Theme.backgroundColor, card: "transparent", centre: faint(0.06), track: faint(0.14), edge: faint(0.15), text: text, subtle: faint(0.6), border: "" };
         default:
-            return { base: Kirigami.Theme.backgroundColor, card: faint(0.05), centre: faint(0.09), track: faint(0.16), edge: faint(0.15), text: text, subtle: faint(0.65), border: "" };
+            return {
+                base: Kirigami.Theme.backgroundColor,
+                card: isDark ? Qt.rgba(0.08, 0.08, 0.10, 0.88) : Qt.rgba(0.92, 0.92, 0.94, 0.92),
+                centre: faint(0.09),
+                track: faint(0.16),
+                edge: faint(0.15),
+                text: text,
+                subtle: faint(0.65),
+                border: isDark ? Qt.rgba(0, 0, 0, 0.90) : Qt.rgba(0.5, 0.5, 0.55, 0.80)
+            };
         }
     }
 

@@ -44,8 +44,8 @@ Rectangle {
     implicitHeight: content.implicitHeight + unit
     radius: unit * 0.8
     color: showCardBackground ? theme.card : "transparent"
-    border.width: showCardBackground && theme.border ? 1 : 0
-    border.color: theme.border
+    border.width: showCardBackground && Boolean(theme.border) ? 1 : 0
+    border.color: theme.border || "transparent"
 
     ColumnLayout {
         id: content
