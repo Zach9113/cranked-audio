@@ -186,7 +186,22 @@ PlasmoidItem {
     Plasmoid.icon: "io.github.zach9113.CrankedAudio"
     Plasmoid.title: "Cranked Audio"
     // the frame Plasma draws behind a widget on the desktop; off lets the knobs float on the wallpaper
-    Plasmoid.backgroundHints: (cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground) | PlasmaCore.Types.ConfigurableBackground
+    Plasmoid.backgroundHints: cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground
+    Plasmoid.userBackgroundHints: Plasmoid.backgroundHints
+
+    // when in a dedicated panel (like a floating bar for knobs), clearing "Widget background" clears the panel frame too
+    function syncContainmentBackground() {
+        if (root.inPanel && Plasmoid.containment && Plasmoid.containment.applets && Plasmoid.containment.applets.length <= 1) {
+            Plasmoid.containment.backgroundHints = root.cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground;
+        }
+    }
+    Connections {
+        target: root.cfg
+        function onShowBackgroundChanged() {
+            root.syncContainmentBackground();
+        }
+    }
+    Component.onCompleted: root.syncContainmentBackground()
     // the tooltip sums up the knobs for the icon; with the knobs in the panel it's optional (handy when they're small)
     readonly property bool noTooltip: inPanel && !cfg.panelTooltip
     toolTipMainText: noTooltip ? "" : "Cranked Audio"
