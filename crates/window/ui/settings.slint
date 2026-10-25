@@ -469,18 +469,22 @@ export component GeneralPage inherits ScrollView {
                 alignment: start;
                 CheckBox { text: "Buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
                 CheckBox {
-                    text: "What the buttons do";
-                    enabled: General.look-show-button;
-                    checked <=> General.look-show-action-labels;
-                    toggled => { General.look-changed(); }
-                }
-                CheckBox { text: "Title bar"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
-                CheckBox {
                     text: "Buttons inside the dials";
                     enabled: General.look-show-button && General.look-style == 0;
                     checked <=> General.look-buttons-in-dial;
                     toggled => { General.look-changed(); }
                 }
+                CheckBox {
+                    text: "What the buttons do";
+                    enabled: General.look-show-button;
+                    checked <=> General.look-show-action-labels;
+                    toggled => { General.look-changed(); }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: start;
+                CheckBox { text: "Title bar"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
             }
             Label { text: "Knobs in the window:"; }
             HorizontalLayout {
