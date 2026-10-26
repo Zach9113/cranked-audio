@@ -86,6 +86,20 @@ To remove it (your settings stay in `~/.config/cranked-audio`):
 Experimental: each release also has `CrankedAudio-x86_64.AppImage` to try it without installing (no automatic start
 at login).
 
+### Windows (work in progress)
+
+The service and window also run on Windows 10 and 11: per-app volume through Windows' own volume mixer, the tray
+icon, media keys, MIDI controllers and deej boxes. Volume popups, shortcuts, keyboard knobs and in-app updates are
+Linux-only for now. There are no Windows releases yet; build it with Rust (the MSVC toolchain), then install it for
+your user (Start menu entry, starts at sign-in, no administrator needed):
+
+```powershell
+cargo build --release
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+`install.ps1 -Uninstall` removes it again (your settings stay in `%APPDATA%\cranked-audio`).
+
 ## Using it
 
 Open **Cranked Audio** from the app menu or click the tray icon. Drag or scroll a knob to turn it; right-click a knob
