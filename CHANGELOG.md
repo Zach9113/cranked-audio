@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Fixed: a second copy of the service (another start, or a test run) took over the D-Bus name and left the panel
+  widget and Atoll's mixer blank once it exited. The running service now keeps its name.
+- Fixed: the service could crash (and restart) when Auto-lower stopped watching an app's level, because the level
+  meter was freed while PipeWire's thread was still using it.
+
 ## 2.1.0
 
 ### Knobs and controllers

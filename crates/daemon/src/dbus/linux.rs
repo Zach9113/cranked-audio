@@ -94,7 +94,10 @@ pub fn start(events: Sender<Event>) -> Option<(zbus::blocking::Connection, Arc<M
     let api = Api { events, state: Arc::clone(&state) };
     // tests run their own copy under another name ($CRANKED_DBUS_NAME) next to a real one
     let name = std::env::var("CRANKED_DBUS_NAME").unwrap_or_else(|_| NAME.to_string());
+    // the name stays ours: zbus would otherwise let a later copy (a test run, a second start) take it over, leaving
+    // the widget and Atoll talking to a copy that soon exits
     let connection = zbus::blocking::connection::Builder::session()
+        .map(|b| b.allow_name_replacements(false).replace_existing_names(false))
         .and_then(|b| b.name(name))
         .and_then(|b| b.serve_at(PATH, api))
         .and_then(|b| b.build());

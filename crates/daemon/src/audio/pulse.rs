@@ -165,7 +165,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
         if let Command::Meter { index, sink, on } = command {
             if let Some(meter) = meters.remove(&index) {
                 mainloop.lock();
-                stop_meter(&meter);
+                stop_meter(meter);
                 mainloop.unlock();
             }
             if on {
@@ -217,7 +217,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
     };
 
     mainloop.lock();
-    for meter in meters.values() {
+    for (_, meter) in meters.drain() {
         stop_meter(meter);
     }
     context.set_state_callback(None);
@@ -293,11 +293,14 @@ fn start_meter(
     Ok(stream)
 }
 
-fn stop_meter(meter: &Rc<RefCell<PaStream>>) {
-    if let Ok(mut meter) = meter.try_borrow_mut() {
-        meter.set_read_callback(None);
-        let _ = meter.disconnect();
+/// Stops and frees a meter stream. Call with the mainloop locked: freeing it unlocked races the mainloop thread
+/// (libpulse aborts with a pa_queue assertion).
+fn stop_meter(meter: Rc<RefCell<PaStream>>) {
+    if let Ok(mut stream) = meter.try_borrow_mut() {
+        stream.set_read_callback(None);
+        let _ = stream.disconnect();
     }
+    drop(meter);
 }
 
 /// Ask for the current default and all outputs, wait for the answers without holding the lock, then switch.
