@@ -4,7 +4,7 @@ members = ["crates/protocol", "crates/ipc", "crates/daemon", "crates/window"]
 
 [workspace.package]
 edition = "2021"
-version = "2.0.1"
+version = "2.1.1"
 license = "GPL-3.0-or-later"
 authors = ["Zach9113"]
 
@@ -112,6 +112,8 @@ wildcard_enum_match_arm = "allow"
 absolute_paths = "allow"
 assert_is_empty = "allow"
 default_numeric_fallback = "allow"
+# Wants mod.rs to hold only `mod` lines; the platform split (audio/, devices/, tray/...) keeps shared code there.
+definition_in_module_root = "allow"
 min_ident_chars = "allow"
 pattern_type_mismatch = "allow"
 str_to_string = "allow"

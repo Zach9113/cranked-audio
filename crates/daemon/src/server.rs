@@ -1,11 +1,10 @@
 //! The window's connection (see the `cranked-ipc` crate). Also makes sure only one service runs.
 
 use std::io::{BufRead as _, BufReader, Write as _};
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use cranked_ipc::ServerMessage;
+use cranked_ipc::{ServerMessage, UnixListener, UnixStream};
 
 use crate::Event;
 

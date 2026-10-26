@@ -1,0 +1,2 @@
+// Windows resources for both .exe files: the icon Explorer, the Start menu and the taskbar show.
+app ICON "cranked-audio.ico"

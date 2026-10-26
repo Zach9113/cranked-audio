@@ -1,4 +1,6 @@
 //! cranked-audiod: the always-running part of Cranked Audio. No window; the window talks to it.
+// Windows: no console window (its log still goes wherever stderr is redirected)
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod audio;
 mod buttons;
@@ -45,7 +47,7 @@ pub enum Event {
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
     /// A window connected / sent a line.
-    ClientConnected(std::os::unix::net::UnixStream),
+    ClientConnected(cranked_ipc::UnixStream),
     ClientLine(String),
     Tray(tray::Action),
     /// A request over the D-Bus API.

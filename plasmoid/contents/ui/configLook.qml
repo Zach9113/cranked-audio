@@ -21,7 +21,7 @@ ConfigPage {
         QQC2.ComboBox {
             Kirigami.FormData.label: "Style:"
             model: [
-                { value: "knobs", text: "Knobs (like the app)" },
+                { value: "knobs", text: "Knobs (dials)" },
                 { value: "sliders", text: "Sliders (compact list)" },
                 { value: "faders", text: "Faders (like a mixing desk)" }
             ]
@@ -44,6 +44,18 @@ ConfigPage {
             valueRole: "value"
             currentIndex: model.findIndex(m => m.value === page.cfg_theme)
             onActivated: page.cfg_theme = currentValue
+        }
+
+        QQC2.CheckBox {
+            Kirigami.FormData.label: "Backgrounds:"
+            text: "Widget background"
+            checked: page.cfg_showBackground
+            onToggled: page.cfg_showBackground = checked
+        }
+        QQC2.CheckBox {
+            text: "Card backgrounds behind knobs"
+            checked: page.cfg_showCardBackground
+            onToggled: page.cfg_showCardBackground = checked
         }
 
         RowLayout {

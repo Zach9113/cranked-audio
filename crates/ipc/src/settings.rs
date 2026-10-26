@@ -490,9 +490,16 @@ impl Default for Config {
     }
 }
 
+/// `$variable/cranked-audio`, else `~/fallback/cranked-audio`. On Windows the fallback is `%APPDATA%` for settings
+/// (`.config`) and `%LOCALAPPDATA%` for everything else.
 pub fn base_dir(variable: &str, fallback: &str) -> PathBuf {
+    let windows_dir = || {
+        let known = if fallback == ".config" { "APPDATA" } else { "LOCALAPPDATA" };
+        cfg!(windows).then(|| std::env::var_os(known)).flatten().map(PathBuf::from)
+    };
     std::env::var_os(variable)
         .map(PathBuf::from)
+        .or_else(windows_dir)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(fallback)))
         .unwrap_or_else(|| PathBuf::from("."))
         .join("cranked-audio")

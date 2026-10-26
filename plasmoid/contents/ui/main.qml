@@ -52,16 +52,26 @@ PlasmoidItem {
     readonly property var theme: {
         const text = Kirigami.Theme.textColor;
         const faint = (a) => Qt.rgba(text.r, text.g, text.b, a);
+        const isDark = text.r + text.g + text.b > 1.5;
         switch (cfg.theme) {
         case "cranked":
-            return { base: "#1b1b21", card: "#1b1b21", centre: "#2a2a32", track: "#34343e", edge: "#3a3a44", text: "#f0f0f4", subtle: "#a8a8b4", border: "" };
+            return { base: "#1b1b21", card: "#151519", centre: "#2a2a32", track: "#34343e", edge: "#3a3a44", text: "#f0f0f4", subtle: "#a8a8b4", border: "#08080b" };
         case "glass":
-            return { base: "#202024", card: Qt.rgba(1, 1, 1, 0.05), centre: Qt.rgba(1, 1, 1, 0.08), track: Qt.rgba(1, 1, 1, 0.14),
-                     edge: Qt.rgba(1, 1, 1, 0.18), text: "#ffffff", subtle: Qt.rgba(1, 1, 1, 0.65), border: Qt.rgba(1, 1, 1, 0.16) };
+            return { base: "#202024", card: Qt.rgba(0.08, 0.08, 0.10, 0.70), centre: Qt.rgba(1, 1, 1, 0.08), track: Qt.rgba(1, 1, 1, 0.14),
+                     edge: Qt.rgba(1, 1, 1, 0.18), text: "#ffffff", subtle: Qt.rgba(1, 1, 1, 0.65), border: Qt.rgba(0, 0, 0, 0.75) };
         case "minimal":
             return { base: Kirigami.Theme.backgroundColor, card: "transparent", centre: faint(0.06), track: faint(0.14), edge: faint(0.15), text: text, subtle: faint(0.6), border: "" };
         default:
-            return { base: Kirigami.Theme.backgroundColor, card: faint(0.05), centre: faint(0.09), track: faint(0.16), edge: faint(0.15), text: text, subtle: faint(0.65), border: "" };
+            return {
+                base: Kirigami.Theme.backgroundColor,
+                card: isDark ? Qt.rgba(0.08, 0.08, 0.10, 0.88) : Qt.rgba(0.92, 0.92, 0.94, 0.92),
+                centre: faint(0.09),
+                track: faint(0.16),
+                edge: faint(0.15),
+                text: text,
+                subtle: faint(0.65),
+                border: isDark ? Qt.rgba(0, 0, 0, 0.90) : Qt.rgba(0.5, 0.5, 0.55, 0.80)
+            };
         }
     }
 
@@ -187,6 +197,21 @@ PlasmoidItem {
     Plasmoid.title: "Cranked Audio"
     // the frame Plasma draws behind a widget on the desktop; off lets the knobs float on the wallpaper
     Plasmoid.backgroundHints: cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground
+    Plasmoid.userBackgroundHints: Plasmoid.backgroundHints
+
+    // when in a dedicated panel (like a floating bar for knobs), clearing "Widget background" clears the panel frame too
+    function syncContainmentBackground() {
+        if (root.inPanel && Plasmoid.containment && Plasmoid.containment.applets && Plasmoid.containment.applets.length <= 1) {
+            Plasmoid.containment.backgroundHints = root.cfg.showBackground ? PlasmaCore.Types.DefaultBackground : PlasmaCore.Types.NoBackground;
+        }
+    }
+    Connections {
+        target: root.cfg
+        function onShowBackgroundChanged() {
+            root.syncContainmentBackground();
+        }
+    }
+    Component.onCompleted: root.syncContainmentBackground()
     // the tooltip sums up the knobs for the icon; with the knobs in the panel it's optional (handy when they're small)
     readonly property bool noTooltip: inPanel && !cfg.panelTooltip
     toolTipMainText: noTooltip ? "" : "Cranked Audio"
@@ -274,7 +299,7 @@ PlasmoidItem {
 
     fullRepresentation: PlasmaExtras.Representation {
         id: full
-        readonly property real pad: root.unit * 0.6
+        readonly property real pad: root.cfg.showBackground ? root.unit * 0.6 : root.unit * 0.2
         Layout.preferredWidth: content.implicitWidth + pad * 2
         Layout.preferredHeight: content.implicitHeight + pad * 2 + (header && header.visible ? header.implicitHeight : 0)
         Layout.minimumWidth: Math.min(Layout.preferredWidth, root.unit * 8)
@@ -385,6 +410,7 @@ PlasmoidItem {
                         showButton: root.cfg.showButton
                         showActionLabels: root.showActionLabels
                         buttonsInDial: root.buttonsInDial
+                        showCardBackground: root.cfg.showCardBackground
                         onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onStep: delta => root.stepKnob(modelData.index, delta)
                         onPressButton: root.press(modelData.index)
@@ -412,6 +438,7 @@ PlasmoidItem {
                         showPercent: root.cfg.showPercent
                         showSource: root.showSource
                         showButton: root.cfg.showButton
+                        showCardBackground: root.cfg.showCardBackground
                         onSetLevel: percent => root.setKnob(modelData.index, percent)
                         onPressButton: root.press(modelData.index)
                         onHoldButton: root.hold(modelData.index)

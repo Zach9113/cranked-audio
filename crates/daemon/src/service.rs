@@ -3,15 +3,14 @@
 //! sent on to the threads that act on it.
 
 use std::io::BufRead as _;
-use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use cranked_ipc::settings::MAX_CONTROLS;
-use cranked_ipc::ServerMessage;
+use cranked_ipc::{ServerMessage, UnixListener};
 use cranked_protocol::convert::saturate_u8;
 use cranked_protocol::{button_packet, knob_packet, led_frame};
 
@@ -42,8 +41,8 @@ pub struct Service {
     desktop: Sender<desktop::Command>,
     leds: serial::Writer,
     clients: server::Clients,
-    api: Option<(zbus::blocking::Connection, Arc<Mutex<String>>)>,
-    tray: Option<ksni::blocking::Handle<tray::Tray>>,
+    api: Option<dbus::Published>,
+    tray: Option<tray::Handle>,
     /// What the tray last showed: profile, profiles, mixer connected.
     tray_shows: (String, Vec<String>, bool),
     shortcuts: Option<shortcuts::Shortcuts>,
@@ -274,7 +273,8 @@ impl Service {
                 if !self.config_path.exists() {
                     let _ = self.core.config().save(&self.config_path);
                 }
-                spawn_detached(Path::new("xdg-open"), &[self.config_path.as_os_str()]);
+                let opener = if cfg!(windows) { "explorer" } else { "xdg-open" };
+                spawn_detached(Path::new(opener), &[self.config_path.as_os_str()]);
             }
             tray::Action::Quit => {
                 eprintln!("quit from the tray");
@@ -345,7 +345,7 @@ impl Service {
             Ok(Some(info)) => {
                 let version = info.version.clone();
                 self.latest_release = Some(info);
-                self.update_status(format!("Update available: {version}"), Some(version), true);
+                self.update_status(format!("Update available: {version}"), Some(version), updater::CAN_INSTALL);
             }
             Ok(None) => {
                 self.latest_release = None;
@@ -526,7 +526,8 @@ fn spawn(name: &str, work: impl FnOnce() + Send + 'static) {
 }
 
 fn sibling(name: &str) -> PathBuf {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).unwrap_or_else(|| name.into())
+    let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| name.into())
 }
 
 fn spawn_detached(program: &Path, args: &[&std::ffi::OsStr]) {
@@ -541,12 +542,16 @@ fn spawn_detached(program: &Path, args: &[&std::ffi::OsStr]) {
 /// Writes a file only you can read (created that way, never readable by others for a moment).
 fn save_secret(path: &Path, text: &str) -> std::io::Result<()> {
     use std::io::Write as _;
-    use std::os::unix::fs::OpenOptionsExt as _;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let temporary = path.with_extension("new");
-    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&temporary)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    // Windows: the settings folder in %APPDATA% is already private to the user
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(&temporary)?;
     writeln!(file, "{text}")?;
     std::fs::rename(&temporary, path)
 }
