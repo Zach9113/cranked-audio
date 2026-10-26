@@ -6,6 +6,8 @@ mod pulse;
 #[cfg(not(windows))]
 pub use pulse::run;
 #[cfg(windows)]
+mod policy_config;
+#[cfg(windows)]
 mod wasapi;
 #[cfg(windows)]
 pub use wasapi::run;

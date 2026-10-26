@@ -18,8 +18,9 @@ fn tap(key: VIRTUAL_KEY) {
         Anonymous: INPUT_0 { ki: KEYBDINPUT { wVk: key, dwFlags: flags, ..Default::default() } },
     };
     let inputs = [input(KEYBD_EVENT_FLAGS(0)), input(KEYEVENTF_KEYUP)];
+    let input_size = i32::try_from(std::mem::size_of::<INPUT>()).unwrap_or(i32::MAX);
     // SAFETY: two fully set up keyboard inputs, with their real size
-    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    let sent = unsafe { SendInput(&inputs, input_size) };
     if sent as usize != inputs.len() {
         eprintln!("media: the key wasn't sent");
     }

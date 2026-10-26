@@ -11,5 +11,6 @@ impl Shortcuts {
         None
     }
 
+    #[expect(clippy::unused_self, reason = "the same signature as the Linux version")]
     pub fn ensure(&mut self, _knobs: usize) {}
 }
