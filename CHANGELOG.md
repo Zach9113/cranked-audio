@@ -2,11 +2,12 @@
 
 ## Unreleased
 
-- Windows (work in progress, not released): the service and window build and run on Windows 10/11. Per-app volume
-  through Windows' own audio sessions (the same percentages as Windows' volume mixer), the System knob, mute, output
-  switching, Auto-lower's level watch, media keys, the tray icon, MIDI controllers and deej boxes. Not on Windows
-  yet: volume popups, global shortcuts, keyboard knobs, the D-Bus API and installing updates from the app. Linux
-  behaves exactly as before.
+- Experimental Windows preview (Linux stays the main platform; no Windows release yet): the service and window
+  build and run on Windows 10/11 and install with install.ps1. Per-app volume through Windows' own audio sessions
+  (the same percentages as Windows' volume mixer), the System knob, mute, output switching, Auto-lower's level watch,
+  media keys, the tray icon, MIDI controllers and deej boxes. Not on Windows: volume popups, global shortcuts,
+  keyboard knobs, the D-Bus API, the panel widget and installing updates from the app. Linux behaves exactly as
+  before.
 
 ## 2.0.1
 

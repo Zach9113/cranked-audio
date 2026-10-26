@@ -43,7 +43,8 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
 
 ## Requirements
 
-- Linux with PipeWire (with `pipewire-pulse`) or PulseAudio
+- Linux with PipeWire (with `pipewire-pulse`) or PulseAudio (Windows is an experimental preview, see
+  [below](#windows-experimental-preview))
 - systemd user services (for starting at login)
 - KDE Plasma is recommended (popups, tray); other desktops get standard notifications and a tray icon where supported
 - Optional: the USB mixer; Home Assistant
@@ -86,12 +87,14 @@ To remove it (your settings stay in `~/.config/cranked-audio`):
 Experimental: each release also has `CrankedAudio-x86_64.AppImage` to try it without installing (no automatic start
 at login).
 
-### Windows (work in progress)
+### Windows (experimental preview)
 
-The service and window also run on Windows 10 and 11: per-app volume through Windows' own volume mixer, the tray
-icon, media keys, MIDI controllers and deej boxes. Volume popups, shortcuts, keyboard knobs and in-app updates are
-Linux-only for now. There are no Windows releases yet; build it with Rust (the MSVC toolchain), then install it for
-your user (Start menu entry, starts at sign-in, no administrator needed):
+Cranked Audio is a Linux app first: everything above is made and tested on Linux, and that's where it's at home.
+There's also an early Windows build. The service and window run on Windows 10 and 11 with per-app volume (through
+Windows' own volume mixer), the tray icon, media keys, MIDI controllers and deej boxes. Popups, keyboard shortcuts,
+keyboard knobs, the D-Bus API, the panel widget and in-app updates are Linux-only. There are no Windows releases yet;
+build it with Rust (the MSVC toolchain), then install it for your user (Start menu entry, starts at sign-in, no
+administrator needed):
 
 ```powershell
 cargo build --release
