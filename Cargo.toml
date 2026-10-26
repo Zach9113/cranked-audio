@@ -4,7 +4,7 @@ members = ["crates/protocol", "crates/ipc", "crates/daemon", "crates/window"]
 
 [workspace.package]
 edition = "2021"
-version = "2.0.1"
+version = "2.1.0"
 license = "GPL-3.0-or-later"
 authors = ["Zach9113"]
 

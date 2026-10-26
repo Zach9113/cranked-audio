@@ -1,13 +1,39 @@
 # Changelog
 
-## Unreleased
+## 2.1.0
 
-- Experimental Windows preview (Linux stays the main platform; no Windows release yet): the service and window
-  build and run on Windows 10/11 and install with install.ps1. Per-app volume through Windows' own audio sessions
-  (the same percentages as Windows' volume mixer), the System knob, mute, output switching, Auto-lower's level watch,
-  media keys, the tray icon, MIDI controllers and deej boxes. Not on Windows: volume popups, global shortcuts,
-  keyboard knobs, the D-Bus API, the panel widget and installing updates from the app. Linux behaves exactly as
-  before.
+### Windows (experimental preview)
+Cranked Audio is still a Linux app first; this is an early Windows build for people who want to try it.
+- Download `cranked-audio-v2.1.0-windows-x86_64-experimental.zip`, unzip it and run
+  `powershell -ExecutionPolicy Bypass -File install.ps1` in it (Start menu entry, starts at sign-in, no
+  administrator needed; `install.ps1 -Uninstall` removes it and keeps your settings).
+- Works: per-app volume through Windows' own volume mixer (the same percentages it shows), the System knob, mute,
+  Auto-lower, media keys, the tray icon, the USB mixer, MIDI controllers and deej boxes.
+- Linux-only for now: popups, keyboard shortcuts, keyboard knobs, the D-Bus API, the panel widget and installing
+  updates from the app.
+- Linux behaves exactly as before.
+
+### Knobs and controllers
+- A knob's settings page picks its controller directly (mixer, keyboard knob, MIDI controller or deej slider).
+- Better controller detection: rotary dials and wheels count as knob controllers, their buttons press the knob's
+  button, and virtual devices, monitor audio jacks, microphones and system buttons are left out of the list.
+- Fixed: saving a knob's page lost its learned MIDI control and moved its deej slider to the end of the box.
+- Removing a knob asks first.
+
+### Looks
+- Buttons can sit inside the dials, next to the percentage, for a compact view.
+- The add-knob button moved to the header.
+- Settings read the same in the window, the panel widget and Atoll's mixer: Style, Theme, Size, Text, Buttons,
+  Knobs shown; shortcuts, knobs and devices under "Knobs and controllers".
+- Panel widget: the widget background and the cards behind the knobs can each be turned off (in a panel of its own
+  that also clears the panel's frame); cards are darker with crisp borders so text stays readable over the
+  wallpaper.
+
+### Other
+- D-Bus API: `NextProfile`.
+- `install-both.sh` installs Cranked Audio and the Atoll dynamic island in one go (Atoll as a pacman package on
+  Arch).
+- Nix: a flake and dev shell.
 
 ## 2.0.1
 
