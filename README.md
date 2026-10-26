@@ -92,7 +92,8 @@ at login).
 Cranked Audio is a Linux app first: everything above is made and tested on Linux, and that's where it's at home.
 There's also an early Windows build. The service and window run on Windows 10 and 11 with per-app volume (through
 Windows' own volume mixer), the tray icon, media keys, MIDI controllers and deej boxes. Popups, keyboard shortcuts,
-keyboard knobs, the D-Bus API, the panel widget and in-app updates are Linux-only. There are no Windows releases yet;
+keyboard knobs, the D-Bus API, the panel widget and in-app updates are Linux-only. From the next release on, each
+release also has `cranked-audio-<version>-windows-x86_64-experimental.zip`: unzip it and run `install.ps1` in it. Or
 build it with Rust (the MSVC toolchain), then install it for your user (Start menu entry, starts at sign-in, no
 administrator needed):
 

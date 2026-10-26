@@ -46,6 +46,8 @@ Stop-Installed
 New-Item -ItemType Directory -Force $programs | Out-Null
 foreach ($exe in 'cranked-audiod.exe', 'cranked-audio.exe') {
     Copy-Item -Force (Join-Path $From $exe) (Join-Path $programs $exe)
+    # a downloaded zip marks its files as from the internet; installing them is the user's go-ahead
+    Unblock-File (Join-Path $programs $exe)
 }
 $service = Join-Path $programs 'cranked-audiod.exe'
 $window = Join-Path $programs 'cranked-audio.exe'
