@@ -17,6 +17,9 @@ ureq = "3"
 midir = "0.11"
 tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 
+[build-dependencies]
+embed-resource = "3"
+
 [target.'cfg(not(windows))'.dependencies]
 libpulse-binding = "2.30"
 evdev = "0.13"
