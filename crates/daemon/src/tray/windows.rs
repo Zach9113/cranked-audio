@@ -8,6 +8,7 @@ use std::sync::{mpsc, Arc, Mutex};
 
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, PostThreadMessageW, TranslateMessage, MSG, WM_APP,
@@ -31,7 +32,7 @@ impl Handle {
             change(&mut tray);
         }
         // SAFETY: posting a plain message (no pointers) to a thread that runs a message loop
-        let _ = unsafe { PostThreadMessageW(self.thread, REFRESH, Default::default(), Default::default()) };
+        let _ = unsafe { PostThreadMessageW(self.thread, REFRESH, WPARAM::default(), LPARAM::default()) };
     }
 }
 
@@ -82,7 +83,7 @@ fn build(tray: &Tray) -> Result<(TrayIcon, HashMap<MenuId, Action>), String> {
 fn run(icon: &TrayIcon, mut actions: HashMap<MenuId, Action>, tray: &Mutex<Tray>) {
     let mut message = MSG::default();
     // SAFETY: `message` outlives each call; GetMessageW returns 0 on WM_QUIT and -1 on errors
-    while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
+    while unsafe { GetMessageW(&raw mut message, None, 0, 0) }.0 > 0 {
         if message.hwnd.is_invalid() && message.message == REFRESH {
             if let Ok(tray) = tray.lock() {
                 let (menu, new_actions) = menu(&tray);
@@ -92,9 +93,10 @@ fn run(icon: &TrayIcon, mut actions: HashMap<MenuId, Action>, tray: &Mutex<Tray>
             }
         }
         // SAFETY: a message GetMessageW just filled in
+        let _ = unsafe { TranslateMessage(&raw const message) };
+        // SAFETY: the same message
         unsafe {
-            let _ = TranslateMessage(&message);
-            DispatchMessageW(&message);
+            DispatchMessageW(&raw const message);
         }
         let Ok(tray) = tray.lock() else { continue };
         while let Ok(event) = MenuEvent::receiver().try_recv() {
@@ -103,7 +105,14 @@ fn run(icon: &TrayIcon, mut actions: HashMap<MenuId, Action>, tray: &Mutex<Tray>
             }
         }
         while let Ok(event) = TrayIconEvent::receiver().try_recv() {
-            if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                id: _,
+                position: _,
+                rect: _,
+            } = event
+            {
                 tray.send(Action::OpenWindow);
             }
         }

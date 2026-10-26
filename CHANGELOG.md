@@ -7,7 +7,10 @@
   Warnings fail CI (new `CI` workflow: fmt, `clippy -D warnings`, unit tests) but not plain builds, so a newer Rust
   can't break source builds for users and packagers. A few pure-style rules are parked in `Cargo.toml` for now.
 - Number conversions go through checked helpers (`cranked_protocol::convert`) that saturate instead of wrapping.
-- No `unsafe` left: the keyboard knob waits for input with nix's safe `poll` instead of raw libc.
+- No `unsafe` left in the Linux code: the keyboard knob waits for input with nix's safe `poll` instead of raw libc.
+- The Windows-only modules are lint-clean too (every COM/Win32 call in its own `unsafe` block with a SAFETY note),
+  and CI lints them on a Windows runner.
+
 ## 2.1.1
 
 - Fixed: a second copy of the service (another start, or a test run) took over the D-Bus name and left the panel
