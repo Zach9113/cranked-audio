@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Windows (work in progress, not released): the service and window build and run on Windows 10/11. Per-app volume
+  through Windows' own audio sessions (the same percentages as Windows' volume mixer), the System knob, mute, output
+  switching, Auto-lower's level watch, media keys, the tray icon, MIDI controllers and deej boxes. Not on Windows
+  yet: volume popups, global shortcuts, keyboard knobs, the D-Bus API and installing updates from the app. Linux
+  behaves exactly as before.
+
 ## 2.0.1
 
 - Panel widget: the hover tooltip listing every knob's level is now optional when the knobs are shown in the panel

@@ -9,15 +9,35 @@ authors.workspace = true
 [dependencies]
 cranked-protocol = { path = "../protocol" }
 cranked-ipc = { path = "../ipc" }
-libpulse-binding = "2.30"
 serialport = { version = "4.10", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
 ureq = "3"
-evdev = "0.13"
 midir = "0.11"
-libc = "0.2"
 tungstenite = { version = "0.30", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
+
+[target.'cfg(not(windows))'.dependencies]
+libpulse-binding = "2.30"
+evdev = "0.13"
+libc = "0.2"
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = "0.26"
+windows-core = "0.62"
+windows = { version = "0.62", features = [
+    "Win32_Devices_FunctionDiscovery",
+    "Win32_Foundation",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+] }

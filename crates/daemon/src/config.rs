@@ -20,9 +20,12 @@ pub fn home_assistant_settings(config: &Config, config_path: &Path) -> Option<cr
             return None;
         }
     };
-    use std::os::unix::fs::PermissionsExt;
-    if std::fs::metadata(&token_path).is_ok_and(|m| m.permissions().mode() & 0o077 != 0) {
-        eprintln!("home assistant: {} is readable by other users; run chmod 600 on it", token_path.display());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::metadata(&token_path).is_ok_and(|m| m.permissions().mode() & 0o077 != 0) {
+            eprintln!("home assistant: {} is readable by other users; run chmod 600 on it", token_path.display());
+        }
     }
     Some(crate::home_assistant::Settings { url, token })
 }

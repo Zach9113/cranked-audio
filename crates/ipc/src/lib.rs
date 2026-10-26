@@ -1,4 +1,4 @@
-//! The service and the window talk over a Unix socket, one JSON line per message.
+//! The service and the window talk over a Unix socket (AF_UNIX on Windows too), one JSON line per message.
 //!
 //! Service -> window: [`ServerMessage`]s; a snapshot whenever anything visible changes (and one right after connecting).
 //! Window -> service: plain text lines:
@@ -19,10 +19,21 @@ pub mod settings;
 
 use serde::{Deserialize, Serialize};
 
-/// `$XDG_RUNTIME_DIR/cranked-audio.sock`, or `$CRANKED_SOCKET` (tests use their own).
+#[cfg(unix)]
+pub use std::os::unix::net::{UnixListener, UnixStream};
+#[cfg(windows)]
+pub use uds_windows::{UnixListener, UnixStream};
+
+/// `$XDG_RUNTIME_DIR/cranked-audio.sock` (Windows: `%LOCALAPPDATA%\cranked-audio\cranked-audio.sock`), or
+/// `$CRANKED_SOCKET` (tests use their own).
 pub fn socket_path() -> PathBuf {
     if let Some(path) = std::env::var_os("CRANKED_SOCKET") {
         return PathBuf::from(path);
+    }
+    if cfg!(windows) {
+        let dir = settings::base_dir("XDG_RUNTIME_DIR", ".local/state");
+        let _ = std::fs::create_dir_all(&dir);
+        return dir.join("cranked-audio.sock");
     }
     let dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
     dir.join("cranked-audio.sock")

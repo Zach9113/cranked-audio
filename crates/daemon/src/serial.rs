@@ -6,13 +6,25 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serialport::{SerialPortType, TTYPort};
+#[cfg(windows)]
+use serialport::COMPort as Port;
+use serialport::SerialPortType;
+#[cfg(not(windows))]
+use serialport::TTYPort as Port;
 
 use crate::Event;
 
 const BY_ID: &str = "/dev/serial/by-id";
 const NAME_PREFIX: &str = "usb-1a86_USB_";
 const WCH_VID: u16 = 0x1a86;
+/// The mixer's chip (CH343). Windows matches it exactly: CH340 Arduino clones (deej boxes) share the vendor id.
+#[cfg(windows)]
+const MIXER_PID: u16 = 0x55d3;
+
+#[cfg(windows)]
+pub fn is_mixer(vid: u16, pid: u16) -> bool {
+    vid == WCH_VID && pid == MIXER_PID
+}
 
 pub fn find_port() -> Option<PathBuf> {
     if let Ok(entries) = std::fs::read_dir(BY_ID) {
@@ -30,7 +42,11 @@ pub fn find_port() -> Option<PathBuf> {
     if let Ok(ports) = serialport::available_ports() {
         for port in ports {
             if let SerialPortType::UsbPort(info) = port.port_type {
-                if info.vid == WCH_VID {
+                #[cfg(windows)]
+                let found = is_mixer(info.vid, info.pid);
+                #[cfg(not(windows))]
+                let found = info.vid == WCH_VID;
+                if found {
                     return Some(PathBuf::from(port.port_name));
                 }
             }
@@ -39,16 +55,19 @@ pub fn find_port() -> Option<PathBuf> {
     None
 }
 
-fn open(path: &Path) -> serialport::Result<TTYPort> {
+fn open(path: &Path) -> serialport::Result<Port> {
+    #[cfg_attr(windows, allow(unused_mut, reason = "only Linux changes the port after opening"))]
     let mut port =
         serialport::new(path.to_string_lossy(), 115_200).timeout(Duration::from_millis(500)).open_native()?;
+    // Windows opens COM ports exclusively anyway
+    #[cfg(not(windows))]
     port.set_exclusive(true)?;
     Ok(port)
 }
 
 /// Shared handle for sending LED frames while the reader thread owns the port.
 #[derive(Clone, Default)]
-pub struct Writer(Arc<Mutex<Option<TTYPort>>>);
+pub struct Writer(Arc<Mutex<Option<Port>>>);
 
 impl Writer {
     pub fn send(&self, bytes: &[u8]) {
@@ -61,7 +80,7 @@ impl Writer {
         }
     }
 
-    fn set(&self, port: Option<TTYPort>) {
+    fn set(&self, port: Option<Port>) {
         if let Ok(mut slot) = self.0.lock() {
             *slot = port;
         }
@@ -105,7 +124,7 @@ pub fn run(events: Sender<Event>, writer: Writer) {
         let mut buffer = [0u8; 256];
         loop {
             match port.read(&mut buffer) {
-                Ok(0) if !path.exists() => {
+                Ok(0) if cfg!(not(windows)) && !path.exists() => {
                     eprintln!("mixer: unplugged");
                     break;
                 }

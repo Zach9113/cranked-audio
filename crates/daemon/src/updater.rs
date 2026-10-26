@@ -1,4 +1,6 @@
-//! In-app update checking and installation.
+//! In-app update checking and installation. Installing is Linux-only for now (it runs the release's install.sh);
+//! on Windows the app only says that a newer version is out.
+#![cfg_attr(windows, allow(dead_code, reason = "the installer part is Linux-only"))]
 
 use serde_json::Value;
 use std::process::Command;
@@ -74,8 +76,12 @@ pub fn check_for_update() -> Result<Option<ReleaseInfo>, String> {
     Ok(Some(ReleaseInfo { version: tag.to_string(), tarball_url, checksum_url: find("-x86_64.tar.gz.sha256") }))
 }
 
+/// Whether this build can install updates itself.
+pub const CAN_INSTALL: bool = cfg!(not(windows));
+
 /// A fresh folder only this user can open (never in a shared place like /tmp, never one that already existed),
 /// so nothing else on the machine can swap the installer between unpacking and running it.
+#[cfg(not(windows))]
 fn private_dir() -> Result<std::path::PathBuf, String> {
     use std::os::unix::fs::DirBuilderExt;
     let base = std::env::var_os("XDG_RUNTIME_DIR")
@@ -109,6 +115,12 @@ fn sha256_of(path: &std::path::Path) -> Result<String, String> {
     checksum_in(&String::from_utf8_lossy(&output.stdout)).ok_or_else(|| "sha256sum gave no checksum".to_string())
 }
 
+#[cfg(windows)]
+pub fn apply_update(_release: &ReleaseInfo) -> Result<(), String> {
+    Err("installing updates from the app isn't available on Windows yet".into())
+}
+
+#[cfg(not(windows))]
 pub fn apply_update(release: &ReleaseInfo) -> Result<(), String> {
     let checksum_url =
         release.checksum_url.as_deref().ok_or("This release has no checksum, so it won't be installed")?;

@@ -1,4 +1,6 @@
 //! cranked-audiod: the always-running part of Cranked Audio. No window; the window talks to it.
+// Windows: no console window (its log still goes wherever stderr is redirected)
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod audio;
 mod buttons;
@@ -48,7 +50,7 @@ pub enum Event {
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
     /// A window connected / sent a line.
-    ClientConnected(std::os::unix::net::UnixStream),
+    ClientConnected(cranked_ipc::UnixStream),
     ClientLine(String),
     Tray(tray::Action),
     /// A request over the D-Bus API.
@@ -312,7 +314,8 @@ fn main() {
                         if !config_path.exists() {
                             let _ = core.config().save(&config_path);
                         }
-                        spawn_detached(std::path::Path::new("xdg-open"), &[config_path.as_os_str()]);
+                        let opener = if cfg!(windows) { "explorer" } else { "xdg-open" };
+                        spawn_detached(std::path::Path::new(opener), &[config_path.as_os_str()]);
                     }
                     tray::Action::Quit => {
                         eprintln!("quit from the tray");
@@ -397,7 +400,7 @@ fn main() {
                         clients.send(&ServerMessage::UpdateStatus {
                             status: format!("Update available: {version}"),
                             latest_version: Some(version),
-                            can_install: true,
+                            can_install: updater::CAN_INSTALL,
                         });
                     }
                     Ok(None) => {
@@ -523,7 +526,8 @@ fn main() {
 }
 
 fn sibling(name: &str) -> PathBuf {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).unwrap_or_else(|| name.into())
+    let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| name.into())
 }
 
 fn spawn_detached(program: &std::path::Path, args: &[&std::ffi::OsStr]) {
@@ -538,12 +542,16 @@ fn spawn_detached(program: &std::path::Path, args: &[&std::ffi::OsStr]) {
 /// Writes a file only you can read (created that way, never readable by others for a moment).
 fn save_secret(path: &std::path::Path, text: &str) -> std::io::Result<()> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let temporary = path.with_extension("new");
-    let mut file = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&temporary)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    // Windows: the settings folder in %APPDATA% is already private to the user
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let mut file = options.open(&temporary)?;
     writeln!(file, "{text}")?;
     std::fs::rename(&temporary, path)
 }

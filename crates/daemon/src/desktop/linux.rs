@@ -1,4 +1,5 @@
-//! Session D-Bus: media players (MPRIS) and KDE's on-screen popups.
+//! Linux, over the session D-Bus: media players (MPRIS), on-screen popups (Atoll, KDE, notifications) and whether
+//! the screen is locked or asleep.
 
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
@@ -8,28 +9,7 @@ use cranked_ipc::settings::PopupStyle;
 use zbus::blocking::Connection;
 use zbus::zvariant::{OwnedValue, Value};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MediaKey {
-    PlayPause,
-    Next,
-    Previous,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Command {
-    Media(MediaKey),
-    /// Volume popup with a name ("Music 40%").
-    Volume {
-        percent: u8,
-        name: String,
-        style: PopupStyle,
-    },
-    Text {
-        icon: String,
-        text: String,
-        style: PopupStyle,
-    },
-}
+use super::{Command, MediaKey};
 
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 /// playerctld tracks the most recently active player for us when it's running.

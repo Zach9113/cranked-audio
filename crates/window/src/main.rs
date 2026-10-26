@@ -1,5 +1,7 @@
 //! cranked-audio: the window. Shows the service's knobs live and sends on-screen turns and presses back.
 //! It holds no state of its own; closing it frees everything and the service keeps running.
+// Windows: no console window next to it
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod editor;
 mod themes;
@@ -7,14 +9,13 @@ mod themes;
 use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use cranked_ipc::settings::{Channel, Config, Device, LedBlend, PopupStyle};
-use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot};
+use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot, UnixStream};
 use slint::{Color, ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
@@ -921,15 +922,18 @@ fn devices_page(window: &MainWindow, link: &Arc<Mutex<Link>>) {
 }
 
 fn sibling(name: &str) -> PathBuf {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).unwrap_or_else(|| name.into())
+    let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| name.into())
+}
+
+/// Opens a file with its default app (xdg-open; Explorer on Windows).
+fn open_with_default_app(path: &std::path::Path) {
+    let opener = if cfg!(windows) { "explorer" } else { "xdg-open" };
+    let _ = Command::new(opener).arg(path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
 }
 
 fn config_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("cranked-audio").join("config.toml")
+    Config::default_path()
 }
 
 /// Opens config.toml in the user's editor, writing the defaults first if there's no file yet.
@@ -941,8 +945,7 @@ fn open_settings() {
             let _ = std::fs::write(&path, output.stdout);
         }
     }
-    let _ =
-        Command::new("xdg-open").arg(&path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    open_with_default_app(&path);
 }
 
 fn show(window: &MainWindow, snapshot: &Snapshot) {
@@ -999,7 +1002,8 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                 if !started {
                     started = true;
                     set_status(&window, "Starting the service…");
-                    let started_unit = std::env::var_os("CRANKED_SOCKET").is_none()
+                    let started_unit = cfg!(target_os = "linux")
+                        && std::env::var_os("CRANKED_SOCKET").is_none()
                         && Command::new("systemctl")
                             .args(["--user", "start", "cranked-audio.service"])
                             .stdin(Stdio::null())
@@ -1483,19 +1487,14 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     };
     // the one-time tip: shown until "Got it" leaves a marker next to the service's state
     {
-        let marker = std::env::var_os("XDG_STATE_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
-            .map(|d| d.join("cranked-audio").join("welcomed"));
-        window.set_show_welcome(marker.as_ref().is_some_and(|m| !m.exists()));
+        let marker = cranked_ipc::settings::base_dir("XDG_STATE_HOME", ".local/state").join("welcomed");
+        window.set_show_welcome(!marker.exists());
         let weak = window.as_weak();
         window.on_dismiss_welcome(move || {
-            if let Some(marker) = &marker {
-                if let Some(dir) = marker.parent() {
-                    let _ = std::fs::create_dir_all(dir);
-                }
-                let _ = std::fs::write(marker, "");
+            if let Some(dir) = marker.parent() {
+                let _ = std::fs::create_dir_all(dir);
             }
+            let _ = std::fs::write(&marker, "");
             if let Some(w) = weak.upgrade() {
                 w.set_show_welcome(false);
             }
