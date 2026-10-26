@@ -2,17 +2,6 @@
 
 ## 2.1.0
 
-### Windows (experimental preview)
-Cranked Audio is still a Linux app first; this is an early Windows build for people who want to try it.
-- Download `cranked-audio-v2.1.0-windows-x86_64-experimental.zip`, unzip it and run
-  `powershell -ExecutionPolicy Bypass -File install.ps1` in it (Start menu entry, starts at sign-in, no
-  administrator needed; `install.ps1 -Uninstall` removes it and keeps your settings).
-- Works: per-app volume through Windows' own volume mixer (the same percentages it shows), the System knob, mute,
-  Auto-lower, media keys, the tray icon, the USB mixer, MIDI controllers and deej boxes.
-- Linux-only for now: popups, keyboard shortcuts, keyboard knobs, the D-Bus API, the panel widget and installing
-  updates from the app.
-- Linux behaves exactly as before.
-
 ### Knobs and controllers
 - A knob's settings page picks its controller directly (mixer, keyboard knob, MIDI controller or deej slider).
 - Better controller detection: rotary dials and wheels count as knob controllers, their buttons press the knob's
@@ -34,6 +23,17 @@ Cranked Audio is still a Linux app first; this is an early Windows build for peo
 - `install-both.sh` installs Cranked Audio and the Atoll dynamic island in one go (Atoll as a pacman package on
   Arch).
 - Nix: a flake and dev shell.
+
+### Windows (experimental preview)
+Cranked Audio is still a Linux app first; this is an early Windows build for people who want to try it.
+- Download `cranked-audio-v2.1.0-windows-x86_64-experimental.zip`, unzip it and run
+  `powershell -ExecutionPolicy Bypass -File install.ps1` in it (Start menu entry, starts at sign-in, no
+  administrator needed; `install.ps1 -Uninstall` removes it and keeps your settings).
+- Works: per-app volume through Windows' own volume mixer (the same percentages it shows), the System knob, mute,
+  Auto-lower, media keys, the tray icon, the USB mixer, MIDI controllers and deej boxes.
+- Linux-only for now: popups, keyboard shortcuts, keyboard knobs, the D-Bus API, the panel widget and installing
+  updates from the app.
+- Nothing about the Linux app changed for it.
 
 ## 2.0.1
 
