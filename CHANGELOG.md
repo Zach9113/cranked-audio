@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.1
 
 - Fixed: a second copy of the service (another start, or a test run) took over the D-Bus name and left the panel
   widget and Atoll's mixer blank once it exited. The running service now keeps its name.
