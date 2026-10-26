@@ -51,7 +51,7 @@ ConfigPage {
         }
         QQC2.CheckBox {
             text: "What they do (press / hold)"
-            enabled: page.cfg_showButton && !page.cfg_buttonsInDial
+            enabled: page.cfg_showButton
             checked: page.cfg_showActionLabels
             onToggled: page.cfg_showActionLabels = checked
         }
@@ -60,7 +60,7 @@ ConfigPage {
 
         // one column, so the form lays it out as a single row however many knobs there are
         ColumnLayout {
-            Kirigami.FormData.label: "Knobs:"
+            Kirigami.FormData.label: "Knobs shown:"
             spacing: 0
             Repeater {
                 model: page.knobNames

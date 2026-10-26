@@ -87,6 +87,15 @@ export global KnobSettings {
     in-out property <bool> apps-expanded;
     // how many apps the full list has
     in-out property <int> app-total;
+    // Connected controller / device
+    in-out property <[string]> device-choices;
+    in-out property <int> device-index;
+    in-out property <bool> device-is-keyboard;
+    in-out property <int> keyboard-step: 2;
+    in-out property <bool> keyboard-grab: true;
+    in-out property <string> device-hint;
+    in-out property <bool> confirming-remove: false;
+    callback device-changed(int);
     callback set-apps-expanded(bool);
     callback add-app(string);
     callback toggle-app(int);
@@ -250,6 +259,36 @@ export component KnobPage inherits ScrollView {
             }
         }
 
+        GroupBox {
+            title: "Controller";
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Connected to"; width: 110px; }
+                    ComboBox {
+                        model: KnobSettings.device-choices;
+                        current-index <=> KnobSettings.device-index;
+                        selected => { KnobSettings.device-changed(self.current-index); }
+                    }
+                }
+                if KnobSettings.device-is-keyboard: HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Step"; width: 110px; }
+                    SpinBox { minimum: 1; maximum: 20; value <=> KnobSettings.keyboard-step; }
+                    Label { text: "% a click"; }
+                    Rectangle { horizontal-stretch: 1; }
+                    CheckBox {
+                        text: "Take it over (so system volume doesn't move)";
+                        checked <=> KnobSettings.keyboard-grab;
+                    }
+                }
+                Hint {
+                    text: KnobSettings.device-hint;
+                }
+            }
+        }
+
         if KnobSettings.kind == 0: GroupBox {
             title: "Apps on this knob";
             VerticalLayout {
@@ -268,73 +307,83 @@ export component KnobPage inherits ScrollView {
                         clicked => { KnobSettings.set-apps-expanded(!KnobSettings.apps-expanded); }
                     }
                 }
-                Rectangle {
-                    // the window hands the list only the rows to show; every row keeps its height
-                    height: min(300px, KnobSettings.app-rows.length * 40px + 8px);
-                    visible: KnobSettings.app-rows.length > 0;
-                    animate height { duration: 160ms; easing: ease-out; }
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Palette.track;
-                    background: Palette.list;
-                    ListView {
-                        for row[i] in KnobSettings.app-rows: Rectangle {
-                            height: 40px;
-                            // the highlight is inset so neighbouring rows read as separate pills
-                            Rectangle {
-                                x: 4px;
-                                y: 2px;
-                                width: parent.width - 8px;
-                                height: parent.height - 4px;
-                                border-radius: 6px;
-                                background: row.selected
-                                    ? (pick.has-hover ? Palette.selected-hover : Palette.selected)
-                                    : (pick.has-hover ? Palette.centre : transparent);
-                            }
-                            HorizontalLayout {
-                                padding-left: 10px;
-                                padding-right: 12px;
-                                spacing: 10px;
-                                Text {
-                                    text: row.selected ? "✓" : "";
-                                    width: 16px;
-                                    color: Palette.check;
-                                    font-weight: 800;
-                                    vertical-alignment: center;
+                HorizontalLayout {
+                    spacing: 0;
+                    Rectangle {
+                        // comfortable width with a dedicated gutter on the right to scroll past
+                        horizontal-stretch: 1;
+                        max-width: 640px;
+                        min-width: 300px;
+                        height: min(210px, KnobSettings.app-rows.length * 36px + 8px);
+                        visible: KnobSettings.app-rows.length > 0;
+                        animate height { duration: 160ms; easing: ease-out; }
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Palette.track;
+                        background: Palette.list;
+                        ListView {
+                            for row[i] in KnobSettings.app-rows: Rectangle {
+                                height: 36px;
+                                // the highlight is inset so neighbouring rows read as separate pills
+                                Rectangle {
+                                    x: 4px;
+                                    y: 2px;
+                                    width: parent.width - 8px;
+                                    height: parent.height - 4px;
+                                    border-radius: 6px;
+                                    background: row.selected
+                                        ? (pick.has-hover ? Palette.selected-hover : Palette.selected)
+                                        : (pick.has-hover ? Palette.centre : transparent);
                                 }
-                                Text {
-                                    text: row.name;
-                                    color: row.selected ? Palette.text-strong : Palette.text-dim;
-                                    font-weight: row.selected ? 600 : 400;
-                                    vertical-alignment: center;
-                                    horizontal-stretch: 1;
-                                    overflow: elide;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 12px;
+                                    spacing: 10px;
+                                    Text {
+                                        text: row.selected ? "✓" : "";
+                                        width: 16px;
+                                        color: Palette.check;
+                                        font-weight: 800;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: row.name;
+                                        color: row.selected ? Palette.text-strong : Palette.text-dim;
+                                        font-weight: row.selected ? 600 : 400;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        overflow: elide;
+                                    }
+                                    if row.playing: Text {
+                                        text: "playing now";
+                                        color: Palette.check;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                    }
+                                    if row.elsewhere != "": Text {
+                                        text: "on " + row.elsewhere;
+                                        color: Palette.faint;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                    }
                                 }
-                                if row.playing: Text {
-                                    text: "playing now";
-                                    color: Palette.check;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
+                                pick := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { KnobSettings.toggle-app(i); }
                                 }
-                                if row.elsewhere != "": Text {
-                                    text: "on " + row.elsewhere;
-                                    color: Palette.faint;
-                                    font-size: 12px;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            pick := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { KnobSettings.toggle-app(i); }
                             }
                         }
+                    }
+                    Rectangle {
+                        width: 36px;
                     }
                 }
                 HorizontalLayout {
                     spacing: 8px;
                     typed := LineEdit {
-                        placeholder-text: "Or type an app or program name";
+                        max-width: 560px;
                         horizontal-stretch: 1;
+                        placeholder-text: "Or type an app or program name";
                         accepted(text) => {
                             KnobSettings.add-app(text);
                             self.text = "";
@@ -346,6 +395,9 @@ export component KnobPage inherits ScrollView {
                             KnobSettings.add-app(typed.text);
                             typed.text = "";
                         }
+                    }
+                    Rectangle {
+                        width: 36px;
                     }
                 }
                 CheckBox {
@@ -392,10 +444,30 @@ export component KnobPage inherits ScrollView {
 
         HorizontalLayout {
             alignment: start;
-            Button {
+            spacing: 12px;
+            if !KnobSettings.confirming-remove: Button {
                 text: "Remove this knob";
                 enabled: Lists.knob-names.length > 1;
-                clicked => { KnobSettings.remove-knob(); }
+                clicked => { KnobSettings.confirming-remove = true; }
+            }
+            if KnobSettings.confirming-remove: Text {
+                text: "Are you sure? Remove " + (KnobSettings.name == "" ? "Knob " + (KnobSettings.index + 1) : KnobSettings.name) + "?";
+                color: Palette.text-strong;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            if KnobSettings.confirming-remove: Button {
+                text: "Yes, remove";
+                clicked => {
+                    KnobSettings.confirming-remove = false;
+                    KnobSettings.remove-knob();
+                }
+            }
+            if KnobSettings.confirming-remove: Button {
+                text: "Cancel";
+                clicked => {
+                    KnobSettings.confirming-remove = false;
+                }
             }
         }
     }
@@ -427,75 +499,84 @@ export component GeneralPage inherits ScrollView {
 
         GroupBox {
             title: "Look";
-            HorizontalLayout {
-                spacing: 8px;
-                Label { text: "Theme"; width: 110px; }
-                ComboBox {
-                    model: General.theme-names;
-                    current-index <=> General.theme-index;
-                    selected => { General.theme-changed(self.current-index); }
+            VerticalLayout {
+                spacing: 10px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Style"; width: 110px; }
+                    ComboBox {
+                        model: ["Knobs (dials)", "Sliders (compact list)", "Faders (like a mixing desk)"];
+                        current-index <=> General.look-style;
+                        selected => { General.look-changed(); }
+                    }
                 }
-            }
-            HorizontalLayout {
-                spacing: 8px;
-                Label { text: "Style"; width: 110px; }
-                ComboBox {
-                    model: ["Knobs (dials)", "Sliders (compact list)", "Faders (like a mixing desk)"];
-                    current-index <=> General.look-style;
-                    selected => { General.look-changed(); }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Theme"; width: 110px; }
+                    ComboBox {
+                        model: General.theme-names;
+                        current-index <=> General.theme-index;
+                        selected => { General.theme-changed(self.current-index); }
+                    }
                 }
-            }
-            HorizontalLayout {
-                spacing: 8px;
-                Label { text: "Size"; width: 110px; }
-                Slider {
-                    minimum: 30;
-                    maximum: 160;
-                    value <=> General.look-scale;
-                    released => { General.look-changed(); }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label { text: "Size"; width: 110px; }
+                    Slider {
+                        minimum: 30;
+                        maximum: 160;
+                        value <=> General.look-scale;
+                        released => { General.look-changed(); }
+                    }
+                    Label { text: round(General.look-scale) + "%"; width: 44px; }
                 }
-                Label { text: round(General.look-scale) + "%"; width: 44px; }
-            }
-            Label { text: "Show:"; }
-            HorizontalLayout {
-                spacing: 12px;
-                alignment: start;
-                CheckBox { text: "Names"; checked <=> General.look-show-name; toggled => { General.look-changed(); } }
-                CheckBox { text: "Percentages"; checked <=> General.look-show-percent; toggled => { General.look-changed(); } }
-                CheckBox { text: "What's playing"; checked <=> General.look-show-source; toggled => { General.look-changed(); } }
-            }
-            HorizontalLayout {
-                spacing: 12px;
-                alignment: start;
-                CheckBox { text: "Buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
-                CheckBox {
-                    text: "What the buttons do";
-                    enabled: General.look-show-button;
-                    checked <=> General.look-show-action-labels;
-                    toggled => { General.look-changed(); }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    Label { text: "Text"; width: 110px; }
+                    CheckBox { text: "Knob names"; checked <=> General.look-show-name; toggled => { General.look-changed(); } }
+                    CheckBox { text: "Percentages"; checked <=> General.look-show-percent; toggled => { General.look-changed(); } }
+                    CheckBox { text: "What's playing"; checked <=> General.look-show-source; toggled => { General.look-changed(); } }
                 }
-                CheckBox { text: "Title bar"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
-                CheckBox {
-                    text: "Buttons inside the dials";
-                    enabled: General.look-show-button && General.look-style == 0;
-                    checked <=> General.look-buttons-in-dial;
-                    toggled => { General.look-changed(); }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    Label { text: "Buttons"; width: 110px; }
+                    CheckBox { text: "Show the buttons"; checked <=> General.look-show-button; toggled => { General.look-changed(); } }
+                    CheckBox {
+                        text: "Inside the dials";
+                        enabled: General.look-show-button && General.look-style == 0;
+                        checked <=> General.look-buttons-in-dial;
+                        toggled => { General.look-changed(); }
+                    }
+                    CheckBox {
+                        text: "What they do (press / hold)";
+                        enabled: General.look-show-button;
+                        checked <=> General.look-show-action-labels;
+                        toggled => { General.look-changed(); }
+                    }
                 }
-            }
-            Label { text: "Knobs in the window:"; }
-            HorizontalLayout {
-                spacing: 12px;
-                alignment: start;
-                for name[i] in Lists.knob-names: CheckBox {
-                    text: name;
-                    checked: General.look-shown[i];
-                    toggled => { General.toggle-shown(i); }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    Label { text: "Window"; width: 110px; }
+                    CheckBox { text: "Title bar and tips"; checked <=> General.look-show-header; toggled => { General.look-changed(); } }
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    Label { text: "Knobs shown"; width: 110px; }
+                    for name[i] in Lists.knob-names: CheckBox {
+                        text: name;
+                        checked: General.look-shown[i];
+                        toggled => { General.toggle-shown(i); }
+                    }
                 }
             }
         }
 
         GroupBox {
-            title: "Knobs";
+            title: "Knobs and controllers";
             VerticalLayout {
                 spacing: 8px;
                 Hint {
@@ -514,6 +595,11 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button { text: "Devices… (keyboard knob, MIDI, deej)"; clicked => { General.open-devices(); } }
+                }
+                Hint { text: "Every knob can also be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window. No keys are set at first: pick your own in System Settings (on KDE Plasma)."; }
+                HorizontalLayout {
+                    alignment: start;
+                    Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
                 }
             }
         }
@@ -624,18 +710,6 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button { text: "Calibrate LED colours…"; clicked => { General.open-calibration(); } }
-                }
-            }
-        }
-
-        GroupBox {
-            title: "Keyboard shortcuts";
-            VerticalLayout {
-                spacing: 8px;
-                Hint { text: "Every knob can be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window. No keys are set at first: pick your own in System Settings (on KDE Plasma)."; }
-                HorizontalLayout {
-                    alignment: start;
-                    Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
                 }
             }
         }
@@ -838,13 +912,13 @@ export component DevicesPage inherits ScrollView {
         }
 
         GroupBox {
-            title: "Keyboard knob";
+            title: "Keyboard knob / Controller";
             VerticalLayout {
                 spacing: 8px;
-                Hint { text: "A volume knob on a keyboard (or anything with volume keys): turning it turns a knob, pressing it is that knob's button."; }
+                Hint { text: "A volume knob or wheel on a keyboard, or a USB rotary controller: turning it turns a knob, pressing it is that knob's button."; }
                 HorizontalLayout {
                     spacing: 8px;
-                    Label { text: "Keyboard"; width: 110px; }
+                    Label { text: "Device"; width: 110px; }
                     ComboBox { model: Devices.keyboards; current-index <=> Devices.keyboard-index; }
                 }
                 HorizontalLayout {
@@ -862,7 +936,7 @@ export component DevicesPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button {
-                        text: "Add keyboard knob";
+                        text: "Add knob controller";
                         enabled: Devices.keyboards.length > 0;
                         clicked => { Devices.add-keyboard(); }
                     }

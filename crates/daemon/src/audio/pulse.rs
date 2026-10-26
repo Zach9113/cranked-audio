@@ -1,4 +1,5 @@
-//! `PipeWire` through its `PulseAudio` layer, in-process: stream events in, volume changes out. No helper processes.
+//! Linux: `PipeWire` through its `PulseAudio` layer, in-process: stream events in, volume changes out. No helper
+//! processes.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,55 +21,10 @@ use pulse::sample::{Format, Spec};
 use pulse::stream::{FlagSet as StreamFlags, PeekResult, Stream as PaStream};
 use pulse::volume::{ChannelVolumes, Volume};
 
+use super::{next_output, Command, Output, LOUD, LOUD_READINGS, METER_RATE, REPORT_EVERY};
 use crate::matching::Stream;
 use crate::Event;
 use cranked_protocol::convert::round_u8;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Command {
-    /// Set a stream's volume in percent (all of its channels).
-    SetStream {
-        index: u32,
-        channels: u8,
-        percent: u8,
-    },
-    /// Set the default output's volume in percent.
-    SetMaster {
-        percent: u8,
-    },
-    MuteStream {
-        index: u32,
-        mute: bool,
-    },
-    MuteMaster {
-        mute: bool,
-    },
-    /// Make the next real output device the default (apps follow); answers with `Event::OutputSwitched`.
-    SwitchOutput,
-    /// Start or stop watching how loud a stream plays (it reports `Event::Loud` while it is).
-    Meter {
-        index: u32,
-        sink: u32,
-        on: bool,
-    },
-}
-
-/// Level readings per second for each watched stream.
-const METER_RATE: u32 = 25;
-/// About -44 dBFS: quieter than speech or music, louder than silence and line noise.
-const LOUD: f32 = 0.0063;
-/// Readings in a row above `LOUD` before it counts (two readings = 80 ms).
-const LOUD_READINGS: u8 = 2;
-/// While loud, report at most this often.
-const REPORT_EVERY: Duration = Duration::from_millis(200);
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Output {
-    pub name: String,
-    pub description: String,
-    /// A real device (sound card, Bluetooth, USB), not a virtual sink.
-    pub real: bool,
-}
 
 fn output_from(info: &SinkInfo) -> Output {
     let name = info.name.as_deref().unwrap_or_default().to_string();
@@ -76,17 +32,6 @@ fn output_from(info: &SinkInfo) -> Output {
     let virtual_marker = name.contains("nvbroadcast") || description.to_lowercase().contains("nvidia broadcast");
     let real = info.proplist.get_str("device.api").is_some() && !virtual_marker;
     Output { name, description, real }
-}
-
-/// The real output after `current` (wrapping), or None when there's nothing else to switch to.
-pub fn next_output<'a>(outputs: &'a [Output], current: &str) -> Option<&'a Output> {
-    let real: Vec<&Output> = outputs.iter().filter(|o| o.real).collect();
-    let at = real.iter().position(|o| o.name == current);
-    let next = match at {
-        Some(i) => real.get((i + 1) % real.len().max(1)).copied(),
-        None => real.first().copied(),
-    }?;
-    (next.name != current).then_some(next)
 }
 
 fn percent_to_volume(percent: u8) -> Volume {
@@ -221,7 +166,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
         if let Command::Meter { index, sink, on } = command {
             if let Some(meter) = meters.remove(&index) {
                 mainloop.lock();
-                stop_meter(&meter);
+                stop_meter(meter);
                 mainloop.unlock();
             }
             if on {
@@ -274,7 +219,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
 
     mainloop.lock();
     #[expect(clippy::iter_over_hash_type, reason = "stopping every meter; order doesn't matter")]
-    for meter in meters.values() {
+    for (_, meter) in meters.drain() {
         stop_meter(meter);
     }
     context.set_state_callback(None);
@@ -350,11 +295,14 @@ fn start_meter(
     Ok(stream)
 }
 
-fn stop_meter(meter: &Rc<RefCell<PaStream>>) {
-    if let Ok(mut meter) = meter.try_borrow_mut() {
-        meter.set_read_callback(None);
-        let _ = meter.disconnect();
+/// Stops and frees a meter stream. Call with the mainloop locked: freeing it unlocked races the mainloop thread
+/// (libpulse aborts with a `pa_queue` assertion).
+fn stop_meter(meter: Rc<RefCell<PaStream>>) {
+    if let Ok(mut stream) = meter.try_borrow_mut() {
+        stream.set_read_callback(None);
+        let _ = stream.disconnect();
     }
+    drop(meter);
 }
 
 /// Ask for the current default and all outputs, wait for the answers without holding the lock, then switch.
@@ -394,22 +342,4 @@ fn switch_output(mainloop: &mut Mainloop, context: &mut Context, events: &Sender
     context.set_default_sink(&next.name, |_| {});
     mainloop.unlock();
     let _ = events.send(Event::OutputSwitched(Some(next.description)));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn output(name: &str, real: bool) -> Output {
-        Output { name: name.into(), description: name.to_uppercase(), real }
-    }
-
-    #[test]
-    fn switching_cycles_real_outputs_only() {
-        let outputs = [output("dac", true), output("nvbroadcast_sink", false), output("hdmi", true)];
-        assert_eq!(next_output(&outputs, "dac").map(|o| o.name.as_str()), Some("hdmi"));
-        assert_eq!(next_output(&outputs, "hdmi").map(|o| o.name.as_str()), Some("dac"));
-        assert_eq!(next_output(&outputs, "nvbroadcast_sink").map(|o| o.name.as_str()), Some("dac"));
-        assert_eq!(next_output(&outputs[..1], "dac"), None);
-    }
 }

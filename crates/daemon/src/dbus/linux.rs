@@ -1,33 +1,15 @@
-//! The session D-Bus API, for the Plasma panel widget, scripts, KDE Connect commands and automations:
-//! `io.github.zach9113.CrankedAudio` at `/io/github/zach9113/CrankedAudio`, interface
-//! `io.github.zach9113.CrankedAudio1`. State is the same JSON snapshot the window gets.
-//!
-//! ```text
-//! busctl --user call io.github.zach9113.CrankedAudio /io/github/zach9113/CrankedAudio \
-//!     io.github.zach9113.CrankedAudio1 SetKnob uu 1 40
-//! ```
+//! Linux: the API on the session bus (see the module above).
 
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use super::Request;
 use crate::Event;
 
 pub const NAME: &str = "io.github.zach9113.CrankedAudio";
 pub const PATH: &str = "/io/github/zach9113/CrankedAudio";
 pub const INTERFACE: &str = "io.github.zach9113.CrankedAudio1";
-
-/// What a D-Bus caller asked for; the main loop carries it out with the same rules as everything else.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Request {
-    SetKnob { knob: usize, percent: u8 },
-    StepKnob { knob: usize, delta: i32 },
-    Button { button: usize, down: bool },
-    Profile(String),
-    OpenWindow,
-    OpenSettings,
-    NextProfile,
-}
 
 struct Api {
     events: Sender<Event>,
@@ -87,6 +69,11 @@ impl Api {
         self.send(Request::Profile(name.to_string()));
     }
 
+    /// Cycles to the next profile.
+    fn next_profile(&self) {
+        self.send(Request::NextProfile);
+    }
+
     fn open_window(&self) {
         self.send(Request::OpenWindow);
     }
@@ -107,7 +94,10 @@ pub fn start(events: Sender<Event>) -> Option<(zbus::blocking::Connection, Arc<M
     let api = Api { events, state: Arc::clone(&state) };
     // tests run their own copy under another name ($CRANKED_DBUS_NAME) next to a real one
     let name = std::env::var("CRANKED_DBUS_NAME").unwrap_or_else(|_| NAME.to_string());
+    // the name stays ours: zbus would otherwise let a later copy (a test run, a second start) take it over, leaving
+    // the widget and Atoll talking to a copy that soon exits
     let connection = zbus::blocking::connection::Builder::session()
+        .map(|b| b.allow_name_replacements(false).replace_existing_names(false))
         .and_then(|b| b.name(name))
         .and_then(|b| b.serve_at(PATH, api))
         .and_then(zbus::blocking::connection::Builder::build);

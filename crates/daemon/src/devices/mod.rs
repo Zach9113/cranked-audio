@@ -10,6 +10,19 @@ use std::time::{Duration, Instant};
 use cranked_ipc::settings::{Device, MidiControl};
 use cranked_protocol::convert::saturate_u8;
 
+#[cfg(not(windows))]
+mod linux;
+#[cfg(not(windows))]
+pub use linux::{keyboard_knobs, serial_ports};
+#[cfg(windows)]
+mod windows;
+#[cfg(not(windows))]
+use linux::keyboard;
+#[cfg(windows)]
+use windows::keyboard;
+#[cfg(windows)]
+pub use windows::{keyboard_knobs, serial_ports};
+
 use crate::desktop::MediaKey;
 use crate::Event;
 
@@ -48,103 +61,6 @@ pub fn start(devices: &[Device], events: &Sender<Event>, generation: &Arc<Atomic
 
 fn send(events: &Sender<Event>, input: Input) -> bool {
     events.send(Event::Device(input)).is_ok()
-}
-
-// ---------------------------------------------------------------- keyboard knobs
-
-/// Whether an input device types (has letter keys): those are never taken over.
-fn types(device: &evdev::Device) -> bool {
-    device.supported_keys().is_some_and(|k| k.contains(evdev::KeyCode::KEY_A) || k.contains(evdev::KeyCode::KEY_SPACE))
-}
-
-/// Input devices that have volume keys (candidates for a keyboard knob), by name, and which of them also type.
-/// Ones that don't type come first: on most keyboards the knob is on a separate "Consumer Control" device.
-pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
-    let mut found: Vec<(bool, String)> = evdev::enumerate()
-        .filter(|(_, d)| d.supported_keys().is_some_and(|k| k.contains(evdev::KeyCode::KEY_VOLUMEUP)))
-        .filter_map(|(_, d)| d.name().map(|n| (types(&d), n.to_string())))
-        .filter(|(_, n)| !n.contains("Cranked Audio"))
-        .collect();
-    let typing: Vec<String> = found.iter().filter(|(t, _)| *t).map(|(_, n)| n.clone()).collect();
-    found.sort();
-    let mut seen = std::collections::HashSet::new();
-    let names: Vec<String> = found.into_iter().map(|(_, n)| n).filter(|n| seen.insert(n.clone())).collect();
-    (names, typing)
-}
-
-/// What a key does on a keyboard knob (`value`: 1 down, 2 repeat, 0 up). Media keys only matter when the input is
-/// taken over (otherwise the desktop already handles them).
-pub fn keyboard_input(code: evdev::KeyCode, value: i32, knob: usize, step: u8, grabbed: bool) -> Option<Input> {
-    use evdev::KeyCode as K;
-    let step = i32::from(step.max(1));
-    match (code, value) {
-        (K::KEY_VOLUMEUP, 1 | 2) => Some(Input::Step { knob, delta: step }),
-        (K::KEY_VOLUMEDOWN, 1 | 2) => Some(Input::Step { knob, delta: -step }),
-        (K::KEY_MUTE, 1) => Some(Input::Button { knob, down: true }),
-        (K::KEY_MUTE, 0) => Some(Input::Button { knob, down: false }),
-        (K::KEY_PLAYPAUSE, 1) if grabbed => Some(Input::Media(MediaKey::PlayPause)),
-        (K::KEY_NEXTSONG, 1) if grabbed => Some(Input::Media(MediaKey::Next)),
-        (K::KEY_PREVIOUSSONG, 1) if grabbed => Some(Input::Media(MediaKey::Previous)),
-        _ => None,
-    }
-}
-
-/// Waits up to `timeout` for the device to have something to read.
-fn readable(fd: std::os::fd::BorrowedFd, timeout: Duration) -> bool {
-    use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
-    let mut fds = [PollFd::new(fd, PollFlags::POLLIN)];
-    let timeout = PollTimeout::try_from(timeout).unwrap_or(PollTimeout::MAX);
-    poll(&mut fds, timeout).is_ok_and(|ready| ready > 0)
-        && fds[0].revents().is_some_and(|events| events.contains(PollFlags::POLLIN))
-}
-
-fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
-    use std::os::fd::AsFd as _;
-    let knob = knob.saturating_sub(1);
-    let mut reported = false;
-    while current() {
-        let found = evdev::enumerate().find(|(_, d)| d.name() == Some(name));
-        let Some((path, mut device)) = found else {
-            if !reported {
-                eprintln!("keyboard knob: {name:?} not found; waiting for it");
-                reported = true;
-            }
-            std::thread::sleep(RETRY);
-            continue;
-        };
-        // never take over a device that types: the keyboard would stop working
-        let types = types(&device);
-        if grab && types {
-            eprintln!("keyboard knob: {name} also types, so it isn't taken over (the system volume moves too)");
-        }
-        let grabbed = grab && !types && device.grab().is_ok();
-        eprintln!(
-            "keyboard knob: {name} ({}) on knob {}{}",
-            path.display(),
-            knob + 1,
-            if grabbed { ", taken over" } else { "" }
-        );
-        reported = false;
-        'read: while current() {
-            if !readable(device.as_fd(), Duration::from_secs(1)) {
-                continue;
-            }
-            let Ok(batch) = device.fetch_events() else { break 'read };
-            for event in batch {
-                if let evdev::EventSummary::Key(_, code, value) = event.destructure() {
-                    if let Some(input) = keyboard_input(code, value, knob, step, grabbed) {
-                        if !send(events, input) {
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-        if grabbed {
-            let _ = device.ungrab();
-        }
-        std::thread::sleep(Duration::from_millis(500));
-    }
 }
 
 // ---------------------------------------------------------------- MIDI
@@ -306,28 +222,6 @@ pub fn is_board(vendor: &str) -> bool {
     BOARD_VENDORS.contains(&vendor.trim())
 }
 
-/// The USB vendor id of a serial device (a /dev path or a /dev/serial/by-id link).
-fn usb_vendor(path: &std::path::Path) -> Option<String> {
-    let tty = std::fs::canonicalize(path).ok()?;
-    let name = tty.file_name()?.to_str()?;
-    std::fs::read_to_string(format!("/sys/class/tty/{name}/device/../idVendor")).ok()
-}
-
-/// Serial ports that could be a deej box: USB boards only (not, say, a monitor's control port), and not the mixer.
-pub fn serial_ports() -> Vec<String> {
-    let mut ports: Vec<String> = std::fs::read_dir("/dev/serial/by-id")
-        .into_iter()
-        .flatten()
-        .filter_map(Result::ok)
-        .filter(|e| usb_vendor(&e.path()).is_some_and(|v| is_board(&v)))
-        .map(|e| e.path().to_string_lossy().into_owned())
-        // the TurnUp-style mixer is handled separately
-        .filter(|p| !p.contains("usb-1a86_USB_Single_Serial_"))
-        .collect();
-    ports.sort();
-    ports
-}
-
 fn deej(port: &str, baud: u32, knobs: &[usize], invert: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
     use std::io::{BufRead as _, BufReader};
     let mut reported = false;
@@ -383,23 +277,6 @@ fn deej(port: &str, baud: u32, knobs: &[usize], invert: bool, events: &Sender<Ev
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evdev::KeyCode as K;
-
-    #[test]
-    fn keyboard_knob_keys() {
-        assert_eq!(keyboard_input(K::KEY_VOLUMEUP, 1, 3, 2, true), Some(Input::Step { knob: 3, delta: 2 }));
-        assert_eq!(
-            keyboard_input(K::KEY_VOLUMEDOWN, 2, 3, 2, true),
-            Some(Input::Step { knob: 3, delta: -2 }),
-            "repeat"
-        );
-        assert_eq!(keyboard_input(K::KEY_VOLUMEUP, 0, 3, 2, true), None, "release does nothing");
-        assert_eq!(keyboard_input(K::KEY_MUTE, 1, 3, 2, true), Some(Input::Button { knob: 3, down: true }));
-        assert_eq!(keyboard_input(K::KEY_MUTE, 0, 3, 2, true), Some(Input::Button { knob: 3, down: false }));
-        assert_eq!(keyboard_input(K::KEY_PLAYPAUSE, 1, 3, 2, true), Some(Input::Media(MediaKey::PlayPause)));
-        assert_eq!(keyboard_input(K::KEY_PLAYPAUSE, 1, 3, 2, false), None, "not taken over: the desktop handles it");
-        assert_eq!(keyboard_input(K::KEY_A, 1, 3, 2, true), None);
-    }
 
     #[test]
     fn midi_controls() {

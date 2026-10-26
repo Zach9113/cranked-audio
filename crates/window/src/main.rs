@@ -1,5 +1,7 @@
 //! cranked-audio: the window. Shows the service's knobs live and sends on-screen turns and presses back.
 //! It holds no state of its own; closing it frees everything and the service keeps running.
+// Windows: no console window next to it
+#![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod editor;
 mod themes;
@@ -7,14 +9,13 @@ mod themes;
 use std::cell::RefCell;
 use std::f64::consts::PI;
 use std::io::{BufRead as _, BufReader, Write as _};
-use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cranked_ipc::settings::{Channel, Config, LedBlend, PopupStyle};
-use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot};
+use cranked_ipc::settings::{Channel, Config, Device, LedBlend, PopupStyle};
+use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot, UnixStream};
 use cranked_protocol::convert::{round_u8, saturate_i32, saturate_u8, to_f32};
 use slint::{Color, ComponentHandle as _, Model as _, ModelRc, SharedString, VecModel};
 
@@ -385,6 +386,7 @@ fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
         return false;
     };
     let knob = window.global::<KnobSettings>();
+    knob.set_confirming_remove(false);
     knob.set_index(saturate_i32(index));
     knob.set_name(channel.name.as_str().into());
     knob.set_apps(strings(channel.apps.iter().map(String::as_str)));
@@ -430,6 +432,7 @@ fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
         editor::action_entity(&channel.press),
         editor::action_entity(&channel.hold),
     );
+    populate_knob_device_choices(window, config, index);
     true
 }
 
@@ -549,6 +552,15 @@ fn send_config(link: &mut Link, config: Config) {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum KnobDeviceChoice {
+    None,
+    Mixer(usize),
+    Keyboard { name: String },
+    Midi { name: String },
+    Deej { port: String },
+}
+
 thread_local! {
     /// What Settings > Devices can add (from the service) and the MIDI control last learned.
     static CHOICES: RefCell<DeviceChoices> = RefCell::new(DeviceChoices::default());
@@ -556,6 +568,208 @@ thread_local! {
     /// keyboards already set up as keyboard knobs (not offered again), and the ones the picker shows
     static ADDED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static SHOWN_KEYBOARDS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// The device choices available for the knob currently being edited in KnobSettings
+    static KNOB_DEVICE_CHOICES: RefCell<Vec<KnobDeviceChoice>> = const { RefCell::new(Vec::new()) };
+}
+
+fn get_device_hint(choice: &KnobDeviceChoice, knob_num: usize) -> String {
+    match choice {
+        KnobDeviceChoice::Mixer(k) => format!("Connected to knob {k} on the Cranked Audio 5-knob hardware mixer."),
+        KnobDeviceChoice::Keyboard { name } => {
+            format!("Turning the volume knob/wheel on \"{name}\" steps this knob; pressing it triggers its button.")
+        }
+        KnobDeviceChoice::Midi { name } => {
+            format!("MIDI controller \"{name}\": its controls are learned in Settings > Devices (MIDI Learn).")
+        }
+        KnobDeviceChoice::Deej { port } => format!("Connected to deej slider box on {port}."),
+        KnobDeviceChoice::None => {
+            if knob_num <= 5 {
+                format!("No extra controller. The mixer's knob {knob_num} still turns it, as do the window, widget and Atoll.")
+            } else {
+                "This knob turns on-screen and in Atoll. To connect a keyboard knob or controller, pick one above."
+                    .to_string()
+            }
+        }
+    }
+}
+
+fn populate_knob_device_choices(window: &MainWindow, config: &Config, index: usize) {
+    let knob_num = index + 1;
+    let mut current_connected = connected_device(&config.devices, knob_num);
+    let (current_step, current_grab) = config
+        .devices
+        .iter()
+        .find_map(|d| match d {
+            Device::KeyboardKnob { knob, step, grab, name: _ } if *knob == knob_num => Some((*step, *grab)),
+            _ => None,
+        })
+        .unwrap_or((2, true));
+
+    if current_connected == KnobDeviceChoice::None && index < 5 {
+        current_connected = KnobDeviceChoice::Mixer(knob_num);
+    }
+
+    let mut choices_list = Vec::new();
+    let mut labels_list = Vec::new();
+
+    // 1. None (on-screen only)
+    choices_list.push(KnobDeviceChoice::None);
+    labels_list.push("None (on-screen only)".to_string());
+
+    // 2. Mixer physical knob (if index < 5)
+    if index < 5 {
+        choices_list.push(KnobDeviceChoice::Mixer(knob_num));
+        labels_list.push(format!("Mixer physical knob {knob_num}"));
+    }
+
+    // 3. Keyboards / Controllers from CHOICES
+    CHOICES.with(|c| {
+        let choices = c.borrow();
+        for k in &choices.keyboards {
+            let choice = KnobDeviceChoice::Keyboard { name: k.clone() };
+            if !choices_list.contains(&choice) {
+                let typing_hint = if choices.typing.contains(k) { " (also types)" } else { "" };
+                let prefix = if choices.typing.contains(k) {
+                    "Keyboard"
+                } else if k.to_lowercase().contains("keyboard") {
+                    "Keyboard knob"
+                } else {
+                    "Controller / knob"
+                };
+                labels_list.push(format!("{prefix}: {k}{typing_hint}"));
+                choices_list.push(choice);
+            }
+        }
+    });
+    // If the currently assigned keyboard is not in CHOICES, still include it:
+    if let KnobDeviceChoice::Keyboard { ref name } = current_connected {
+        let choice = KnobDeviceChoice::Keyboard { name: name.clone() };
+        if !choices_list.contains(&choice) {
+            let prefix = if name.to_lowercase().contains("keyboard") { "Keyboard knob" } else { "Controller / knob" };
+            labels_list.push(format!("{prefix}: {name}"));
+            choices_list.push(choice);
+        }
+    }
+
+    // 4. MIDI controllers
+    CHOICES.with(|c| {
+        let choices = c.borrow();
+        for m in &choices.midi {
+            let choice = KnobDeviceChoice::Midi { name: m.clone() };
+            if !choices_list.contains(&choice) {
+                labels_list.push(format!("MIDI: {m}"));
+                choices_list.push(choice);
+            }
+        }
+    });
+    if let KnobDeviceChoice::Midi { ref name } = current_connected {
+        let choice = KnobDeviceChoice::Midi { name: name.clone() };
+        if !choices_list.contains(&choice) {
+            labels_list.push(format!("MIDI: {name}"));
+            choices_list.push(choice);
+        }
+    }
+
+    // 5. Deej serial ports
+    CHOICES.with(|c| {
+        let choices = c.borrow();
+        for s in &choices.serial {
+            let choice = KnobDeviceChoice::Deej { port: s.clone() };
+            if !choices_list.contains(&choice) {
+                labels_list.push(format!("deej: {s}"));
+                choices_list.push(choice);
+            }
+        }
+    });
+    if let KnobDeviceChoice::Deej { ref port } = current_connected {
+        let choice = KnobDeviceChoice::Deej { port: port.clone() };
+        if !choices_list.contains(&choice) {
+            labels_list.push(format!("deej: {port}"));
+            choices_list.push(choice);
+        }
+    }
+
+    let selected_idx = choices_list.iter().position(|c| *c == current_connected).unwrap_or(0);
+    let knob = window.global::<KnobSettings>();
+    knob.set_device_choices(strings(labels_list.iter().map(String::as_str)));
+    knob.set_device_index(saturate_i32(selected_idx));
+    let is_kbd = matches!(current_connected, KnobDeviceChoice::Keyboard { name: _ });
+    knob.set_device_is_keyboard(is_kbd);
+    knob.set_keyboard_step(i32::from(current_step));
+    knob.set_keyboard_grab(current_grab);
+    knob.set_device_hint(get_device_hint(&current_connected, knob_num).into());
+
+    KNOB_DEVICE_CHOICES.with(|c| *c.borrow_mut() = choices_list);
+}
+
+/// The device a knob is connected to: the first keyboard knob, MIDI control or deej slider that drives it.
+fn connected_device(devices: &[Device], knob_num: usize) -> KnobDeviceChoice {
+    for device in devices {
+        match device {
+            Device::KeyboardKnob { name, knob, step: _, grab: _ } if *knob == knob_num => {
+                return KnobDeviceChoice::Keyboard { name: name.clone() };
+            }
+            Device::Midi { name, controls } if controls.iter().any(|c| c.knob == knob_num) => {
+                return KnobDeviceChoice::Midi { name: name.clone() };
+            }
+            Device::Deej { port, knobs, baud: _, invert: _ } if knobs.contains(&knob_num) => {
+                return KnobDeviceChoice::Deej { port: port.clone() };
+            }
+            _ => {}
+        }
+    }
+    KnobDeviceChoice::None
+}
+
+/// Applies the device picked on a knob's page. An unchanged choice keeps every mapping as it is (only a keyboard
+/// knob's step and take-over follow the page), so saving a knob never loses its learned MIDI control or reorders
+/// a deej box's sliders.
+fn apply_knob_device(devices: &mut Vec<Device>, knob_num: usize, choice: &KnobDeviceChoice, step: u8, grab: bool) {
+    let choice = match choice {
+        // the mixer's own knobs always drive knobs 1 to 5; there is nothing to save for them
+        KnobDeviceChoice::Mixer(_) => KnobDeviceChoice::None,
+        other => other.clone(),
+    };
+    if choice == connected_device(devices, knob_num) {
+        for device in devices.iter_mut() {
+            if let Device::KeyboardKnob { knob, step: s, grab: g, name: _ } = device {
+                if *knob == knob_num {
+                    *s = step;
+                    *g = grab;
+                }
+            }
+        }
+        return;
+    }
+    // a MIDI control has to be learned first (Settings > Devices), so picking a MIDI device changes nothing yet
+    if matches!(choice, KnobDeviceChoice::Midi { name: _ }) {
+        return;
+    }
+    devices.retain_mut(|d| match d {
+        Device::KeyboardKnob { knob, name: _, step: _, grab: _ } => *knob != knob_num,
+        Device::Midi { controls, name: _ } => {
+            controls.retain(|c| c.knob != knob_num);
+            !controls.is_empty()
+        }
+        Device::Deej { knobs, port: _, baud: _, invert: _ } => {
+            knobs.retain(|k| *k != knob_num);
+            !knobs.is_empty()
+        }
+    });
+    match choice {
+        KnobDeviceChoice::None | KnobDeviceChoice::Mixer(_) | KnobDeviceChoice::Midi { name: _ } => {}
+        KnobDeviceChoice::Keyboard { name } => devices.push(Device::KeyboardKnob { name, knob: knob_num, step, grab }),
+        KnobDeviceChoice::Deej { port } => {
+            let existing = devices.iter_mut().find_map(|d| match d {
+                Device::Deej { port: p, knobs, baud: _, invert: _ } if *p == port => Some(knobs),
+                _ => None,
+            });
+            match existing {
+                Some(knobs) => knobs.push(knob_num),
+                None => devices.push(Device::Deej { port, baud: 9600, knobs: vec![knob_num], invert: false }),
+            }
+        }
+    }
 }
 
 /// The keyboard picker: keyboards not already added, the ones that type marked (they're never taken over).
@@ -730,15 +944,18 @@ fn devices_page(window: &MainWindow, link: &Arc<Mutex<Link>>) {
 }
 
 fn sibling(name: &str) -> PathBuf {
-    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(name))).unwrap_or_else(|| name.into())
+    let name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+    std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| name.into())
+}
+
+/// Opens a file with its default app (xdg-open; Explorer on Windows).
+fn open_with_default_app(path: &std::path::Path) {
+    let opener = if cfg!(windows) { "explorer" } else { "xdg-open" };
+    let _ = Command::new(opener).arg(path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
 }
 
 fn config_path() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-        .unwrap_or_else(|| PathBuf::from("."));
-    base.join("cranked-audio").join("config.toml")
+    Config::default_path()
 }
 
 /// Opens config.toml in the user's editor, writing the defaults first if there's no file yet.
@@ -750,8 +967,7 @@ fn open_settings() {
             let _ = std::fs::write(&path, output.stdout);
         }
     }
-    let _ =
-        Command::new("xdg-open").arg(&path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    open_with_default_app(&path);
 }
 
 fn show(window: &MainWindow, snapshot: &Snapshot) {
@@ -796,7 +1012,7 @@ fn set_status(window: &slint::Weak<MainWindow>, text: &'static str) {
 }
 
 /// Connects (starting the service once if it isn't running), then forwards snapshots to the window. Reconnects.
-fn run_link(link: &Mutex<Link>, window: &slint::Weak<MainWindow>) {
+fn run_link(link: &Arc<Mutex<Link>>, window: &slint::Weak<MainWindow>) {
     let mut started = false;
     loop {
         let stream = match UnixStream::connect(cranked_ipc::socket_path()) {
@@ -810,7 +1026,8 @@ fn run_link(link: &Mutex<Link>, window: &slint::Weak<MainWindow>) {
                 } else {
                     started = true;
                     set_status(window, "Starting the service…");
-                    let started_unit = std::env::var_os("CRANKED_SOCKET").is_none()
+                    let started_unit = cfg!(target_os = "linux")
+                        && std::env::var_os("CRANKED_SOCKET").is_none()
                         && Command::new("systemctl")
                             .args(["--user", "start", "cranked-audio.service"])
                             .stdin(Stdio::null())
@@ -836,6 +1053,7 @@ fn run_link(link: &Mutex<Link>, window: &slint::Weak<MainWindow>) {
         }
         if let Ok(mut link) = link.lock() {
             link.send("get-config");
+            link.send("list-devices");
         }
         for line in BufReader::new(reader).lines().map_while(Result::ok) {
             let Ok(message) = serde_json::from_str::<ServerMessage>(&line) else { continue };
@@ -895,7 +1113,18 @@ fn run_link(link: &Mutex<Link>, window: &slint::Weak<MainWindow>) {
                 }
                 // the Devices page (below) asks for these
                 ServerMessage::Devices(choices) => {
-                    let _ = window.upgrade_in_event_loop(move |w| show_device_choices(&w, &choices));
+                    let link = Arc::clone(link);
+                    let _ = window.upgrade_in_event_loop(move |w| {
+                        show_device_choices(&w, &choices);
+                        if w.get_page() == 1 {
+                            if let Ok(link) = link.lock() {
+                                let index = slint_index(w.global::<KnobSettings>().get_index());
+                                if let (Some(config), Some(index)) = (&link.config, index) {
+                                    populate_knob_device_choices(&w, config, index);
+                                }
+                            }
+                        }
+                    });
                 }
                 ServerMessage::MidiLearned(learned) => {
                     let _ = window.upgrade_in_event_loop(move |w| show_learned(&w, learned));
@@ -1108,6 +1337,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_back(move || {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            w.global::<KnobSettings>().set_confirming_remove(false);
             if w.get_page() == 3 {
                 // leaving Settings without saving: back to the saved theme
                 let theme = link.config.as_ref().map_or("cranked".to_string(), |c| c.theme.clone());
@@ -1236,6 +1466,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         window.on_open_knob(move |index| {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
             let Some(index) = slint_index(index) else { return };
+            link.send("list-devices");
             if load_knob(&w, &link, index) {
                 link.send("entities");
                 w.set_page(1);
@@ -1247,9 +1478,25 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         window.on_open_button(move |index| {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
             let Some(index) = slint_index(index) else { return };
+            link.send("list-devices");
             if load_knob(&w, &link, index) {
                 link.send("entities");
                 w.set_page(2);
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        window.global::<KnobSettings>().on_device_changed(move |choice_idx| {
+            let Some(w) = weak.upgrade() else { return };
+            let knob = w.global::<KnobSettings>();
+            let Some(index) = slint_index(knob.get_index()) else { return };
+            let knob_num = index + 1;
+            let choice = slint_index(choice_idx).and_then(|i| KNOB_DEVICE_CHOICES.with(|c| c.borrow().get(i).cloned()));
+            if let Some(choice) = choice {
+                let is_kbd = matches!(choice, KnobDeviceChoice::Keyboard { name: _ });
+                knob.set_device_is_keyboard(is_kbd);
+                knob.set_device_hint(get_device_hint(&choice, knob_num).into());
             }
         });
     }
@@ -1262,6 +1509,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             let profile = active_profile(&link);
             let Some(index) = editor::add_knob(&mut config.profiles[profile]) else { return };
             send_config(&mut link, config);
+            link.send("list-devices");
             if load_knob(&w, &link, index) {
                 link.send("entities");
                 w.set_page(1);
@@ -1270,19 +1518,14 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     };
     // the one-time tip: shown until "Got it" leaves a marker next to the service's state
     {
-        let marker = std::env::var_os("XDG_STATE_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/state")))
-            .map(|d| d.join("cranked-audio").join("welcomed"));
-        window.set_show_welcome(marker.as_ref().is_some_and(|m| !m.exists()));
+        let marker = cranked_ipc::settings::base_dir("XDG_STATE_HOME", ".local/state").join("welcomed");
+        window.set_show_welcome(!marker.exists());
         let weak = window.as_weak();
         window.on_dismiss_welcome(move || {
-            if let Some(marker) = &marker {
-                if let Some(dir) = marker.parent() {
-                    let _ = std::fs::create_dir_all(dir);
-                }
-                let _ = std::fs::write(marker, "");
+            if let Some(dir) = marker.parent() {
+                let _ = std::fs::create_dir_all(dir);
             }
+            let _ = std::fs::write(&marker, "");
             if let Some(w) = weak.upgrade() {
                 w.set_show_welcome(false);
             }
@@ -1290,6 +1533,25 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     }
     window.on_add_knob(add_knob.clone());
     window.global::<General>().on_add_knob(add_knob);
+    {
+        let (link, weak) = (Arc::clone(link), window.as_weak());
+        let toggle = move || {
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let Some(mut config) = link.config.clone() else { return };
+            let next = !config.look.buttons_in_dial;
+            config.look.buttons_in_dial = next;
+            if next {
+                config.look.show_button = true;
+                config.look.show_percent = true;
+            }
+            send_config(&mut link, config.clone());
+            apply_look(&w, &config.look);
+            w.global::<General>().set_look_buttons_in_dial(next);
+            w.global::<General>().set_look_show_percent(config.look.show_percent);
+            show(&w, &link.snapshot);
+        };
+        window.on_toggle_buttons_in_dial(toggle);
+    }
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_open_general(move || {
@@ -1310,6 +1572,14 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                     let index = slint_index(w.global::<KnobSettings>().get_index());
                     if let Some(channel) = index.and_then(|i| config.profiles[profile].channels.get_mut(i)) {
                         store_knob(&w, channel);
+                    }
+                    let device_index = slint_index(w.global::<KnobSettings>().get_device_index());
+                    let device_choice =
+                        device_index.and_then(|i| KNOB_DEVICE_CHOICES.with(|c| c.borrow().get(i).cloned()));
+                    if let (Some(index), Some(choice)) = (index, device_choice) {
+                        let knob = w.global::<KnobSettings>();
+                        let step = saturate_u8(knob.get_keyboard_step().clamp(1, 20));
+                        apply_knob_device(&mut config.devices, index + 1, &choice, step, knob.get_keyboard_grab());
                     }
                 }
                 4 => {
@@ -1421,6 +1691,38 @@ fn main() -> Result<(), slint::PlatformError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn saving_a_knob_keeps_its_device_mappings() {
+        use cranked_ipc::settings::MidiControl;
+        let midi =
+            |knob| MidiControl { kind: "cc".into(), number: 7, button: false, relative: false, knob, channel: 1 };
+        let devices = vec![
+            Device::Midi { name: "Pad".into(), controls: vec![midi(1), midi(3)] },
+            Device::Deej { port: "/dev/ttyUSB0".into(), baud: 9600, knobs: vec![1, 2, 3], invert: false },
+            Device::KeyboardKnob { name: "Board".into(), knob: 6, step: 2, grab: true },
+        ];
+        // unchanged choices change nothing (MIDI kept, deej order kept)
+        let mut saved = devices.clone();
+        apply_knob_device(&mut saved, 1, &connected_device(&devices, 1), 2, true);
+        apply_knob_device(&mut saved, 2, &KnobDeviceChoice::Deej { port: "/dev/ttyUSB0".into() }, 2, true);
+        assert_eq!(saved, devices);
+        // a keyboard knob's step and take-over follow the page
+        apply_knob_device(&mut saved, 6, &KnobDeviceChoice::Keyboard { name: "Board".into() }, 5, false);
+        assert_eq!(saved[2], Device::KeyboardKnob { name: "Board".into(), knob: 6, step: 5, grab: false });
+        // picking a MIDI device that has nothing learned yet changes nothing
+        let before = saved.clone();
+        apply_knob_device(&mut saved, 2, &KnobDeviceChoice::Midi { name: "Pad".into() }, 2, true);
+        assert_eq!(saved, before);
+        // switching knob 3 to a keyboard drops its MIDI control and deej slider
+        apply_knob_device(&mut saved, 3, &KnobDeviceChoice::Keyboard { name: "Dial".into() }, 2, true);
+        assert_eq!(connected_device(&saved, 3), KnobDeviceChoice::Keyboard { name: "Dial".into() });
+        assert!(matches!(&saved[0], Device::Midi { controls, name: _ } if controls.len() == 1));
+        assert!(matches!(&saved[1], Device::Deej { knobs, port: _, baud: _, invert: _ } if knobs == &vec![1, 2]));
+        // "none" and the mixer's own knob both just disconnect
+        apply_knob_device(&mut saved, 3, &KnobDeviceChoice::Mixer(3), 2, true);
+        assert_eq!(connected_device(&saved, 3), KnobDeviceChoice::None);
+    }
+
     use super::*;
 
     #[test]

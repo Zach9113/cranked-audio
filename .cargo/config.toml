@@ -1,0 +1,3 @@
+# Windows builds carry the C runtime inside the .exe, so they run without installing the VC++ redistributable.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
