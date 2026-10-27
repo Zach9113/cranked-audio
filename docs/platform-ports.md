@@ -25,7 +25,7 @@ Why:
 | `TrayIcon` | ksni, tray-icon | `tray::start`, `tray::Handle` updates (done: `start`, `show`) |
 | `GlobalShortcuts` | KDE kglobalaccel, `RegisterHotKey` | `shortcuts::Shortcuts` |
 | `RemoteApi` | D-Bus, none on Windows | `dbus::start`, `dbus::publish` |
-| `InputSource` | evdev / Raw Input keyboard knobs, MIDI, deej | `devices::start`: becomes a `Vec<Box<dyn InputSource>>`, one per configured device |
+| `InputSource` + `InputHardware` | evdev / Raw Input keyboard knobs, MIDI, deej | `devices::start`: becomes a `Vec<Box<dyn InputSource>>`, one per configured device |
 
 The worker threads and channels stay as they are: a port's `start` spawns its own thread, which speaks the existing
 `Command`/`Event` messages, so the service owns each adapter outright (no shared `Arc`). The traits make that
@@ -41,8 +41,10 @@ contract explicit and swappable; they don't redesign it.
 4. **Shortcuts.** `GlobalShortcuts` with `start`/`ensure`; adapters `linux::KGlobalAccel` and `windows::HotKeys`.
    *(#10)*
 5. **Remote API.** `RemoteApi` with `start` and `publish(&Snapshot)`; adapters `linux::SessionBus` and
-   `windows::NotOffered` (a no-op instead of `type Published = ((), ())`). *(this PR)*
-6. **Devices.** `InputSource` per device; MIDI and deej are portable and shared, keyboard knobs per platform.
+   `windows::NotOffered` (a no-op instead of `type Published = ((), ())`). *(#11)*
+6. **Devices.** `InputSource` per configured device, started from a `Vec<Box<dyn InputSource>>`; MIDI and deej
+   sources are portable and shared. Keyboard knobs come from the `InputHardware` port (adapters `linux::Evdev`,
+   `windows::RawInput`), which also lists keyboards and serial ports for Settings. *(this PR)*
 7. **Layout and tests.** Move the adapters to `platform/linux/` and `platform/windows/` (the last `cfg` lines in
    one module), add a fake `Platform`, and test the service against it. Then decide whether the Windows adapters
    become their own crate so the daemon can `forbid(unsafe_code)`.

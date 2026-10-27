@@ -4,6 +4,7 @@
 use crate::audio::AudioSystem;
 use crate::dbus::RemoteApi;
 use crate::desktop::Desktop;
+use crate::devices::InputHardware;
 use crate::shortcuts::GlobalShortcuts;
 use crate::tray::TrayIcon;
 
@@ -14,6 +15,7 @@ pub struct Platform {
     pub tray: Box<dyn TrayIcon>,
     pub shortcuts: Box<dyn GlobalShortcuts>,
     pub remote_api: Box<dyn RemoteApi>,
+    pub input_hardware: Box<dyn InputHardware>,
 }
 
 /// The adapters for the operating system this daemon was built for.
@@ -25,6 +27,7 @@ pub fn native() -> Platform {
         tray: Box::new(crate::tray::linux::StatusNotifier::default()),
         shortcuts: Box::new(crate::shortcuts::linux::KGlobalAccel::default()),
         remote_api: Box::new(crate::dbus::linux::SessionBus::default()),
+        input_hardware: Box::new(crate::devices::linux::Evdev),
     };
     #[cfg(windows)]
     let platform = Platform {
@@ -33,6 +36,7 @@ pub fn native() -> Platform {
         tray: Box::new(crate::tray::windows::NotificationArea::default()),
         shortcuts: Box::new(crate::shortcuts::windows::HotKeys::default()),
         remote_api: Box::new(crate::dbus::windows::NotOffered),
+        input_hardware: Box::new(crate::devices::windows::RawInput),
     };
     platform
 }

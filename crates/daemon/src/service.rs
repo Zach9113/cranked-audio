@@ -51,6 +51,8 @@ pub struct Service {
     shortcuts: Box<dyn shortcuts::GlobalShortcuts>,
     home_assistant_calls: Option<Sender<home_assistant::Command>>,
     home_assistant_generation: Arc<AtomicU64>,
+    /// This platform's keyboard knobs and serial ports; the configured devices run as `devices::InputSource`s.
+    input_hardware: Box<dyn devices::InputHardware>,
     device_generation: Arc<AtomicU64>,
     latest_release: Option<updater::ReleaseInfo>,
     config_path: PathBuf,
@@ -94,7 +96,8 @@ impl Service {
         let mut core = Core::new(config, &state);
         core.verbose = options.verbose;
         let device_generation = Arc::new(AtomicU64::new(0));
-        devices::start(&core.config().devices, &events, &device_generation);
+        let input_hardware = platform.input_hardware;
+        devices::start(devices::sources(&core.config().devices, &*input_hardware), &events, &device_generation);
         let mut shortcuts = platform.shortcuts;
         shortcuts.start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
         let mut tray = platform.tray;
@@ -116,6 +119,7 @@ impl Service {
             shortcuts,
             home_assistant_calls: None,
             home_assistant_generation: Arc::new(AtomicU64::new(0)),
+            input_hardware,
             device_generation,
             latest_release: None,
             config_modified: modified(&config_path),
@@ -232,12 +236,12 @@ impl Service {
             }
             "profile" => requests.switch_to = Some(rest.to_string()),
             "list-devices" => {
-                let (keyboards, typing) = devices::keyboard_knobs();
+                let (keyboards, typing) = self.input_hardware.keyboard_knobs();
                 self.clients.send(&ServerMessage::Devices(cranked_ipc::DeviceChoices {
                     keyboards,
                     typing,
                     midi: devices::midi_controllers(),
-                    serial: devices::serial_ports(),
+                    serial: self.input_hardware.serial_ports(),
                     outputs: self.audio_system.outputs(),
                 }));
             }
@@ -456,7 +460,8 @@ impl Service {
         let home_assistant_changed = config.home_assistant != current.home_assistant
             || config.home_assistant_entities() != current.home_assistant_entities();
         if config.devices != current.devices {
-            devices::start(&config.devices, &self.events, &self.device_generation);
+            let sources = devices::sources(&config.devices, &*self.input_hardware);
+            devices::start(sources, &self.events, &self.device_generation);
         }
         self.shortcuts.ensure(most_knobs(&config), &config.shortcuts);
         self.core.set_config(config, out);

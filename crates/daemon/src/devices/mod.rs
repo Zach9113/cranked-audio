@@ -11,17 +11,9 @@ use cranked_ipc::settings::{Device, MidiControl};
 use cranked_protocol::convert::saturate_u8;
 
 #[cfg(not(windows))]
-mod linux;
-#[cfg(not(windows))]
-pub use linux::{keyboard_knobs, serial_ports};
+pub mod linux;
 #[cfg(windows)]
-mod windows;
-#[cfg(not(windows))]
-use linux::keyboard;
-#[cfg(windows)]
-use windows::keyboard;
-#[cfg(windows)]
-pub use windows::{keyboard_knobs, serial_ports};
+pub mod windows;
 
 use crate::desktop::MediaKey;
 use crate::Event;
@@ -46,16 +38,46 @@ pub struct Learned {
 
 const RETRY: Duration = Duration::from_secs(3);
 
-pub fn start(devices: &[Device], events: &Sender<Event>, generation: &Arc<AtomicU64>) {
+/// The port to one configured controller. It runs on its own thread and turns what it reads into `Input` until
+/// `current()` turns false (new settings started its replacement).
+pub trait InputSource: Send {
+    fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool);
+}
+
+/// The port to this platform's input hardware: keyboard knobs read through the OS, and the serial ports to offer.
+/// Each platform has one adapter (`linux::Evdev`, `windows::RawInput`), chosen in `platform::native()`.
+pub trait InputHardware {
+    /// Keyboard knobs to offer in Settings, and the keyboards that only type (offered further down).
+    fn keyboard_knobs(&self) -> (Vec<String>, Vec<String>);
+    /// Serial ports to offer for deej boxes.
+    fn serial_ports(&self) -> Vec<String>;
+    /// A configured keyboard knob as an input source.
+    fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn InputSource>;
+}
+
+/// The configured devices as input sources: keyboard knobs from this platform's hardware, MIDI controllers and deej
+/// boxes from the portable code below.
+pub fn sources(devices: &[Device], hardware: &dyn InputHardware) -> Vec<Box<dyn InputSource>> {
+    devices
+        .iter()
+        .cloned()
+        .map(|device| -> Box<dyn InputSource> {
+            match device {
+                Device::KeyboardKnob { name, knob, step, grab } => hardware.keyboard_knob(name, knob, step, grab),
+                Device::Midi { name, controls } => Box::new(MidiController { name, controls }),
+                Device::Deej { port, baud, knobs, invert } => Box::new(DeejBox { port, baud, knobs, invert }),
+            }
+        })
+        .collect()
+}
+
+/// Starts every source on its own thread; the ones started before stop once they notice the newer generation.
+pub fn start(sources: Vec<Box<dyn InputSource>>, events: &Sender<Event>, generation: &Arc<AtomicU64>) {
     let mine = generation.fetch_add(1, Ordering::Relaxed) + 1;
-    for device in devices.iter().cloned() {
+    for source in sources {
         let (events, generation) = (events.clone(), Arc::clone(generation));
         let current = move || generation.load(Ordering::Relaxed) == mine;
-        let _ = std::thread::Builder::new().name("device".into()).spawn(move || match device {
-            Device::KeyboardKnob { name, knob, step, grab } => keyboard(&name, knob, step, grab, &events, &current),
-            Device::Midi { name, controls } => midi(&name, &controls, &events, &current),
-            Device::Deej { port, baud, knobs, invert } => deej(&port, baud, &knobs, invert, &events, &current),
-        });
+        crate::platform::spawn_thread("device", move || source.run(&events, &current));
     }
 }
 
@@ -116,6 +138,18 @@ pub fn stable_port_name(name: &str) -> &str {
 /// MIDI controllers to offer: ALSA's loopback ("Midi Through") isn't one.
 pub fn midi_controllers() -> Vec<String> {
     midi_ports().iter().filter(|n| !n.starts_with("Midi Through")).map(|n| stable_port_name(n).to_string()).collect()
+}
+
+/// A MIDI controller (portable through midir).
+struct MidiController {
+    name: String,
+    controls: Vec<MidiControl>,
+}
+
+impl InputSource for MidiController {
+    fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool) {
+        midi(&self.name, &self.controls, events, current);
+    }
 }
 
 fn midi(name: &str, controls: &[MidiControl], events: &Sender<Event>, current: &dyn Fn() -> bool) {
@@ -222,6 +256,20 @@ pub fn is_board(vendor: &str) -> bool {
     BOARD_VENDORS.contains(&vendor.trim())
 }
 
+/// A deej-style slider box on a serial port (portable through serialport).
+struct DeejBox {
+    port: String,
+    baud: u32,
+    knobs: Vec<usize>,
+    invert: bool,
+}
+
+impl InputSource for DeejBox {
+    fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool) {
+        deej(&self.port, self.baud, &self.knobs, self.invert, events, current);
+    }
+}
+
 fn deej(port: &str, baud: u32, knobs: &[usize], invert: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
     use std::io::{BufRead as _, BufReader};
     let mut reported = false;
@@ -277,6 +325,48 @@ fn deej(port: &str, baud: u32, knobs: &[usize], invert: bool, events: &Sender<Ev
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stands in for a platform's keyboard knob: reports one turn up, then stops.
+    struct FakeKnob {
+        knob: usize,
+    }
+
+    impl InputSource for FakeKnob {
+        fn run(&self, events: &Sender<Event>, _current: &dyn Fn() -> bool) {
+            send(events, Input::Step { knob: self.knob, delta: 1 });
+        }
+    }
+
+    struct FakeHardware;
+
+    impl InputHardware for FakeHardware {
+        fn keyboard_knobs(&self) -> (Vec<String>, Vec<String>) {
+            (Vec::new(), Vec::new())
+        }
+
+        fn serial_ports(&self) -> Vec<String> {
+            Vec::new()
+        }
+
+        fn keyboard_knob(&self, _name: String, knob: usize, _step: u8, _grab: bool) -> Box<dyn InputSource> {
+            Box::new(FakeKnob { knob })
+        }
+    }
+
+    #[test]
+    fn configured_devices_run_as_sources_without_real_hardware() {
+        let keyboard_knob = Device::KeyboardKnob { name: "Fake knob".into(), knob: 2, step: 2, grab: true };
+        let deej_box = Device::Deej { port: "/dev/null".into(), baud: 9600, knobs: vec![0], invert: false };
+        assert_eq!(sources(&[keyboard_knob.clone(), deej_box], &FakeHardware).len(), 2);
+
+        let (events, inbox) = std::sync::mpsc::channel();
+        start(sources(&[keyboard_knob], &FakeHardware), &events, &Arc::new(AtomicU64::new(0)));
+        let reported = inbox.recv_timeout(Duration::from_secs(2));
+        assert!(
+            matches!(reported, Ok(Event::Device(Input::Step { knob: 2, delta: 1 }))),
+            "the fake knob's turn arrives"
+        );
+    }
 
     #[test]
     fn midi_controls() {

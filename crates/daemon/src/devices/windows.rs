@@ -135,7 +135,7 @@ pub fn format_hid_name(manufacturer: &str, product: &str, consumer_control: bool
 }
 
 /// Input devices that have volume keys or Consumer Control endpoints, by name, and which of them also type.
-pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
+fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
     let mut count = 0_u32;
     let list_size = u32::try_from(std::mem::size_of::<RAWINPUTDEVICELIST>()).unwrap_or(0);
     // SAFETY: asking only for the count, into a local
@@ -324,7 +324,38 @@ fn device_present(target: &str) -> bool {
     })
 }
 
-pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
+/// The Windows input hardware adapter: keyboard knobs through Raw Input and a low-level keyboard hook, COM ports.
+pub struct RawInput;
+
+impl super::InputHardware for RawInput {
+    fn keyboard_knobs(&self) -> (Vec<String>, Vec<String>) {
+        keyboard_knobs()
+    }
+
+    fn serial_ports(&self) -> Vec<String> {
+        serial_ports()
+    }
+
+    fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn super::InputSource> {
+        Box::new(RawInputKnob { name, knob, step, grab })
+    }
+}
+
+/// A keyboard knob read through Raw Input (with `grab`, the hook keeps its volume keys from Windows).
+struct RawInputKnob {
+    name: String,
+    knob: usize,
+    step: u8,
+    grab: bool,
+}
+
+impl super::InputSource for RawInputKnob {
+    fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool) {
+        keyboard(&self.name, self.knob, self.step, self.grab, events, current);
+    }
+}
+
+fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
     attach_input_desktop();
     let knob = knob.saturating_sub(1);
     let mut reported = false;
@@ -380,7 +411,7 @@ pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<E
 }
 
 /// Serial ports that could be a deej box: USB boards only, and not the mixer.
-pub fn serial_ports() -> Vec<String> {
+fn serial_ports() -> Vec<String> {
     let Ok(ports) = serialport::available_ports() else { return Vec::new() };
     let mut ports: Vec<String> = ports
         .into_iter()

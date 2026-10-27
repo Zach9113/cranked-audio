@@ -92,7 +92,7 @@ pub fn has_knob_capabilities(device: &evdev::Device) -> bool {
 /// and which of them also type.
 /// Non-typing devices (dedicated consumer control endpoints and rotary dials) come first so they are easily
 /// chosen and can be taken over (grabbed) without breaking typing.
-pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
+fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
     let mut found: Vec<(bool, String)> = evdev::enumerate()
         .filter(|(_, d)| has_knob_capabilities(d))
         .filter_map(|(_, d)| d.name().map(|n| (types(&d), n.to_string())))
@@ -191,7 +191,38 @@ pub fn find_knob_device(name: &str) -> Option<(std::path::PathBuf, evdev::Device
     candidates.into_iter().next()
 }
 
-pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
+/// The Linux input hardware adapter: keyboard knobs through evdev, serial ports from /dev/serial/by-id.
+pub struct Evdev;
+
+impl super::InputHardware for Evdev {
+    fn keyboard_knobs(&self) -> (Vec<String>, Vec<String>) {
+        keyboard_knobs()
+    }
+
+    fn serial_ports(&self) -> Vec<String> {
+        serial_ports()
+    }
+
+    fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn super::InputSource> {
+        Box::new(EvdevKnob { name, knob, step, grab })
+    }
+}
+
+/// A keyboard knob read through evdev (with `grab`, the system volume doesn't move too).
+struct EvdevKnob {
+    name: String,
+    knob: usize,
+    step: u8,
+    grab: bool,
+}
+
+impl super::InputSource for EvdevKnob {
+    fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool) {
+        keyboard(&self.name, self.knob, self.step, self.grab, events, current);
+    }
+}
+
+fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
     use std::os::fd::AsFd as _;
     let knob = knob.saturating_sub(1);
     let mut reported = false;
@@ -258,7 +289,7 @@ fn usb_vendor(path: &std::path::Path) -> Option<String> {
 }
 
 /// Serial ports that could be a deej box: USB boards only (not, say, a monitor's control port), and not the mixer.
-pub fn serial_ports() -> Vec<String> {
+fn serial_ports() -> Vec<String> {
     let mut ports: Vec<String> = std::fs::read_dir("/dev/serial/by-id")
         .into_iter()
         .flatten()
