@@ -89,7 +89,27 @@ impl ksni::Tray for Tray {
     }
 }
 
-pub fn start(tray: Tray) -> Option<Handle<Tray>> {
+/// The Linux tray adapter: a `StatusNotifierItem` over D-Bus (through ksni), which Plasma and most panels show.
+#[derive(Default)]
+pub struct StatusNotifier {
+    running: Option<Handle<Tray>>,
+}
+
+impl super::TrayIcon for StatusNotifier {
+    fn start(&mut self, tray: Tray) {
+        self.running = start(tray);
+    }
+
+    fn show(&self, profile: String, profiles: Vec<String>, mixer: bool) {
+        if let Some(running) = &self.running {
+            running.update(move |tray| {
+                (tray.profile, tray.profiles, tray.mixer) = (profile, profiles, mixer);
+            });
+        }
+    }
+}
+
+fn start(tray: Tray) -> Option<Handle<Tray>> {
     match tray.spawn() {
         Ok(handle) => Some(handle),
         Err(e) => {

@@ -45,7 +45,7 @@ pub struct Service {
     leds: serial::Writer,
     clients: server::Clients,
     api: Option<dbus::Published>,
-    tray: Option<tray::Handle>,
+    tray: Box<dyn tray::TrayIcon>,
     /// What the tray last showed: profile, profiles, mixer connected.
     tray_shows: (String, Vec<String>, bool),
     shortcuts: Option<shortcuts::Shortcuts>,
@@ -97,12 +97,8 @@ impl Service {
         devices::start(&core.config().devices, &events, &device_generation);
         let shortcuts =
             shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
-        let tray = tray::start(tray::Tray {
-            events: events.clone(),
-            profile: String::new(),
-            profiles: Vec::new(),
-            mixer: false,
-        });
+        let mut tray = platform.tray;
+        tray.start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
         let config_path = options.config_path.clone();
         let mut service = Self {
             core,
@@ -504,15 +500,12 @@ impl Service {
                 self.clients.update(&snapshot);
             }
         }
-        if let Some(tray) = &self.tray {
-            let snapshot = self.core.snapshot();
-            let shows = (snapshot.profile, snapshot.profiles, snapshot.mixer);
-            if shows != self.tray_shows {
-                self.tray_shows.clone_from(&shows);
-                tray.update(move |t| {
-                    (t.profile, t.profiles, t.mixer) = shows;
-                });
-            }
+        let snapshot = self.core.snapshot();
+        let shows = (snapshot.profile, snapshot.profiles, snapshot.mixer);
+        if shows != self.tray_shows {
+            self.tray_shows.clone_from(&shows);
+            let (profile, profiles, mixer) = shows;
+            self.tray.show(profile, profiles, mixer);
         }
     }
 

@@ -1,20 +1,22 @@
 //! Tray icon: open the window, switch profiles, quit. Lives in the service so it's there without a window.
 
 #[cfg(not(windows))]
-mod linux;
-#[cfg(not(windows))]
-pub use linux::start;
-/// The running tray item, to update it.
-#[cfg(not(windows))]
-pub type Handle = ksni::blocking::Handle<Tray>;
+pub mod linux;
 #[cfg(windows)]
-mod windows;
-#[cfg(windows)]
-pub use windows::{start, Handle};
+pub mod windows;
 
 use std::sync::mpsc::Sender;
 
 use crate::Event;
+
+/// The port to the tray icon. Each platform has one adapter (`linux::StatusNotifier`, `windows::NotificationArea`),
+/// chosen in `platform::native()`; it keeps its own running icon.
+pub trait TrayIcon {
+    /// Puts the icon up. Without a tray on this desktop it says so once and stays away.
+    fn start(&mut self, tray: Tray);
+    /// Shows the current profile, the profiles to pick from and whether the mixer is connected.
+    fn show(&self, profile: String, profiles: Vec<String>, mixer: bool);
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {

@@ -20,14 +20,34 @@ use super::{Action, Tray, ICONS};
 const REFRESH: u32 = WM_APP + 1;
 const ICON_SIZE: i32 = 32;
 
-/// What the main loop keeps to change the tray.
-pub struct Handle {
+/// The Windows tray adapter: a notification-area icon (through tray-icon) with its own message-loop thread.
+#[derive(Default)]
+pub struct NotificationArea {
+    running: Option<Handle>,
+}
+
+impl super::TrayIcon for NotificationArea {
+    fn start(&mut self, tray: Tray) {
+        self.running = start(tray);
+    }
+
+    fn show(&self, profile: String, profiles: Vec<String>, mixer: bool) {
+        if let Some(running) = &self.running {
+            running.update(move |tray| {
+                (tray.profile, tray.profiles, tray.mixer) = (profile, profiles, mixer);
+            });
+        }
+    }
+}
+
+/// What the adapter keeps to change the running icon.
+struct Handle {
     state: Arc<Mutex<(Tray, HashMap<MenuId, Action>)>>,
     thread: u32,
 }
 
 impl Handle {
-    pub fn update(&self, change: impl FnOnce(&mut Tray)) {
+    fn update(&self, change: impl FnOnce(&mut Tray)) {
         if let Ok(mut guard) = self.state.lock() {
             change(&mut guard.0);
         }
@@ -103,7 +123,7 @@ fn run(icon: &TrayIcon, state: &Arc<Mutex<(Tray, HashMap<MenuId, Action>)>>) {
     }
 }
 
-pub fn start(tray: Tray) -> Option<Handle> {
+fn start(tray: Tray) -> Option<Handle> {
     let state = Arc::new(Mutex::new((tray, HashMap::new())));
     let for_menu = Arc::clone(&state);
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
