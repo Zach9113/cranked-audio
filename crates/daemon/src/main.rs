@@ -92,6 +92,8 @@ fn parse_line(line: &str) -> Option<Vec<u8>> {
 fn main() {
     let mut config_path = Config::default_path();
     let (mut use_mixer, mut use_stdin, mut verbose, mut print_config, mut dry_run) = (true, false, false, false, false);
+    // set by the old service when it restarts into an update
+    let (mut wait_pid, mut open_window): (Option<u32>, bool) = (None, false);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -104,6 +106,11 @@ fn main() {
             "-v" | "--verbose" => verbose = true,
             "--print-config" => print_config = true,
             "--dry-run" => dry_run = true,
+            "--wait-pid" => match args.next().and_then(|pid| pid.parse().ok()) {
+                Some(pid) => wait_pid = Some(pid),
+                None => return eprintln!("{USAGE}"),
+            },
+            "--open-window" => open_window = true,
             _ => return eprintln!("{USAGE}"),
         }
     }
@@ -115,9 +122,21 @@ fn main() {
         return print!("{}", toml::to_string(&config).unwrap_or_default());
     }
 
+    #[cfg(windows)]
+    {
+        if let Some(pid) = wait_pid {
+            updater::wait_for_exit(pid, Duration::from_secs(15));
+        }
+        updater::remove_leftovers();
+    }
+    #[cfg(not(windows))]
+    let _ = wait_pid;
     let Some(listener) = server::listen() else {
         return eprintln!("Cranked Audio is already running");
     };
+    if open_window {
+        spawn_detached(&sibling("cranked-audio"), &[]);
+    }
     let state_path = State::default_path();
     let state = State::load(&state_path);
 
@@ -443,6 +462,33 @@ fn main() {
                             latest_version: None,
                             can_install: false,
                         });
+                        // Linux: install.sh restarts the service. Windows: start the new one, which waits for this
+                        // one to exit (socket, mixer port), and reopen the window if one was open.
+                        #[cfg(windows)]
+                        {
+                            // the same options this one was started with (--config, -v, ...), minus the restart ones
+                            let mut kept: Vec<std::ffi::OsString> = Vec::new();
+                            let mut old = std::env::args_os().skip(1);
+                            while let Some(arg) = old.next() {
+                                match arg.to_str() {
+                                    Some("--wait-pid") => {
+                                        old.next();
+                                    }
+                                    Some("--open-window") => {}
+                                    _ => kept.push(arg),
+                                }
+                            }
+                            let pid = std::process::id().to_string();
+                            let mut args: Vec<&std::ffi::OsStr> = kept.iter().map(|a| a.as_os_str()).collect();
+                            args.extend([std::ffi::OsStr::new("--wait-pid"), std::ffi::OsStr::new(&pid)]);
+                            if !clients.is_empty() {
+                                args.push("--open-window".as_ref());
+                            }
+                            spawn_detached(&sibling("cranked-audiod"), &args);
+                            clients.send(&ServerMessage::Quit);
+                            let _ = std::fs::remove_file(cranked_ipc::socket_path());
+                            std::process::exit(0);
+                        }
                     }
                     Err(e) => {
                         clients.send(&ServerMessage::UpdateStatus {
