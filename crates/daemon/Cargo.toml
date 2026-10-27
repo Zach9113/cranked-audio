@@ -31,6 +31,8 @@ ksni = { version = "0.3", default-features = false, features = ["async-io", "blo
 tray-icon = "0.26"
 windows-core = "0.62"
 windows = { version = "0.62", features = [
+    "Foundation_Collections",
+    "Media_Control",
     "Win32_Devices_FunctionDiscovery",
     "Win32_Foundation",
     "Win32_Media_Audio",
