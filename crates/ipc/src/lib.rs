@@ -58,6 +58,13 @@ pub enum ServerMessage {
     OpenPage(String),
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioOutput {
+    pub name: String,
+    pub description: String,
+    pub real: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceChoices {
     /// inputs with volume keys (keyboard knobs), by name
@@ -69,6 +76,9 @@ pub struct DeviceChoices {
     pub midi: Vec<String>,
     /// serial ports (for deej boxes)
     pub serial: Vec<String>,
+    /// active audio output devices (for picking which ones Switch output cycles through)
+    #[serde(default)]
+    pub outputs: Vec<AudioOutput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

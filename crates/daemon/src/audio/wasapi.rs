@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use windows::core::{Interface, GUID, PCWSTR, PWSTR};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
-use windows::Win32::Foundation::{CloseHandle, S_OK};
+use windows::Win32::Foundation::{CloseHandle, PROPERTYKEY, S_OK};
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::Media::Audio::{
     eCommunications, eConsole, eMultimedia, eRender, AudioSessionStateActive, AudioSessionStateExpired,
@@ -143,7 +143,8 @@ fn file_description(path: &str) -> Option<String> {
         return None;
     }
     let text = unsafe { std::slice::from_raw_parts(value.cast::<u16>(), length as usize) };
-    let text = String::from_utf16_lossy(text).trim_end_matches('\0').trim().to_string();
+    let text = text.split(|&c| c == 0).next().unwrap_or(text);
+    let text = String::from_utf16_lossy(text).trim().to_string();
     (!text.is_empty()).then_some(text)
 }
 
@@ -153,6 +154,47 @@ fn friendly_name(device: &IMMDevice) -> Option<String> {
         let store = device.OpenPropertyStore(STGM_READ).ok()?;
         let value = store.GetValue(&PKEY_Device_FriendlyName).ok()?;
         Some(value.to_string())
+    }
+}
+
+/// The output's parent device, e.g. `USB\VID_...`, `HDAUDIO\FUNC_01...` or `{1}.ROOT\STEAMSTREAMINGSPEAKERS\0000`
+/// (not in the SDK headers; the same key the Sound control panel shows as the device instance).
+const PKEY_PARENT_DEVICE: PROPERTYKEY =
+    PROPERTYKEY { fmtid: GUID::from_u128(0xb3f8fa53_0004_438e_9003_51a46e139bfc), pid: 2 };
+
+fn parent_device(device: &IMMDevice) -> Option<String> {
+    // SAFETY: plain COM calls on a live device
+    unsafe {
+        let store = device.OpenPropertyStore(STGM_READ).ok()?;
+        let value = store.GetValue(&PKEY_PARENT_DEVICE).ok()?;
+        Some(value.to_string())
+    }
+}
+
+/// Real outputs sit on a bus (USB, HD Audio, PCI, Bluetooth); software-only ones (Steam Streaming Speakers, virtual
+/// cables) are root-enumerated (`ROOT\...` or `{1}.ROOT\...`). Switching skips those by default, like the Linux side
+/// skips its virtual sinks.
+pub fn is_virtual_output(parent: &str) -> bool {
+    let instance = parent.split_once("}.").map_or(parent, |(_, rest)| rest);
+    instance.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("ROOT\\"))
+}
+
+pub fn list_outputs() -> Vec<cranked_ipc::AudioOutput> {
+    // SAFETY: plain COM calls on the calling thread
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
+            return Vec::new();
+        };
+        let Ok(devices) = active_outputs(&enumerator) else { return Vec::new() };
+        devices
+            .iter()
+            .map(|(id, device)| cranked_ipc::AudioOutput {
+                name: id.clone(),
+                description: friendly_name(device).unwrap_or_else(|| id.clone()),
+                real: !parent_device(device).is_some_and(|parent| is_virtual_output(&parent)),
+            })
+            .collect()
     }
 }
 
@@ -364,8 +406,8 @@ fn run_command(
         Command::MuteMaster { mute } => {
             endpoint_volume(enumerator).and_then(|e| unsafe { e.SetMute(mute, no_context) })
         }
-        Command::SwitchOutput => {
-            switch_output(enumerator, events);
+        Command::SwitchOutput { enabled, disabled } => {
+            switch_output(enumerator, &enabled, &disabled, events);
             Ok(())
         }
         Command::Meter { index, on, .. } => {
@@ -441,7 +483,7 @@ fn set_default_output(id: &str) -> windows::core::Result<()> {
     Ok(())
 }
 
-fn switch_output(enumerator: &IMMDeviceEnumerator, events: &Sender<Event>) {
+fn switch_output(enumerator: &IMMDeviceEnumerator, enabled: &[String], disabled: &[String], events: &Sender<Event>) {
     let current = default_output(enumerator).ok().and_then(|d| unsafe { d.GetId() }.ok()).map(com_string);
     let Ok(devices) = active_outputs(enumerator) else { return eprintln!("audio: no answer about outputs") };
     let outputs: Vec<Output> = devices
@@ -449,10 +491,10 @@ fn switch_output(enumerator: &IMMDeviceEnumerator, events: &Sender<Event>) {
         .map(|(id, device)| Output {
             name: id.clone(),
             description: friendly_name(device).unwrap_or_else(|| id.clone()),
-            real: true,
+            real: !parent_device(device).is_some_and(|parent| is_virtual_output(&parent)),
         })
         .collect();
-    let Some(next) = next_output(&outputs, current.as_deref().unwrap_or_default()).cloned() else {
+    let Some(next) = next_output(&outputs, current.as_deref().unwrap_or_default(), enabled, disabled).cloned() else {
         let _ = events.send(Event::OutputSwitched(None));
         return;
     };
@@ -461,5 +503,22 @@ fn switch_output(enumerator: &IMMDeviceEnumerator, events: &Sender<Event>) {
             let _ = events.send(Event::OutputSwitched(Some(next.description)));
         }
         Err(e) => eprintln!("audio: can't switch the output ({e})"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn root_enumerated_outputs_are_virtual() {
+        assert!(is_virtual_output(r"ROOT\STEAMSTREAMINGSPEAKERS\0000"));
+        assert!(is_virtual_output(r"{1}.ROOT\STEAMSTREAMINGSPEAKERS\0000"));
+        assert!(is_virtual_output(r"root\VBAudioVACWDM\0000"));
+        assert!(!is_virtual_output(r"USB\VID_30BE&PID_100F&MI_00\7&2D23BB74&0&0000"));
+        assert!(!is_virtual_output(r"{1}.USB\VID_30BE&PID_100F&MI_00\7&2D23BB74&0&0000"));
+        assert!(!is_virtual_output(r"HDAUDIO\FUNC_01&VEN_10DE&DEV_00A3\5&1DD26AFF&0&0001"));
+        assert!(!is_virtual_output(r"{1}.HDAUDIO\FUNC_01&VEN_10DE&DEV_00A3\5&1DD26AFF&0&0001"));
+        assert!(!is_virtual_output(""));
     }
 }

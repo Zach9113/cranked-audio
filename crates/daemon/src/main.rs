@@ -253,6 +253,7 @@ fn main() {
                             typing,
                             midi: devices::midi_controllers(),
                             serial: devices::serial_ports(),
+                            outputs: audio::list_outputs(),
                         }));
                     }
                     "learn-midi" => {

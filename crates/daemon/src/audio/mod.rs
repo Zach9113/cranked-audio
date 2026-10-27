@@ -4,11 +4,11 @@
 #[cfg(not(windows))]
 mod pulse;
 #[cfg(not(windows))]
-pub use pulse::run;
+pub use pulse::{list_outputs, run};
 #[cfg(windows)]
 mod wasapi;
 #[cfg(windows)]
-pub use wasapi::run;
+pub use wasapi::{list_outputs, run};
 
 use std::time::Duration;
 
@@ -31,8 +31,11 @@ pub enum Command {
     MuteMaster {
         mute: bool,
     },
-    /// Make the next real output device the default (apps follow); answers with `Event::OutputSwitched`.
-    SwitchOutput,
+    /// Make the next enabled output device the default (apps follow); answers with `Event::OutputSwitched`.
+    SwitchOutput {
+        enabled: Vec<String>,
+        disabled: Vec<String>,
+    },
     /// Start or stop watching how loud a stream plays (it reports `Event::Loud` while it is).
     Meter {
         index: u32,
@@ -58,13 +61,24 @@ pub struct Output {
     pub real: bool,
 }
 
-/// The real output after `current` (wrapping), or None when there's nothing else to switch to.
-pub fn next_output<'a>(outputs: &'a [Output], current: &str) -> Option<&'a Output> {
-    let real: Vec<&Output> = outputs.iter().filter(|o| o.real).collect();
-    let at = real.iter().position(|o| o.name == current);
+impl Output {
+    pub fn is_enabled(&self, enabled: &[String], disabled: &[String]) -> bool {
+        cranked_ipc::settings::output_enabled(&self.description, &self.name, self.real, enabled, disabled)
+    }
+}
+
+/// The enabled output after `current` (wrapping), or None when there's nothing else to switch to.
+pub fn next_output<'a>(
+    outputs: &'a [Output],
+    current: &str,
+    enabled: &[String],
+    disabled: &[String],
+) -> Option<&'a Output> {
+    let chosen: Vec<&Output> = outputs.iter().filter(|o| o.is_enabled(enabled, disabled)).collect();
+    let at = chosen.iter().position(|o| o.name == current);
     let next = match at {
-        Some(i) => real.get((i + 1) % real.len().max(1)).copied(),
-        None => real.first().copied(),
+        Some(i) => chosen.get((i + 1) % chosen.len().max(1)).copied(),
+        None => chosen.first().copied(),
     }?;
     (next.name != current).then_some(next)
 }
@@ -78,11 +92,16 @@ mod tests {
     }
 
     #[test]
-    fn switching_cycles_real_outputs_only() {
+    fn switching_cycles_enabled_outputs_and_respects_per_output_toggles() {
         let outputs = [output("dac", true), output("nvbroadcast_sink", false), output("hdmi", true)];
-        assert_eq!(next_output(&outputs, "dac").map(|o| o.name.as_str()), Some("hdmi"));
-        assert_eq!(next_output(&outputs, "hdmi").map(|o| o.name.as_str()), Some("dac"));
-        assert_eq!(next_output(&outputs, "nvbroadcast_sink").map(|o| o.name.as_str()), Some("dac"));
-        assert_eq!(next_output(&outputs[..1], "dac"), None);
+        assert_eq!(next_output(&outputs, "dac", &[], &[]).map(|o| o.name.as_str()), Some("hdmi"));
+        assert_eq!(next_output(&outputs, "hdmi", &[], &[]).map(|o| o.name.as_str()), Some("dac"));
+        assert_eq!(next_output(&outputs, "nvbroadcast_sink", &[], &[]).map(|o| o.name.as_str()), Some("dac"));
+        assert_eq!(next_output(&outputs[..1], "dac", &[], &[]), None);
+        // enabling a virtual output includes it in the cycle; disabling a real output skips it
+        let en = ["NVBROADCAST_SINK".to_string()];
+        let dis = ["HDMI".to_string()];
+        assert_eq!(next_output(&outputs, "dac", &en, &dis).map(|o| o.name.as_str()), Some("nvbroadcast_sink"));
+        assert_eq!(next_output(&outputs, "nvbroadcast_sink", &en, &dis).map(|o| o.name.as_str()), Some("dac"));
     }
 }

@@ -158,8 +158,8 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break Ok(()),
         };
-        if let Command::SwitchOutput = command {
-            switch_output(&mut mainloop, &mut context, events);
+        if let Command::SwitchOutput { enabled, disabled } = command {
+            switch_output(&mut mainloop, &mut context, &enabled, &disabled, events);
             continue;
         }
         if let Command::Meter { index, sink, on } = command {
@@ -211,7 +211,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
             Command::MuteMaster { mute } => {
                 introspect.set_sink_mute_by_name("@DEFAULT_SINK@", mute, None);
             }
-            Command::SwitchOutput | Command::Meter { .. } => {}
+            Command::SwitchOutput { .. } | Command::Meter { .. } => {}
         }
         mainloop.unlock();
     };
@@ -304,7 +304,13 @@ fn stop_meter(meter: Rc<RefCell<PaStream>>) {
 }
 
 /// Ask for the current default and all outputs, wait for the answers without holding the lock, then switch.
-fn switch_output(mainloop: &mut Mainloop, context: &mut Context, events: &Sender<Event>) {
+fn switch_output(
+    mainloop: &mut Mainloop,
+    context: &mut Context,
+    enabled: &[String],
+    disabled: &[String],
+    events: &Sender<Event>,
+) {
     let (answers, inbox) = std::sync::mpsc::channel::<Option<Result<String, Output>>>();
     mainloop.lock();
     let introspect = context.introspect();
@@ -332,7 +338,7 @@ fn switch_output(mainloop: &mut Mainloop, context: &mut Context, events: &Sender
         }
     }
     let current = current.unwrap_or_default();
-    let Some(next) = next_output(&outputs, &current).cloned() else {
+    let Some(next) = next_output(&outputs, &current, enabled, disabled).cloned() else {
         let _ = events.send(Event::OutputSwitched(None));
         return;
     };
@@ -340,4 +346,51 @@ fn switch_output(mainloop: &mut Mainloop, context: &mut Context, events: &Sender
     context.set_default_sink(&next.name, |_| {});
     mainloop.unlock();
     let _ = events.send(Event::OutputSwitched(Some(next.description)));
+}
+
+pub fn list_outputs() -> Vec<cranked_ipc::AudioOutput> {
+    let Some(mut mainloop) = Mainloop::new() else { return Vec::new() };
+    let Some(mut context) = Context::new(&mainloop, "Cranked Audio outputs") else { return Vec::new() };
+    if context.connect(None, FlagSet::NOFAIL, None).is_err() || mainloop.start().is_err() {
+        return Vec::new();
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        mainloop.lock();
+        let state = context.get_state();
+        mainloop.unlock();
+        match state {
+            State::Ready => break,
+            State::Failed | State::Terminated => {
+                mainloop.stop();
+                return Vec::new();
+            }
+            _ if Instant::now() > deadline => {
+                mainloop.stop();
+                return Vec::new();
+            }
+            _ => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    mainloop.lock();
+    context.introspect().get_sink_info_list(move |result| {
+        let _ = tx.send(match result {
+            ListResult::Item(info) => {
+                let out = output_from(info);
+                Some(cranked_ipc::AudioOutput { name: out.name, description: out.description, real: out.real })
+            }
+            _ => None,
+        });
+    });
+    mainloop.unlock();
+    let mut outputs = Vec::new();
+    while let Ok(Some(out)) = rx.recv_timeout(Duration::from_secs(2)) {
+        outputs.push(out);
+    }
+    mainloop.lock();
+    context.disconnect();
+    mainloop.unlock();
+    mainloop.stop();
+    outputs
 }

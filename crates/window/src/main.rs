@@ -417,6 +417,7 @@ fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
         editor::action_entity(&channel.hold),
     );
     populate_knob_device_choices(window, config, index);
+    populate_output_choices(window, config);
     true
 }
 
@@ -490,7 +491,52 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
     general.set_profile_index(profile_index as i32);
     general.set_profile_name(profile.name.as_str().into());
     window.global::<Lists>().set_profiles(strings(config.profiles.iter().map(|p| p.name.as_str())));
+    populate_output_choices(window, config);
     true
+}
+
+fn populate_output_choices(window: &MainWindow, config: &Config) {
+    let (labels, enabled): (Vec<String>, Vec<bool>) = CHOICES.with(|c| {
+        let choices = c.borrow();
+        choices
+            .outputs
+            .iter()
+            .map(|o| {
+                let label = if o.real { o.description.clone() } else { format!("{} (virtual)", o.description) };
+                let on = cranked_ipc::settings::output_enabled(
+                    &o.description,
+                    &o.name,
+                    o.real,
+                    &config.enabled_outputs,
+                    &config.disabled_outputs,
+                );
+                (label, on)
+            })
+            .unzip()
+    });
+    window.global::<Lists>().set_output_names(strings(labels.iter().map(String::as_str)));
+    window.global::<General>().set_output_enabled(ModelRc::new(VecModel::from(enabled)));
+}
+
+fn store_output_choices(window: &MainWindow, config: &mut Config) {
+    let flags: Vec<bool> = window.global::<General>().get_output_enabled().iter().collect();
+    CHOICES.with(|c| {
+        let outputs = &c.borrow().outputs;
+        if outputs.len() != flags.len() || outputs.is_empty() {
+            return;
+        }
+        for (output, &checked) in outputs.iter().zip(&flags) {
+            let matches =
+                |s: &String| s.eq_ignore_ascii_case(&output.description) || s.eq_ignore_ascii_case(&output.name);
+            config.enabled_outputs.retain(|s| !matches(s));
+            config.disabled_outputs.retain(|s| !matches(s));
+            if output.real && !checked {
+                config.disabled_outputs.push(output.description.clone());
+            } else if !output.real && checked {
+                config.enabled_outputs.push(output.description.clone());
+            }
+        }
+    });
 }
 
 fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize) {
@@ -514,6 +560,7 @@ fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize)
     config.leds.dim_idle = general.get_dim_idle();
     let url = general.get_home_assistant_url().trim().to_string();
     config.home_assistant.url = (!url.is_empty()).then_some(url);
+    store_output_choices(window, config);
     if let Some(profile) = config.profiles.get_mut(profile_index) {
         let knobs = |model: ModelRc<bool>| model.iter().enumerate().filter(|(_, on)| *on).map(|(i, _)| i + 1).collect();
         let auto = &mut profile.auto_lower;
@@ -1094,11 +1141,14 @@ fn run_link(link: Arc<Mutex<Link>>, window: slint::Weak<MainWindow>) {
                     let link = Arc::clone(&link);
                     let _ = window.upgrade_in_event_loop(move |w| {
                         show_device_choices(&w, &choices);
-                        if w.get_page() == 1 {
-                            if let Ok(link) = link.lock() {
-                                if let Some(config) = &link.config {
+                        if let Ok(link) = link.lock() {
+                            if let Some(config) = &link.config {
+                                if w.get_page() == 1 {
                                     let index = w.global::<KnobSettings>().get_index() as usize;
                                     populate_knob_device_choices(&w, config, index);
+                                }
+                                if matches!(w.get_page(), 1..=3) {
+                                    populate_output_choices(&w, config);
                                 }
                             }
                         }
@@ -1229,6 +1279,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     };
     general.on_toggle_lower(flip(|g| g.get_lower(), window.as_weak()));
     general.on_toggle_trigger(flip(|g| g.get_triggers(), window.as_weak()));
+    general.on_toggle_output(flip(|g| g.get_output_enabled(), window.as_weak()));
     general.on_edit_file(open_settings);
     general.set_theme_names(strings(themes::NAMES.iter().map(|(_, label)| *label)));
     {
@@ -1524,7 +1575,8 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_open_general(move || {
-            let (Ok(link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            link.send("list-devices");
             if load_general(&w, &link) {
                 w.set_page(3);
             }
@@ -1543,6 +1595,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                     if let Some(channel) = config.profiles[profile].channels.get_mut(index) {
                         store_knob(&w, channel);
                     }
+                    store_output_choices(&w, &mut config);
                     let selected_idx = w.global::<KnobSettings>().get_device_index() as usize;
                     let selected_choice = KNOB_DEVICE_CHOICES.with(|c| c.borrow().get(selected_idx).cloned());
                     if let Some(choice) = selected_choice {

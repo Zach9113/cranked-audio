@@ -58,6 +58,7 @@ export global Lists {
     in property <[string]> toggles;
     in property <[string]> profiles;
     in property <[string]> amounts;
+    in property <[string]> output-names;
     in property <[color]> swatches;
     in property <[string]> swatch-hex;
     in property <bool> home-assistant;
@@ -137,6 +138,7 @@ export global General {
     in-out property <bool> auto-enabled;
     in-out property <[bool]> lower;
     in-out property <[bool]> triggers;
+    in-out property <[bool]> output-enabled;
     in-out property <bool> voice-chat;
     in-out property <int> amount-index;
     in-out property <bool> auto-dim;
@@ -154,6 +156,7 @@ export global General {
     in-out property <bool> updating: false;
     callback toggle-lower(int);
     callback toggle-trigger(int);
+    callback toggle-output(int);
     callback switch-profile(int);
     callback new-profile();
     callback rename-profile(string);
@@ -489,6 +492,20 @@ export component ButtonPage inherits VerticalLayout {
             }
         }
     }
+    if (KnobSettings.press-kind == 5 || KnobSettings.hold-kind == 5) && Lists.output-names.length > 0: GroupBox {
+        title: "Audio outputs to cycle through";
+        VerticalLayout {
+            spacing: 8px;
+            for name[i] in Lists.output-names: CheckBox {
+                text: name;
+                checked: General.output-enabled[i];
+                toggled => { General.toggle-output(i); }
+            }
+            Hint {
+                text: "Switch audio output cycles through the checked devices (virtual outputs are unchecked by default).";
+            }
+        }
+    }
 }
 
 export component GeneralPage inherits ScrollView {
@@ -600,6 +617,21 @@ export component GeneralPage inherits ScrollView {
                 HorizontalLayout {
                     alignment: start;
                     Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
+                }
+            }
+        }
+
+        if Lists.output-names.length > 0: GroupBox {
+            title: "Audio outputs";
+            VerticalLayout {
+                spacing: 8px;
+                for name[i] in Lists.output-names: CheckBox {
+                    text: name;
+                    checked: General.output-enabled[i];
+                    toggled => { General.toggle-output(i); }
+                }
+                Hint {
+                    text: "A button set to \"Switch audio output\" cycles through the checked devices (virtual outputs are unchecked by default).";
                 }
             }
         }

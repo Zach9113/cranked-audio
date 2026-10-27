@@ -443,6 +443,9 @@ impl Core {
             }
             Event::OutputSwitched(name) => {
                 let text = name.unwrap_or_else(|| "No other output".into());
+                if self.verbose {
+                    eprintln!("output: {text}");
+                }
                 out.extend(self.popup_text("audio-card", text));
             }
             Event::HomeAssistantState(state) => {
@@ -614,7 +617,10 @@ impl Core {
             Action::PlayPause => out.push(Out::Desktop(Desktop::Media(MediaKey::PlayPause))),
             Action::Next => out.push(Out::Desktop(Desktop::Media(MediaKey::Next))),
             Action::Previous => out.push(Out::Desktop(Desktop::Media(MediaKey::Previous))),
-            Action::SwitchOutput => out.push(Out::Audio(Audio::SwitchOutput)),
+            Action::SwitchOutput => out.push(Out::Audio(Audio::SwitchOutput {
+                enabled: self.config.enabled_outputs.clone(),
+                disabled: self.config.disabled_outputs.clone(),
+            })),
             Action::NextProfile => self.next_profile(out),
             Action::HomeAssistantToggle(entity) => self.home_assistant_button("toggle", entity, now, out),
             Action::HomeAssistantOff(entity) => self.home_assistant_button("turn_off", entity, now, out),
@@ -993,6 +999,8 @@ mod tests {
             theme: "cranked".into(),
             look: Default::default(),
             devices: Vec::new(),
+            enabled_outputs: Vec::new(),
+            disabled_outputs: Vec::new(),
             leds: Default::default(),
             home_assistant: Default::default(),
             profiles: vec![
@@ -1282,7 +1290,10 @@ mod tests {
         let mut core = synced(start);
         let at = start + Duration::from_secs(1);
         assert_eq!(press(&mut core, 0, at), [Out::Desktop(Desktop::Media(MediaKey::PlayPause))]);
-        assert_eq!(press(&mut core, 3, at + Duration::from_secs(1)), [Out::Audio(Audio::SwitchOutput)]);
+        assert_eq!(
+            press(&mut core, 3, at + Duration::from_secs(1)),
+            [Out::Audio(Audio::SwitchOutput { enabled: Vec::new(), disabled: Vec::new() })]
+        );
         assert_eq!(
             press(&mut core, 4, at + Duration::from_secs(2)),
             [
