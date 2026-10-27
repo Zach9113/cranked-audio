@@ -45,12 +45,14 @@ contract explicit and swappable; they don't redesign it.
 6. **Devices.** `InputSource` per configured device, started from a `Vec<Box<dyn InputSource>>`; MIDI and deej
    sources are portable and shared. Keyboard knobs come from the `InputHardware` port (adapters `linux::Evdev`,
    `windows::RawInput`), which also lists keyboards and serial ports for Settings. *(#12)*
-7. **Layout** *(7a, this PR)*. Every adapter lives in `platform/linux/` or `platform/windows/`, one file per port
+7. **Layout** *(7a, #13)*. Every adapter lives in `platform/linux/` or `platform/windows/`, one file per port
    (`audio`, `desktop`, `tray`, `shortcuts`, `remote_api`, `input_hardware`); the shared Win32 helpers
    (`attach_input_desktop`, `CRANKED_EXTRA_INFO`) sit in `platform/windows/mod.rs`. The six port modules have no
    `cfg` left; `platform/mod.rs` is the one place that picks the OS.
-8. **Fake platform and service tests** *(7b)*. A `Platform` of recording fakes, and tests that drive `Service`
-   through it without PipeWire, a desktop session or a VM.
+8. **Fake platform and service tests** *(7b, this PR)*. `platform::fake::platform()` gives a `Platform` whose
+   adapters record what the service asked of them; `service::tests` start a real `Service` on it (temp settings,
+   state and socket, no mixer) and check the commands and popups that come out. They run on Linux and Windows in
+   milliseconds, with no `PipeWire`, desktop session or VM.
 
 ## Still OS-specific outside `platform/` (candidates for later ports)
 

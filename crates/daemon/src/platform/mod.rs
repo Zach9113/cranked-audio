@@ -2,6 +2,8 @@
 //! audio, desktop, tray, shortcuts, dbus and devices); every adapter lives under `linux/` or `windows/` here, and
 //! `native()` plugs in this platform's set. The plan: docs/platform-ports.md.
 
+#[cfg(test)]
+pub mod fake;
 #[cfg(not(windows))]
 pub mod linux;
 #[cfg(windows)]

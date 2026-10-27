@@ -71,7 +71,7 @@ impl Service {
         listener: UnixListener,
         events: Sender<Event>,
     ) -> Self {
-        let state_path = State::default_path();
+        let state_path = options.state_path.clone();
         let state = State::load(&state_path);
         let (audio, audio_inbox) = mpsc::channel();
         let (desktop, desktop_inbox) = mpsc::channel();
@@ -603,4 +603,119 @@ fn save_secret(path: &Path, text: &str) -> std::io::Result<()> {
     let mut file = options.open(&temporary)?;
     writeln!(file, "{text}")?;
     std::fs::rename(&temporary, path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::matching::Stream;
+    use crate::platform::fake::{self, Recorded};
+
+    /// The fake adapters' recording, kept so a test can look for things in any order.
+    struct Recording {
+        inbox: Receiver<Recorded>,
+        seen: Vec<Recorded>,
+    }
+
+    impl Recording {
+        /// Whether the service asked for something like `wanted` within a few seconds.
+        fn saw(&mut self, wanted: impl Fn(&Recorded) -> bool) -> bool {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                if self.seen.iter().any(&wanted) {
+                    return true;
+                }
+                match self.inbox.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                    Ok(recorded) => self.seen.push(recorded),
+                    Err(_) => return false,
+                }
+            }
+        }
+    }
+
+    /// Runs a service on the fake platform with `config`, its files in a temp folder (emptied first, so test runs
+    /// don't pile up folders) and no mixer.
+    fn start_service(name: &str, config: &str) -> (Sender<Event>, Recording) {
+        let dir = std::env::temp_dir().join(format!("cranked-service-test-{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let options = Options {
+            config_path: dir.join("config.toml"),
+            state_path: dir.join("state.toml"),
+            use_mixer: false,
+            use_stdin: false,
+            verbose: false,
+            print_config: false,
+            dry_run: false,
+            wait_pid: None,
+            open_window: false,
+        };
+        let config = Config::parse(config).unwrap();
+        let listener = UnixListener::bind(dir.join("socket")).unwrap();
+        let (events, service_inbox) = mpsc::channel();
+        let service_events = events.clone();
+        let (recording_out, recording_in) = mpsc::channel();
+        // the platform isn't Send, so it's made on the service's own thread; runs until the test ends (quitting would
+        // end the test program)
+        spawn("service", move || {
+            let (platform, recorded) = fake::platform();
+            let _ = recording_out.send(recorded);
+            Service::start(platform, &options, config, listener, service_events).run(&service_inbox);
+        });
+        let inbox = recording_in.recv().unwrap();
+        (events, Recording { inbox, seen: Vec::new() })
+    }
+
+    #[test]
+    fn a_knob_set_from_outside_turns_its_apps_volume_and_shows_a_popup() {
+        let (events, mut recording) = start_service("knob", "[[channel]]\nname = \"Music\"\napps = [\"player\"]\n");
+        let player = Stream {
+            index: 7,
+            app_name: "player".into(),
+            volume: 100.0,
+            channels: 2,
+            writable: true,
+            ..Stream::default()
+        };
+        events.send(Event::AudioReady).unwrap();
+        events.send(Event::Stream(player)).unwrap();
+        events.send(Event::Remote(dbus::Request::SetKnob { knob: 0, percent: 40 })).unwrap();
+
+        assert!(
+            recording.saw(|r| matches!(
+                r,
+                Recorded::Audio(audio::Command::SetStream { index: 7, percent: 40, channels: _ })
+            )),
+            "the player is set to 40%: {:?}",
+            recording.seen
+        );
+        assert!(
+            recording.saw(|r| matches!(r, Recorded::Desktop(desktop::Command::Volume { percent: 40, name, style: _ }) if name == "Music")),
+            "a popup shows Music 40%: {:?}",
+            recording.seen
+        );
+    }
+
+    #[test]
+    fn the_tray_follows_profile_switches() {
+        let config = "[[profile]]\nname = \"Day\"\n[[profile.channel]]\nname = \"Music\"\n\
+                      [[profile]]\nname = \"Night\"\n[[profile.channel]]\nname = \"Quiet\"\n";
+        let (events, mut recording) = start_service("tray", config);
+        let shows = |profile: &'static str| {
+            move |r: &Recorded| {
+                matches!(r, Recorded::Tray { profile: shown, profiles, mixer: false }
+                    if shown == profile && profiles == &["Day", "Night"])
+            }
+        };
+        // the tray is updated after each event, so the first one shows the starting profile
+        events.send(Event::AudioReady).unwrap();
+        assert!(recording.saw(shows("Day")), "the tray starts on Day: {:?}", recording.seen);
+        events.send(Event::Remote(dbus::Request::NextProfile)).unwrap();
+        assert!(recording.saw(shows("Night")), "and follows the switch to Night: {:?}", recording.seen);
+        assert!(
+            recording.saw(|r| matches!(r, Recorded::Desktop(desktop::Command::Text { text, icon: _, style: _ }) if text == "Profile: Night")),
+            "a popup names the new profile: {:?}",
+            recording.seen
+        );
+    }
 }

@@ -91,6 +91,8 @@ fn parse_line(line: &str) -> Option<Vec<u8>> {
 #[expect(clippy::struct_excessive_bools, reason = "independent command-line switches")]
 pub struct Options {
     pub config_path: PathBuf,
+    /// What the app remembers between runs (`--config`'s counterpart, kept internal).
+    pub state_path: PathBuf,
     pub use_mixer: bool,
     pub use_stdin: bool,
     pub verbose: bool,
@@ -107,6 +109,7 @@ impl Options {
     fn parse(mut args: impl Iterator<Item = String>) -> Option<Self> {
         let mut options = Self {
             config_path: Config::default_path(),
+            state_path: config::State::default_path(),
             use_mixer: true,
             use_stdin: false,
             verbose: false,
