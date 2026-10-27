@@ -25,6 +25,8 @@ const LED_EVERY: Duration = Duration::from_millis(40);
 const LED_EASE: f64 = 0.07;
 /// The mixer blanks its LEDs soon after a frame, so the current one is sent again this often.
 const LED_REFRESH: Duration = Duration::from_millis(250);
+/// Windows timers can fire a tick early; without this the refresh missed its wake-up and went out every 500 ms.
+const TIMER_SLACK: Duration = Duration::from_millis(20);
 /// A button's "Turning on ..." popup is followed by the result if it arrives within this time.
 const RESULT_WITHIN: Duration = Duration::from_secs(10);
 /// Without a mixer by then, the knobs start where they were last time.
@@ -836,7 +838,7 @@ impl Core {
             led_frame(&colors(&looks, leds.brightness, leds.dim_idle, gamma, leds.blend))
         };
         let since = self.last_led_send.map(|t| now.duration_since(t));
-        if self.last_frame == Some(frame) && since.is_some_and(|s| s < LED_REFRESH) {
+        if self.last_frame == Some(frame) && since.is_some_and(|s| s + TIMER_SLACK < LED_REFRESH) {
             self.led_waiting = false;
             return None;
         }
