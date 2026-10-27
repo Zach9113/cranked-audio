@@ -39,8 +39,9 @@ contract explicit and swappable; they don't redesign it.
 3. **Tray.** `TrayIcon` with `start` and `show`; adapters `linux::StatusNotifier` and `windows::NotificationArea`
    keep their own running icon. *(#9)*
 4. **Shortcuts.** `GlobalShortcuts` with `start`/`ensure`; adapters `linux::KGlobalAccel` and `windows::HotKeys`.
-   *(this PR)*
-5. **Remote API.** `RemoteApi` with `publish`; Windows plugs in a no-op adapter instead of `type Published = ((), ())`.
+   *(#10)*
+5. **Remote API.** `RemoteApi` with `start` and `publish(&Snapshot)`; adapters `linux::SessionBus` and
+   `windows::NotOffered` (a no-op instead of `type Published = ((), ())`). *(this PR)*
 6. **Devices.** `InputSource` per device; MIDI and deej are portable and shared, keyboard knobs per platform.
 7. **Layout and tests.** Move the adapters to `platform/linux/` and `platform/windows/` (the last `cfg` lines in
    one module), add a fake `Platform`, and test the service against it. Then decide whether the Windows adapters

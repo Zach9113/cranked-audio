@@ -44,7 +44,7 @@ pub struct Service {
     desktop: Sender<desktop::Command>,
     leds: serial::Writer,
     clients: server::Clients,
-    api: Option<dbus::Published>,
+    remote_api: Box<dyn dbus::RemoteApi>,
     tray: Box<dyn tray::TrayIcon>,
     /// What the tray last showed: profile, profiles, mixer connected.
     tray_shows: (String, Vec<String>, bool),
@@ -99,10 +99,12 @@ impl Service {
         shortcuts.start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
         let mut tray = platform.tray;
         tray.start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
+        let mut remote_api = platform.remote_api;
+        remote_api.start(events.clone());
         let config_path = options.config_path.clone();
         let mut service = Self {
             core,
-            api: dbus::start(events.clone()),
+            remote_api,
             events,
             audio_system: platform.audio,
             audio,
@@ -487,18 +489,13 @@ impl Service {
         Some(calls)
     }
 
-    /// Sends the current state to windows, D-Bus listeners and the tray.
+    /// Sends the current state to the remote API's listeners, windows and the tray.
     fn publish(&mut self) {
-        if !self.clients.is_empty() || self.api.is_some() {
-            let snapshot = self.core.snapshot();
-            if let Some((connection, state)) = &self.api {
-                dbus::publish(connection, state, &serde_json::to_string(&snapshot).unwrap_or_default());
-            }
-            if !self.clients.is_empty() {
-                self.clients.update(&snapshot);
-            }
-        }
         let snapshot = self.core.snapshot();
+        self.remote_api.publish(&snapshot);
+        if !self.clients.is_empty() {
+            self.clients.update(&snapshot);
+        }
         let shows = (snapshot.profile, snapshot.profiles, snapshot.mixer);
         if shows != self.tray_shows {
             self.tray_shows.clone_from(&shows);

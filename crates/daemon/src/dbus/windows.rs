@@ -4,12 +4,11 @@ use std::sync::mpsc::Sender;
 
 use crate::Event;
 
-/// Nothing to hold: there is no API.
-pub type Published = ((), ());
+/// The Windows remote API adapter: there is none yet, so nothing is offered.
+pub struct NotOffered;
 
-pub fn start(_events: Sender<Event>) -> Option<Published> {
-    None
+impl super::RemoteApi for NotOffered {
+    fn start(&mut self, _events: Sender<Event>) {}
+
+    fn publish(&self, _snapshot: &cranked_ipc::Snapshot) {}
 }
-
-#[expect(clippy::trivially_copy_pass_by_ref, reason = "the same signature as the Linux version")]
-pub fn publish(_connection: &(), _state: &(), _json: &str) {}

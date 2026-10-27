@@ -10,13 +10,24 @@
 //! Windows has no session bus; there the API isn't offered (yet).
 
 #[cfg(not(windows))]
-mod linux;
-#[cfg(not(windows))]
-pub use linux::{publish, start, Published};
+pub mod linux;
 #[cfg(windows)]
-mod windows;
-#[cfg(windows)]
-pub use windows::{publish, start, Published};
+pub mod windows;
+
+use std::sync::mpsc::Sender;
+
+use cranked_ipc::Snapshot;
+
+use crate::Event;
+
+/// The port for scripts, the Plasma widget and automations to reach the running app. Each platform has one adapter
+/// (`linux::SessionBus`, `windows::NotOffered`), chosen in `platform::native()`.
+pub trait RemoteApi {
+    /// Offers the API; callers' requests arrive as `Event::Remote`. If it can't be offered it says so once.
+    fn start(&mut self, events: Sender<Event>);
+    /// Tells listeners the app's state changed.
+    fn publish(&self, snapshot: &Snapshot);
+}
 
 /// What a D-Bus caller asked for; the main loop carries it out with the same rules as everything else.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -2,6 +2,7 @@
 //! `native()` plugs in this platform's adapters. The plan and the remaining ports: docs/platform-ports.md.
 
 use crate::audio::AudioSystem;
+use crate::dbus::RemoteApi;
 use crate::desktop::Desktop;
 use crate::shortcuts::GlobalShortcuts;
 use crate::tray::TrayIcon;
@@ -12,6 +13,7 @@ pub struct Platform {
     pub desktop: Box<dyn Desktop>,
     pub tray: Box<dyn TrayIcon>,
     pub shortcuts: Box<dyn GlobalShortcuts>,
+    pub remote_api: Box<dyn RemoteApi>,
 }
 
 /// The adapters for the operating system this daemon was built for.
@@ -22,6 +24,7 @@ pub fn native() -> Platform {
         desktop: Box::new(crate::desktop::linux::Plasma),
         tray: Box::new(crate::tray::linux::StatusNotifier::default()),
         shortcuts: Box::new(crate::shortcuts::linux::KGlobalAccel::default()),
+        remote_api: Box::new(crate::dbus::linux::SessionBus::default()),
     };
     #[cfg(windows)]
     let platform = Platform {
@@ -29,6 +32,7 @@ pub fn native() -> Platform {
         desktop: Box::new(crate::desktop::windows::Win32),
         tray: Box::new(crate::tray::windows::NotificationArea::default()),
         shortcuts: Box::new(crate::shortcuts::windows::HotKeys::default()),
+        remote_api: Box::new(crate::dbus::windows::NotOffered),
     };
     platform
 }

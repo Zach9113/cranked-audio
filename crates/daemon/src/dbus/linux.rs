@@ -88,11 +88,29 @@ impl Api {
     async fn state_changed(emitter: &zbus::object_server::SignalEmitter<'_>, state: &str) -> zbus::Result<()>;
 }
 
+/// The Linux remote API adapter: the interface above on the session bus.
+#[derive(Default)]
+pub struct SessionBus {
+    running: Option<Published>,
+}
+
+impl super::RemoteApi for SessionBus {
+    fn start(&mut self, events: Sender<Event>) {
+        self.running = start(events);
+    }
+
+    fn publish(&self, snapshot: &cranked_ipc::Snapshot) {
+        if let Some((connection, state)) = &self.running {
+            publish(connection, state, &serde_json::to_string(snapshot).unwrap_or_default());
+        }
+    }
+}
+
 /// The connection (for signals) and the shared state.
-pub type Published = (zbus::blocking::Connection, Arc<Mutex<String>>);
+type Published = (zbus::blocking::Connection, Arc<Mutex<String>>);
 
 /// Publishes the API; returns the connection (for signals) and the shared state, or None if the bus refuses.
-pub fn start(events: Sender<Event>) -> Option<Published> {
+fn start(events: Sender<Event>) -> Option<Published> {
     let state = Arc::new(Mutex::new(String::new()));
     let api = Api { events, state: Arc::clone(&state) };
     // tests run their own copy under another name ($CRANKED_DBUS_NAME) next to a real one
@@ -114,7 +132,7 @@ pub fn start(events: Sender<Event>) -> Option<Published> {
 }
 
 /// Stores the new state and tells listeners.
-pub fn publish(connection: &zbus::blocking::Connection, state: &Mutex<String>, json: &str) {
+fn publish(connection: &zbus::blocking::Connection, state: &Mutex<String>, json: &str) {
     if let Ok(mut current) = state.lock() {
         if *current == json {
             return;
