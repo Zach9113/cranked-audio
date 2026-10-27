@@ -11,6 +11,27 @@
 - The Windows-only modules are lint-clean too (every COM/Win32 call in its own `unsafe` block with a SAFETY note),
   and CI lints them on a Windows runner.
 
+## 2.2.0
+
+### Linux
+- Knobs past the mixer's five (a keyboard knob, MIDI, on-screen) start at the volume that's already playing, also
+  while the mixer is connected.
+- Switch output: virtual outputs are skipped unless you include them, and each output can be switched on or off
+  for the cycle (Settings, and a button's page when it switches outputs).
+- OLED theme (pure black) for the window and the panel widget.
+- A knob with a volume range shows the app's real volume and marks its limits on the dial ("min 10%", "max 60%").
+- Clicking the tray icon or Open Cranked Audio brings an open window to the front.
+
+### Windows (experimental preview)
+Tested on the real mixer this time.
+- The mixer reports every knob at start, and its lights stay steady (no more flashing).
+- Knobs no longer fight their own volume changes; play/pause controls the media player that's playing; holding a
+  button to mute unmutes again on the next hold.
+- New on Windows: keyboard knob, on-screen popups, screen sleep and lock turning the lights off, shortcuts (set in
+  Settings), and installing updates from the app (Settings > About; checked against the release's checksum).
+- Output switching skips virtual outputs such as Steam Streaming Speakers.
+- Still unsigned: Smart App Control blocks it where it's on.
+
 ## 2.1.1
 
 - Fixed: a second copy of the service (another start, or a test run) took over the D-Bus name and left the panel

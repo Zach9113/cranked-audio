@@ -50,8 +50,9 @@ pub enum Event {
     HomeAssistantEntities(Vec<cranked_ipc::Entity>),
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
-    /// A window connected / sent a line.
-    ClientConnected(cranked_ipc::UnixStream),
+    /// A window connected, disconnected or sent a line.
+    ClientConnected(u64, cranked_ipc::UnixStream),
+    ClientDisconnected(u64),
     ClientLine(String),
     Tray(tray::Action),
     /// A request over the D-Bus API.
@@ -93,6 +94,8 @@ fn parse_line(line: &str) -> Option<Vec<u8>> {
 fn main() {
     let mut config_path = Config::default_path();
     let (mut use_mixer, mut use_stdin, mut verbose, mut print_config, mut dry_run) = (true, false, false, false, false);
+    // set by the old service when it restarts into an update
+    let (mut wait_pid, mut open_window): (Option<u32>, bool) = (None, false);
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -105,6 +108,11 @@ fn main() {
             "-v" | "--verbose" => verbose = true,
             "--print-config" => print_config = true,
             "--dry-run" => dry_run = true,
+            "--wait-pid" => match args.next().and_then(|pid| pid.parse().ok()) {
+                Some(pid) => wait_pid = Some(pid),
+                None => return eprintln!("{USAGE}"),
+            },
+            "--open-window" => open_window = true,
             _ => return eprintln!("{USAGE}"),
         }
     }
@@ -116,9 +124,21 @@ fn main() {
         return print!("{}", toml::to_string(&config).unwrap_or_default());
     }
 
+    #[cfg(windows)]
+    {
+        if let Some(pid) = wait_pid {
+            updater::wait_for_exit(pid, Duration::from_secs(15));
+        }
+        updater::remove_leftovers();
+    }
+    #[cfg(not(windows))]
+    let _ = wait_pid;
     let Some(listener) = server::listen() else {
         return eprintln!("Cranked Audio is already running");
     };
+    if open_window {
+        spawn_detached(&sibling("cranked-audio"), &[]);
+    }
     let state_path = State::default_path();
     let state = State::load(&state_path);
 
@@ -194,7 +214,8 @@ fn main() {
     let device_generation = Arc::new(AtomicU64::new(0));
     devices::start(&core.config().devices, &events, &device_generation);
     let most_knobs = |config: &Config| config.profiles.iter().map(|p| p.channels.len()).max().unwrap_or(0);
-    let mut shortcuts = shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()));
+    let mut shortcuts =
+        shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
     let tray =
         tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
     let mut tray_shows = (String::new(), Vec::<String>::new(), false);
@@ -212,8 +233,12 @@ fn main() {
         let mut cycle_profile = false;
         let mut restart_home_assistant = false;
         let event = match event {
-            Some(Event::ClientConnected(stream)) => {
-                clients.add(stream, &core.snapshot());
+            Some(Event::ClientConnected(id, stream)) => {
+                clients.add(id, stream, &core.snapshot());
+                None
+            }
+            Some(Event::ClientDisconnected(id)) => {
+                clients.remove(id);
                 None
             }
             Some(Event::ClientLine(line)) => {
@@ -255,6 +280,7 @@ fn main() {
                             typing,
                             midi: devices::midi_controllers(),
                             serial: devices::serial_ports(),
+                            outputs: audio::list_outputs(),
                         }));
                     }
                     "learn-midi" => {
@@ -307,6 +333,9 @@ fn main() {
             Some(Event::Tray(action)) => {
                 match action {
                     tray::Action::OpenWindow => {
+                        if !clients.is_empty() {
+                            clients.send(&ServerMessage::OpenPage(String::new()));
+                        }
                         if clients.is_empty() {
                             spawn_detached(&sibling("cranked-audio"), &[]);
                         }
@@ -323,6 +352,7 @@ fn main() {
                         eprintln!("quit from the tray");
                         clients.send(&ServerMessage::Quit);
                         leds.send(&led_frame(&[[(0, 0, 0); cranked_protocol::LEDS_PER_KNOB]; cranked_protocol::KNOBS]));
+                        leds.flush();
                         let _ = std::fs::remove_file(cranked_ipc::socket_path());
                         std::process::exit(0);
                     }
@@ -347,6 +377,9 @@ fn main() {
                     None
                 }
                 dbus::Request::OpenWindow => {
+                    if !clients.is_empty() {
+                        clients.send(&ServerMessage::OpenPage(String::new()));
+                    }
                     if clients.is_empty() {
                         spawn_detached(&sibling("cranked-audio"), &[]);
                     }
@@ -435,6 +468,33 @@ fn main() {
                             latest_version: None,
                             can_install: false,
                         });
+                        // Linux: install.sh restarts the service. Windows: start the new one, which waits for this
+                        // one to exit (socket, mixer port), and reopen the window if one was open.
+                        #[cfg(windows)]
+                        {
+                            // the same options this one was started with (--config, -v, ...), minus the restart ones
+                            let mut kept: Vec<std::ffi::OsString> = Vec::new();
+                            let mut old = std::env::args_os().skip(1);
+                            while let Some(arg) = old.next() {
+                                match arg.to_str() {
+                                    Some("--wait-pid") => {
+                                        old.next();
+                                    }
+                                    Some("--open-window") => {}
+                                    _ => kept.push(arg),
+                                }
+                            }
+                            let pid = std::process::id().to_string();
+                            let mut args: Vec<&std::ffi::OsStr> = kept.iter().map(|a| a.as_os_str()).collect();
+                            args.extend([std::ffi::OsStr::new("--wait-pid"), std::ffi::OsStr::new(&pid)]);
+                            if !clients.is_empty() {
+                                args.push("--open-window".as_ref());
+                            }
+                            spawn_detached(&sibling("cranked-audiod"), &args);
+                            clients.send(&ServerMessage::Quit);
+                            let _ = std::fs::remove_file(cranked_ipc::socket_path());
+                            std::process::exit(0);
+                        }
                     }
                     Err(e) => {
                         clients.send(&ServerMessage::UpdateStatus {
@@ -473,7 +533,7 @@ fn main() {
                 || config.home_assistant_entities() != core.config().home_assistant_entities();
             restart_home_assistant |= home_assistant_changed;
             if let Some(shortcuts) = &mut shortcuts {
-                shortcuts.ensure(most_knobs(&config));
+                shortcuts.ensure(most_knobs(&config), &config.shortcuts);
             }
             if config.devices != core.config().devices {
                 devices::start(&config.devices, &events, &device_generation);

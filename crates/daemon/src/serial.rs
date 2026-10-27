@@ -55,10 +55,20 @@ pub fn find_port() -> Option<PathBuf> {
     None
 }
 
+/// How long a read waits for the mixer. On Windows the reader thread also sends the LED frames between reads, so
+/// this is how late a frame can be.
+#[cfg(windows)]
+const READ_TIMEOUT: Duration = Duration::from_millis(10);
+#[cfg(not(windows))]
+const READ_TIMEOUT: Duration = Duration::from_millis(500);
+
 fn open(path: &Path) -> serialport::Result<Port> {
     #[cfg_attr(windows, expect(unused_mut, reason = "only Linux changes the port after opening"))]
-    let mut port =
-        serialport::new(path.to_string_lossy(), 115_200).timeout(Duration::from_millis(500)).open_native()?;
+    let mut port = serialport::new(path.to_string_lossy(), 115_200)
+        .timeout(READ_TIMEOUT)
+        // raising DTR resets the board, which then reports every knob (Linux raises it on open by itself)
+        .dtr_on_open(true)
+        .open_native()?;
     // Windows opens COM ports exclusively anyway
     #[cfg(not(windows))]
     port.set_exclusive(true)?;
@@ -66,9 +76,11 @@ fn open(path: &Path) -> serialport::Result<Port> {
 }
 
 /// Shared handle for sending LED frames while the reader thread owns the port.
+#[cfg(not(windows))]
 #[derive(Clone, Default)]
 pub struct Writer(Arc<Mutex<Option<Port>>>);
 
+#[cfg(not(windows))]
 impl Writer {
     pub fn send(&self, bytes: &[u8]) {
         if let Ok(mut port) = self.0.lock() {
@@ -80,10 +92,43 @@ impl Writer {
         }
     }
 
+    /// Frames are written straight away here.
+    pub fn flush(&self) {}
+
     fn set(&self, port: Option<Port>) {
         if let Ok(mut slot) = self.0.lock() {
             *slot = port;
         }
+    }
+}
+
+/// The newest LED frame, for the reader thread to send between reads. Windows serial handles are synchronous and a
+/// cloned handle shares the reader's, so a write from another thread waits behind the pending read (frames came
+/// hundreds of ms late and the board blanked its LEDs).
+#[cfg(windows)]
+#[derive(Clone, Default)]
+pub struct Writer(Arc<Mutex<Option<Vec<u8>>>>);
+
+#[cfg(windows)]
+impl Writer {
+    pub fn send(&self, bytes: &[u8]) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some(bytes.to_vec());
+        }
+    }
+
+    /// Gives the reader thread a moment to send the last frame (before quitting).
+    pub fn flush(&self) {
+        for _ in 0..10 {
+            if self.0.lock().map_or(true, |slot| slot.is_none()) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn take(&self) -> Option<Vec<u8>> {
+        self.0.lock().ok()?.take()
     }
 }
 
@@ -117,7 +162,10 @@ pub fn run(events: &Sender<Event>, writer: &Writer) {
             }
         };
         eprintln!("mixer: connected ({})", path.display());
+        #[cfg(not(windows))]
         writer.set(port.try_clone_native().map_err(|e| eprintln!("mixer: no LED handle ({e})")).ok());
+        #[cfg(windows)]
+        writer.take(); // a frame from before the connect is stale
         if events.send(Event::MixerConnected).is_err() {
             return;
         }
@@ -140,7 +188,14 @@ pub fn run(events: &Sender<Event>, writer: &Writer) {
                     break;
                 }
             }
+            #[cfg(windows)]
+            if let Some(frame) = writer.take() {
+                if let Err(e) = port.write_all(&frame) {
+                    eprintln!("mixer: LED write failed ({e})");
+                }
+            }
         }
+        #[cfg(not(windows))]
         writer.set(None);
         let _ = events.send(Event::MixerLost);
         std::thread::sleep(Duration::from_millis(500));

@@ -7,7 +7,7 @@ pub use linux::{run, watch_screen};
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{run, watch_screen};
+pub use windows::{attach_input_desktop, run, watch_screen, CRANKED_EXTRA_INFO};
 
 use cranked_ipc::settings::PopupStyle;
 

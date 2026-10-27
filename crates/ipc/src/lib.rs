@@ -58,6 +58,13 @@ pub enum ServerMessage {
     OpenPage(String),
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AudioOutput {
+    pub name: String,
+    pub description: String,
+    pub real: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceChoices {
     /// inputs with volume keys (keyboard knobs), by name.
@@ -69,6 +76,9 @@ pub struct DeviceChoices {
     pub midi: Vec<String>,
     /// serial ports (for deej boxes).
     pub serial: Vec<String>,
+    /// active audio output devices (for picking which ones Switch output cycles through)
+    #[serde(default)]
+    pub outputs: Vec<AudioOutput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,11 +116,20 @@ pub struct Snapshot {
     pub version: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+fn hundred() -> u8 {
+    100
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Knob {
     pub name: String,
     /// What the knob shows, 0..100 (a light knob shows the light's brightness). None until known.
     pub level: Option<u8>,
+    /// Volume range limits (`0` and `100` when unrestricted).
+    #[serde(default)]
+    pub min: u8,
+    #[serde(default = "hundred")]
+    pub max: u8,
     /// Colours as `#RRGGBB`.
     pub color: String,
     pub background: String,
@@ -124,4 +143,24 @@ pub struct Knob {
     pub hold: String,
     /// The button is being held down.
     pub held: bool,
+}
+
+impl Default for Knob {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            level: None,
+            min: 0,
+            max: 100,
+            color: String::new(),
+            background: String::new(),
+            muted_color: String::new(),
+            muted: false,
+            lowered: false,
+            source: String::new(),
+            press: String::new(),
+            hold: String::new(),
+            held: false,
+        }
+    }
 }

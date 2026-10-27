@@ -199,17 +199,47 @@ fn mix(color: Color, under: Color, amount: f32) -> Color {
     )
 }
 
+fn tick(percent: u8) -> String {
+    let degrees = ARC_START + ARC_SWEEP * f64::from(percent.min(100)) / 100.0;
+    let radians = degrees * PI / 180.0;
+    let (cos, sin) = (radians.cos(), radians.sin());
+    let (x0, y0) = (50.0 + 38.0 * cos, 50.0 + 38.0 * sin);
+    let (x1, y1) = (50.0 + 50.0 * cos, 50.0 + 50.0 * sin);
+    format!("M {x0:.2} {y0:.2} L {x1:.2} {y1:.2}")
+}
+
 fn row(index: usize, knob: &Knob) -> KnobData {
     let level = knob.level.map_or(-1, i32::from);
-    let split = ARC_START + ARC_SWEEP * f64::from(level.max(0)) / 100.0;
+    let (min, max) = (knob.min.min(knob.max), knob.max.max(knob.min));
+    let volume = knob.level.map_or(-1, |lvl| {
+        let span = i32::from(max - min);
+        i32::from(min) + (span * i32::from(lvl.min(100)) + 50) / 100
+    });
+    let split = ARC_START + ARC_SWEEP * f64::from(volume.max(0)) / 100.0;
+    let mut marks = Vec::new();
+    if min > 0 {
+        marks.push(tick(min));
+    }
+    if max < 100 {
+        marks.push(tick(max));
+    }
+    let range_marks = marks.join(" ");
+    let cap_label = match knob.level {
+        Some(0) if min > 0 => format!("min {min}%"),
+        Some(lvl) if lvl >= 100 && max < 100 => format!("max {max}%"),
+        _ => String::new(),
+    };
     // the press action's icon, or the hold action's when pressing does nothing
     let (icon_fill, icon_lines) = icon(if knob.press == "Nothing" { &knob.hold } else { &knob.press });
     KnobData {
         index: saturate_i32(index),
         name: knob.name.as_str().into(),
         level,
+        volume,
         fill_arc: arc(ARC_START, split).into(),
         rest_arc: arc(split, ARC_START + ARC_SWEEP).into(),
+        range_marks: range_marks.into(),
+        cap_label: cap_label.into(),
         fill_color: if knob.muted {
             mix(color(&knob.muted_color), Color::from_rgb_u8(255, 255, 255), 0.6)
         } else if knob.lowered {
@@ -433,6 +463,7 @@ fn load_knob(window: &MainWindow, link: &Link, index: usize) -> bool {
         editor::action_entity(&channel.hold),
     );
     populate_knob_device_choices(window, config, index);
+    populate_output_choices(window, config);
     true
 }
 
@@ -506,7 +537,91 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
     general.set_profile_index(saturate_i32(profile_index));
     general.set_profile_name(profile.name.as_str().into());
     window.global::<Lists>().set_profiles(strings(config.profiles.iter().map(|p| p.name.as_str())));
+    populate_output_choices(window, config);
+    populate_shortcuts(window, config, profile_channels);
     true
+}
+
+fn shortcut_items(knobs: usize) -> Vec<(String, String)> {
+    let mut list = vec![
+        ("open-window".to_string(), "Open Cranked Audio".to_string()),
+        ("next-profile".to_string(), "Next profile".to_string()),
+    ];
+    for k in 1..=knobs {
+        list.push((format!("knob-{k}-up"), format!("Knob {k}: turn up")));
+        list.push((format!("knob-{k}-down"), format!("Knob {k}: turn down")));
+        list.push((format!("knob-{k}-button"), format!("Knob {k}: button (tap = press, hold = hold)")));
+    }
+    list
+}
+
+fn populate_shortcuts(window: &MainWindow, config: &Config, knobs: usize) {
+    let items = shortcut_items(knobs);
+    let labels: Vec<&str> = items.iter().map(|(_, label)| label.as_str()).collect();
+    let keys: Vec<String> = items.iter().map(|(id, _)| config.shortcuts.get(id).cloned().unwrap_or_default()).collect();
+    let general = window.global::<General>();
+    general.set_shortcut_labels(strings(labels));
+    general.set_shortcut_keys(strings(keys.iter().map(String::as_str)));
+}
+
+fn store_shortcuts(window: &MainWindow, config: &mut Config, knobs: usize) {
+    let items = shortcut_items(knobs);
+    let keys: Vec<SharedString> = window.global::<General>().get_shortcut_keys().iter().collect();
+    if items.len() != keys.len() {
+        return;
+    }
+    for ((id, _), val) in items.into_iter().zip(keys) {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            config.shortcuts.remove(&id);
+        } else {
+            config.shortcuts.insert(id, trimmed.to_string());
+        }
+    }
+}
+
+fn populate_output_choices(window: &MainWindow, config: &Config) {
+    let (labels, enabled): (Vec<String>, Vec<bool>) = CHOICES.with(|c| {
+        let choices = c.borrow();
+        choices
+            .outputs
+            .iter()
+            .map(|o| {
+                let label = if o.real { o.description.clone() } else { format!("{} (virtual)", o.description) };
+                let on = cranked_ipc::settings::output_enabled(
+                    &o.description,
+                    &o.name,
+                    o.real,
+                    &config.enabled_outputs,
+                    &config.disabled_outputs,
+                );
+                (label, on)
+            })
+            .unzip()
+    });
+    window.global::<Lists>().set_output_names(strings(labels.iter().map(String::as_str)));
+    window.global::<General>().set_output_enabled(ModelRc::new(VecModel::from(enabled)));
+}
+
+fn store_output_choices(window: &MainWindow, config: &mut Config) {
+    let flags: Vec<bool> = window.global::<General>().get_output_enabled().iter().collect();
+    CHOICES.with(|c| {
+        let outputs = &c.borrow().outputs;
+        if outputs.len() != flags.len() || outputs.is_empty() {
+            return;
+        }
+        for (output, &checked) in outputs.iter().zip(&flags) {
+            let matches =
+                |s: &String| s.eq_ignore_ascii_case(&output.description) || s.eq_ignore_ascii_case(&output.name);
+            config.enabled_outputs.retain(|s| !matches(s));
+            config.disabled_outputs.retain(|s| !matches(s));
+            if output.real && !checked {
+                config.disabled_outputs.push(output.description.clone());
+            } else if !output.real && checked {
+                config.enabled_outputs.push(output.description.clone());
+            }
+        }
+    });
 }
 
 fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize) {
@@ -532,6 +647,9 @@ fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize)
     config.leds.dim_idle = general.get_dim_idle();
     let url = general.get_home_assistant_url().trim().to_string();
     config.home_assistant.url = (!url.is_empty()).then_some(url);
+    store_output_choices(window, config);
+    let profile_channels = config.profiles.get(profile_index).map_or(5, |p| p.channels.len());
+    store_shortcuts(window, config, profile_channels);
     if let Some(profile) = config.profiles.get_mut(profile_index) {
         let knobs = |model: ModelRc<bool>| model.iter().enumerate().filter(|(_, on)| *on).map(|(i, _)| i + 1).collect();
         let auto = &mut profile.auto_lower;
@@ -584,7 +702,13 @@ fn get_device_hint(choice: &KnobDeviceChoice, knob_num: usize) -> String {
         KnobDeviceChoice::Deej { port } => format!("Connected to deej slider box on {port}."),
         KnobDeviceChoice::None => {
             if knob_num <= 5 {
-                format!("No extra controller. The mixer's knob {knob_num} still turns it, as do the window, widget and Atoll.")
+                if cfg!(windows) {
+                    format!("No extra controller. The mixer's knob {knob_num} still turns it, as does the window.")
+                } else {
+                    format!("No extra controller. The mixer's knob {knob_num} still turns it, as do the window, widget and Atoll.")
+                }
+            } else if cfg!(windows) {
+                "This knob turns on-screen. To connect a keyboard knob or controller, pick one above.".to_string()
             } else {
                 "This knob turns on-screen and in Atoll. To connect a keyboard knob or controller, pick one above."
                     .to_string()
@@ -1116,11 +1240,14 @@ fn run_link(link: &Arc<Mutex<Link>>, window: &slint::Weak<MainWindow>) {
                     let link = Arc::clone(link);
                     let _ = window.upgrade_in_event_loop(move |w| {
                         show_device_choices(&w, &choices);
-                        if w.get_page() == 1 {
-                            if let Ok(link) = link.lock() {
+                        if let Ok(link) = link.lock() {
+                            if let Some(config) = &link.config {
                                 let index = slint_index(w.global::<KnobSettings>().get_index());
-                                if let (Some(config), Some(index)) = (&link.config, index) {
+                                if let (1, Some(index)) = (w.get_page(), index) {
                                     populate_knob_device_choices(&w, config, index);
+                                }
+                                if matches!(w.get_page(), 1..=3) {
+                                    populate_output_choices(&w, config);
                                 }
                             }
                         }
@@ -1131,6 +1258,8 @@ fn run_link(link: &Arc<Mutex<Link>>, window: &slint::Weak<MainWindow>) {
                 }
                 ServerMessage::OpenPage(page) => {
                     let _ = window.upgrade_in_event_loop(move |w| {
+                        w.window().set_minimized(false);
+                        let _ = w.show();
                         if page == "settings" {
                             w.invoke_open_general();
                         }
@@ -1255,6 +1384,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     {
         general.on_toggle_lower(flip(|g| g.get_lower(), window.as_weak()));
         general.on_toggle_trigger(flip(|g| g.get_triggers(), window.as_weak()));
+        general.on_toggle_output(flip(|g| g.get_output_enabled(), window.as_weak()));
     }
     general.on_edit_file(open_settings);
     general.set_theme_names(strings(themes::NAMES.iter().map(|(_, label)| *label)));
@@ -1288,15 +1418,37 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             }
         });
     }
-    // System Settings' shortcuts page, where the service's shortcuts are listed under Cranked Audio
-    general.on_open_shortcuts(|| {
-        let _ = Command::new("kcmshell6")
-            .arg("kcm_keys")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-    });
+    // System Settings' shortcuts page on KDE Plasma, or the inline shortcut editor on Windows / other desktops
+    {
+        let weak = window.as_weak();
+        general.on_open_shortcuts(move || {
+            let launched_kde = !cfg!(windows)
+                && Command::new("kcmshell6")
+                    .arg("kcm_keys")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .is_ok();
+            if !launched_kde {
+                if let Some(w) = weak.upgrade() {
+                    let g = w.global::<General>();
+                    g.set_shortcuts_open(!g.get_shortcuts_open());
+                }
+            }
+        });
+    }
+    {
+        let weak = window.as_weak();
+        general.on_set_shortcut(move |index, val| {
+            let Some(w) = weak.upgrade() else { return };
+            let model = w.global::<General>().get_shortcut_keys();
+            let i = index as usize;
+            if i < model.row_count() {
+                model.set_row_data(i, val);
+            }
+        });
+    }
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_open_devices(move || {
@@ -1555,7 +1707,8 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         window.on_open_general(move || {
-            let (Ok(link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
+            link.send("list-devices");
             if load_general(&w, &link) {
                 w.set_page(3);
             }
@@ -1573,6 +1726,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                     if let Some(channel) = index.and_then(|i| config.profiles[profile].channels.get_mut(i)) {
                         store_knob(&w, channel);
                     }
+                    store_output_choices(&w, &mut config);
                     let device_index = slint_index(w.global::<KnobSettings>().get_device_index());
                     let device_choice =
                         device_index.and_then(|i| KNOB_DEVICE_CHOICES.with(|c| c.borrow().get(i).cloned()));

@@ -58,6 +58,7 @@ export global Lists {
     in property <[string]> toggles;
     in property <[string]> profiles;
     in property <[string]> amounts;
+    in property <[string]> output-names;
     in property <[color]> swatches;
     in property <[string]> swatch-hex;
     in property <bool> home-assistant;
@@ -123,6 +124,10 @@ export global General {
     callback add-knob();
     callback open-devices();
     callback open-shortcuts();
+    in-out property <bool> shortcuts-open: false;
+    in-out property <[string]> shortcut-labels;
+    in-out property <[string]> shortcut-keys;
+    callback set-shortcut(int, string);
     in property <[string]> theme-names;
     callback theme-changed(int);
     in-out property <float> brightness;
@@ -137,6 +142,7 @@ export global General {
     in-out property <bool> auto-enabled;
     in-out property <[bool]> lower;
     in-out property <[bool]> triggers;
+    in-out property <[bool]> output-enabled;
     in-out property <bool> voice-chat;
     in-out property <int> amount-index;
     in-out property <bool> auto-dim;
@@ -154,6 +160,7 @@ export global General {
     in-out property <bool> updating: false;
     callback toggle-lower(int);
     callback toggle-trigger(int);
+    callback toggle-output(int);
     callback switch-profile(int);
     callback new-profile();
     callback rename-profile(string);
@@ -489,6 +496,20 @@ export component ButtonPage inherits VerticalLayout {
             }
         }
     }
+    if (KnobSettings.press-kind == 5 || KnobSettings.hold-kind == 5) && Lists.output-names.length > 0: GroupBox {
+        title: "Audio outputs to cycle through";
+        VerticalLayout {
+            spacing: 8px;
+            for name[i] in Lists.output-names: CheckBox {
+                text: name;
+                checked: General.output-enabled[i];
+                toggled => { General.toggle-output(i); }
+            }
+            Hint {
+                text: "Switch audio output cycles through the checked devices (virtual outputs are unchecked by default).";
+            }
+        }
+    }
 }
 
 export component GeneralPage inherits ScrollView {
@@ -596,10 +617,39 @@ export component GeneralPage inherits ScrollView {
                     alignment: start;
                     Button { text: "Devices… (keyboard knob, MIDI, deej)"; clicked => { General.open-devices(); } }
                 }
-                Hint { text: "Every knob can also be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window. No keys are set at first: pick your own in System Settings (on KDE Plasma)."; }
+                Hint { text: "Every knob can also be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window."; }
                 HorizontalLayout {
                     alignment: start;
-                    Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
+                    Button { text: General.shortcuts-open ? "▴ Hide shortcuts" : "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
+                }
+                if General.shortcuts-open: VerticalLayout {
+                    spacing: 6px;
+                    Hint { text: "Type a key combination such as Ctrl+Alt+Up, Ctrl+Shift+M, Alt+F1 or F13 (leave blank for none), then click Save."; }
+                    for label[i] in General.shortcut-labels: HorizontalLayout {
+                        spacing: 8px;
+                        Label { text: label; width: 280px; }
+                        LineEdit {
+                            horizontal-stretch: 1;
+                            placeholder-text: "None (e.g. Ctrl+Alt+Up)";
+                            text: General.shortcut-keys[i];
+                            edited(val) => { General.set-shortcut(i, val); }
+                        }
+                    }
+                }
+            }
+        }
+
+        if Lists.output-names.length > 0: GroupBox {
+            title: "Audio outputs";
+            VerticalLayout {
+                spacing: 8px;
+                for name[i] in Lists.output-names: CheckBox {
+                    text: name;
+                    checked: General.output-enabled[i];
+                    toggled => { General.toggle-output(i); }
+                }
+                Hint {
+                    text: "A button set to \"Switch audio output\" cycles through the checked devices (virtual outputs are unchecked by default).";
                 }
             }
         }
