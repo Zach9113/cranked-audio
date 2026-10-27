@@ -22,9 +22,9 @@ use windows::Win32::UI::Input::{
     RID_DEVICE_INFO, RIM_TYPEHID, RIM_TYPEKEYBOARD,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, DispatchMessageW, GetMessageW, KillTimer, PostThreadMessageW, SetTimer, SetWindowsHookExW,
-    TranslateMessage, UnhookWindowsHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
-    WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER,
+    CallNextHookEx, DispatchMessageW, GetMessageW, KillTimer, SetTimer, SetWindowsHookExW, TranslateMessage,
+    UnhookWindowsHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
+    WM_SYSKEYUP, WM_TIMER,
 };
 
 use super::{is_board, send, Input, RETRY};
@@ -346,7 +346,6 @@ pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<E
         unsafe {
             let _ = KillTimer(None, timer);
             let _ = UnhookWindowsHookEx(hook);
-            let _ = PostThreadMessageW(0, WM_QUIT, WPARAM(0), LPARAM(0));
         }
         if let Ok(mut guard) = HOOK_CTX.lock() {
             *guard = None;

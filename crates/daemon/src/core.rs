@@ -582,11 +582,11 @@ impl Core {
         }
     }
 
-    /// Without a mixer, a knob nobody has turned yet (and with no saved position) shows the volume its sound is
-    /// already at, instead of nothing; nothing is changed until it's turned.
+    /// Without a mixer (or for knobs past the mixer's five), a knob nobody has turned yet (and with no saved
+    /// position) shows the volume its sound is already at, instead of nothing; nothing is changed until it's turned.
     fn adopt(&mut self, channel: usize, percent: u8) {
         let untouched = channel < self.count() && self.knobs[channel].is_none() && self.saved[channel].is_none();
-        if untouched && !self.mixer_connected && self.channels()[channel].light.is_none() {
+        if untouched && (!self.mixer_connected || channel >= KNOBS) && self.channels()[channel].light.is_none() {
             self.knobs[channel] = Some(percent);
             self.filter.seed(channel, cranked_protocol::percent_to_raw(percent));
         }
@@ -1712,5 +1712,18 @@ mod tests {
         let later = start + Duration::from_secs(10);
         core.handle(packets(&[(4, 90), (4, 90)]), later);
         assert!(set_streams(&core.tick(later)).is_empty());
+    }
+
+    #[test]
+    fn knobs_past_the_mixer_adopt_volume_even_with_mixer_connected() {
+        let start = Instant::now();
+        let mut cfg = sized(6);
+        cfg.profiles[0].channels[5].master = true;
+        cfg.profiles[0].channels[5].apps.clear();
+        let mut core = Core::new(cfg, &State::default());
+        core.handle(Event::MixerConnected, start);
+        core.handle(Event::OutputVolume(84), start);
+        assert_eq!(core.knob(5), Some(84), "6th knob adopts master volume while 5-knob mixer is connected");
+        assert_eq!(core.knob(0), None, "mixer knobs still wait for hardware readings");
     }
 }
