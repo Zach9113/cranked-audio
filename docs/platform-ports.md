@@ -2,9 +2,9 @@
 
 The daemon talks to the operating system in six areas. Today each area is `mod.rs` (shared types) plus `linux.rs` and
 `windows.rs` behind `#[cfg]`, and the two files only *happen* to export the same functions. This plan turns each area
-into a written-down **port** (a trait), with one **adapter** per platform behind `Box<dyn …>` (or `Arc<dyn …>` where
-two threads share it). One function, `platform::native()`, picks this OS's adapters at startup, so that is the only
-place in the daemon that knows which OS it's on.
+into a written-down **port** (a trait), with one **adapter** per platform behind a `Box<dyn …>`; only where the
+shape is naturally a list (input devices) does it become a `Vec<Box<dyn …>>`. One function, `platform::native()`,
+picks this OS's adapters at startup, so that is the only place in the daemon that knows which OS it's on.
 
 Why:
 
@@ -27,12 +27,13 @@ Why:
 | `RemoteApi` | D-Bus, none on Windows | `dbus::start`, `dbus::publish` |
 | `InputSource` | evdev / Raw Input keyboard knobs, MIDI, deej | `devices::start`: becomes a `Vec<Box<dyn InputSource>>`, one per configured device |
 
-The worker threads and channels stay as they are: a port's `run` still owns its thread and speaks the existing
-`Command`/`Event` messages. The traits make that contract explicit and swappable; they don't redesign it.
+The worker threads and channels stay as they are: a port's `start` spawns its own thread, which speaks the existing
+`Command`/`Event` messages, so the service owns each adapter outright (no shared `Arc`). The traits make that
+contract explicit and swappable; they don't redesign it.
 
 ## Steps (one PR each, Linux behaviour unchanged, every check green on both targets)
 
-1. **Audio.** `AudioSystem` trait, `platform::native()`, `Service::start` takes the `Platform`. *(this PR)*
+1. **Audio.** `AudioSystem` trait (`start`, `outputs`), `platform::native()`, `Service::start` takes the `Platform`. *(this PR)*
 2. **Desktop.** Media keys, popups and the screen watch behind `Desktop`.
 3. **Tray.** `TrayIcon` with `start` and `update`.
 4. **Shortcuts.** `GlobalShortcuts` with `start`/`ensure`.

@@ -17,12 +17,17 @@ use crate::Event;
 
 /// The port to the sound system. Each platform has one adapter (`pulse::PipeWire`, `wasapi::Wasapi`), chosen in
 /// `platform::native()`; the rest of the daemon only talks to this trait.
-pub trait AudioSystem: Send + Sync {
-    /// Runs on the audio thread for the life of the service: carries out `commands` and reports streams, volumes,
-    /// levels and output switches as `Event`s.
-    fn run(&self, commands: &Receiver<Command>, events: &Sender<Event>);
+pub trait AudioSystem {
+    /// Starts the audio thread. For the life of the service it carries out `commands` and reports streams,
+    /// volumes, levels and output switches as `Event`s.
+    fn start(&self, commands: Receiver<Command>, events: Sender<Event>);
     /// The output devices, for the Settings page.
     fn outputs(&self) -> Vec<AudioOutput>;
+}
+
+/// The thread an adapter's `start` runs its sound system on.
+fn spawn_audio_thread(work: impl FnOnce() + Send + 'static) {
+    std::thread::Builder::new().name("audio".into()).spawn(work).unwrap();
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

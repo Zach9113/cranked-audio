@@ -38,8 +38,8 @@ struct Requests {
 pub struct Service {
     core: Core,
     events: Sender<Event>,
-    /// This platform's sound system, for listing outputs (its `run` owns the audio thread).
-    audio_system: Arc<dyn audio::AudioSystem>,
+    /// This platform's sound system (it runs its own thread; the service lists outputs through it).
+    audio_system: Box<dyn audio::AudioSystem>,
     audio: Sender<audio::Command>,
     desktop: Sender<desktop::Command>,
     leds: serial::Writer,
@@ -80,11 +80,7 @@ impl Service {
             let events = events.clone();
             spawn("screen", move || desktop::watch_screen(&events));
         }
-        {
-            let events = events.clone();
-            let audio_system = Arc::clone(&platform.audio);
-            spawn("audio", move || audio_system.run(&audio_inbox, &events));
-        }
+        platform.audio.start(audio_inbox, events.clone());
         if options.use_mixer {
             let (events, leds) = (events.clone(), leds.clone());
             spawn("mixer", move || serial::run(&events, &leds));

@@ -65,8 +65,8 @@ fn stream_from(info: &SinkInputInfo) -> Stream {
 pub struct PipeWire;
 
 impl super::AudioSystem for PipeWire {
-    fn run(&self, commands: &Receiver<Command>, events: &Sender<Event>) {
-        run(commands, events);
+    fn start(&self, commands: Receiver<Command>, events: Sender<Event>) {
+        super::spawn_audio_thread(move || run(&commands, &events));
     }
 
     fn outputs(&self) -> Vec<cranked_ipc::AudioOutput> {
