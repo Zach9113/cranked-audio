@@ -37,6 +37,7 @@ ConfigPage {
             model: [
                 { value: "plasma", text: "Match Plasma" },
                 { value: "cranked", text: "Cranked (dark, like the app)" },
+                { value: "oled", text: "OLED (pure black)" },
                 { value: "glass", text: "Glass" },
                 { value: "minimal", text: "Minimal (no cards)" }
             ]

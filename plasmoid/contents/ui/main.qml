@@ -56,6 +56,8 @@ PlasmoidItem {
         switch (cfg.theme) {
         case "cranked":
             return { base: "#1b1b21", card: "#151519", centre: "#2a2a32", track: "#34343e", edge: "#3a3a44", text: "#f0f0f4", subtle: "#a8a8b4", border: "#08080b" };
+        case "oled":
+            return { base: "#000000", card: "#08080a", centre: "#131318", track: "#1f1f27", edge: "#282832", text: "#f5f5f7", subtle: "#a8a8b4", border: "#1e1e26" };
         case "glass":
             return { base: "#202024", card: Qt.rgba(0.08, 0.08, 0.10, 0.70), centre: Qt.rgba(1, 1, 1, 0.08), track: Qt.rgba(1, 1, 1, 0.14),
                      edge: Qt.rgba(1, 1, 1, 0.18), text: "#ffffff", subtle: Qt.rgba(1, 1, 1, 0.65), border: Qt.rgba(0, 0, 0, 0.75) };
