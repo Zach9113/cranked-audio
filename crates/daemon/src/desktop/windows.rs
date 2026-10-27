@@ -327,8 +327,22 @@ fn spawn_osd_window() -> Option<isize> {
     rx.recv().ok().flatten()
 }
 
+/// The Windows desktop adapter: media keys through the system media session, a small GDI popup window, and
+/// session/power notifications for the screen.
+pub struct Win32;
+
+impl super::Desktop for Win32 {
+    fn start(&self, commands: Receiver<Command>) {
+        crate::platform::spawn_thread("desktop", move || run(commands));
+    }
+
+    fn watch_screen(&self, events: Sender<crate::Event>) {
+        crate::platform::spawn_thread("screen", move || watch_screen(&events));
+    }
+}
+
 /// Runs forever on its own thread.
-pub fn run(commands: Receiver<Command>) {
+fn run(commands: Receiver<Command>) {
     attach_input_desktop();
     // SAFETY: once, on this thread, before any other COM call here
     let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
@@ -441,7 +455,7 @@ unsafe extern "system" fn screen_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, l
 
 /// Reports `Event::ScreenOff(true)` while the session is locked or displays are off, `false` when back.
 #[expect(clippy::multiple_unsafe_ops_per_block, reason = "registering, creating and running one hidden window")]
-pub fn watch_screen(events: &Sender<crate::Event>) {
+fn watch_screen(events: &Sender<crate::Event>) {
     attach_input_desktop();
     let events = events.clone();
     let state = Arc::new(Mutex::new(ScreenWatchState { display_off: false, locked: false, last_sent: None, events }));

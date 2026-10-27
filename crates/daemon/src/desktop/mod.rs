@@ -1,15 +1,28 @@
 //! The desktop around the app: media keys for the active player, volume popups, and whether the screen is off.
 
 #[cfg(not(windows))]
-mod linux;
-#[cfg(not(windows))]
-pub use linux::{run, watch_screen};
+pub mod linux;
 #[cfg(windows)]
-mod windows;
+pub mod windows;
+// Win32 plumbing the other Windows adapters share; moves to platform/windows/ in the layout step
 #[cfg(windows)]
-pub use windows::{attach_input_desktop, run, watch_screen, CRANKED_EXTRA_INFO};
+pub use windows::{attach_input_desktop, CRANKED_EXTRA_INFO};
+
+use std::sync::mpsc::{Receiver, Sender};
 
 use cranked_ipc::settings::PopupStyle;
+
+use crate::Event;
+
+/// The port to the desktop around the app. Each platform has one adapter (`linux::Plasma`, `windows::Win32`),
+/// chosen in `platform::native()`.
+pub trait Desktop {
+    /// Starts the desktop thread: it presses media keys for the active player and shows volume and text popups.
+    fn start(&self, commands: Receiver<Command>);
+    /// Starts the screen watcher: it reports `Event::ScreenOff(true)` while the screen is locked or every monitor
+    /// sleeps, and `false` once it's back.
+    fn watch_screen(&self, events: Sender<Event>);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaKey {

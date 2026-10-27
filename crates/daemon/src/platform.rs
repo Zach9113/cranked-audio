@@ -2,17 +2,26 @@
 //! `native()` plugs in this platform's adapters. The plan and the remaining ports: docs/platform-ports.md.
 
 use crate::audio::AudioSystem;
+use crate::desktop::Desktop;
 
 /// This platform's adapters, one per port.
 pub struct Platform {
     pub audio: Box<dyn AudioSystem>,
+    pub desktop: Box<dyn Desktop>,
 }
 
 /// The adapters for the operating system this daemon was built for.
 pub fn native() -> Platform {
     #[cfg(not(windows))]
-    let audio = Box::new(crate::audio::pulse::PipeWire);
+    let platform =
+        Platform { audio: Box::new(crate::audio::pulse::PipeWire), desktop: Box::new(crate::desktop::linux::Plasma) };
     #[cfg(windows)]
-    let audio = Box::new(crate::audio::wasapi::Wasapi);
-    Platform { audio }
+    let platform =
+        Platform { audio: Box::new(crate::audio::wasapi::Wasapi), desktop: Box::new(crate::desktop::windows::Win32) };
+    platform
+}
+
+/// Starts a named worker thread for an adapter (the name shows up in `top -H` and crash reports).
+pub fn spawn_thread(name: &str, work: impl FnOnce() + Send + 'static) {
+    std::thread::Builder::new().name(name.into()).spawn(work).unwrap();
 }

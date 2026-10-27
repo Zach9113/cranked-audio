@@ -38,7 +38,7 @@ pub struct Wasapi;
 
 impl super::AudioSystem for Wasapi {
     fn start(&self, commands: Receiver<Command>, events: Sender<Event>) {
-        super::spawn_audio_thread(move || run(&commands, &events));
+        crate::platform::spawn_thread("audio", move || run(&commands, &events));
     }
 
     fn outputs(&self) -> Vec<cranked_ipc::AudioOutput> {

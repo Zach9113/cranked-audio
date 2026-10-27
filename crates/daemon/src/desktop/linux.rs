@@ -175,8 +175,21 @@ fn run_one(bus: &Connection, command: Command) -> zbus::Result<()> {
     }
 }
 
+/// The Linux desktop adapter: MPRIS media players, and KDE Plasma's on-screen display for popups.
+pub struct Plasma;
+
+impl super::Desktop for Plasma {
+    fn start(&self, commands: Receiver<Command>) {
+        crate::platform::spawn_thread("desktop", move || run(commands));
+    }
+
+    fn watch_screen(&self, events: Sender<crate::Event>) {
+        crate::platform::spawn_thread("screen", move || watch_screen(&events));
+    }
+}
+
 /// Runs forever on its own thread.
-pub fn run(commands: Receiver<Command>) {
+fn run(commands: Receiver<Command>) {
     let mut bus: Option<Connection> = None;
     let mut warned_popup = false;
     for command in commands {
@@ -233,7 +246,7 @@ fn screen_locked(bus: &Connection) -> Option<bool> {
 }
 
 /// Reports `Event::ScreenOff(true)` while the screen is locked or all monitors sleep, `false` when it's back.
-pub fn watch_screen(events: &Sender<crate::Event>) {
+fn watch_screen(events: &Sender<crate::Event>) {
     let bus = Connection::session().ok();
     let mut last = None;
     loop {

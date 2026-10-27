@@ -25,11 +25,6 @@ pub trait AudioSystem {
     fn outputs(&self) -> Vec<AudioOutput>;
 }
 
-/// The thread an adapter's `start` runs its sound system on.
-fn spawn_audio_thread(work: impl FnOnce() + Send + 'static) {
-    std::thread::Builder::new().name("audio".into()).spawn(work).unwrap();
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Set a stream's volume in percent (all of its channels).

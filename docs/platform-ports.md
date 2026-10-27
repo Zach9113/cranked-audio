@@ -33,8 +33,9 @@ contract explicit and swappable; they don't redesign it.
 
 ## Steps (one PR each, Linux behaviour unchanged, every check green on both targets)
 
-1. **Audio.** `AudioSystem` trait (`start`, `outputs`), `platform::native()`, `Service::start` takes the `Platform`. *(this PR)*
-2. **Desktop.** Media keys, popups and the screen watch behind `Desktop`.
+1. **Audio.** `AudioSystem` trait (`start`, `outputs`), `platform::native()`, `Service::start` takes the `Platform`. *(done, #7)*
+2. **Desktop.** Media keys, popups and the screen watch behind `Desktop` (`start`, `watch_screen`), adapters
+   `linux::Plasma` and `windows::Win32`. *(this PR)*
 3. **Tray.** `TrayIcon` with `start` and `update`.
 4. **Shortcuts.** `GlobalShortcuts` with `start`/`ensure`.
 5. **Remote API.** `RemoteApi` with `publish`; Windows plugs in a no-op adapter instead of `type Published = ((), ())`.

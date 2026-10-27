@@ -75,11 +75,8 @@ impl Service {
         let (desktop, desktop_inbox) = mpsc::channel();
         let leds = serial::Writer::default();
 
-        spawn("desktop", move || desktop::run(desktop_inbox));
-        {
-            let events = events.clone();
-            spawn("screen", move || desktop::watch_screen(&events));
-        }
+        platform.desktop.start(desktop_inbox);
+        platform.desktop.watch_screen(events.clone());
         platform.audio.start(audio_inbox, events.clone());
         if options.use_mixer {
             let (events, leds) = (events.clone(), leds.clone());
