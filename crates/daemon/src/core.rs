@@ -75,6 +75,9 @@ pub fn catch_up(light: u8, previous: u8, knob: u8) -> u8 {
 
 struct StartupSync {
     started: Instant,
+    /// When the mixer's first bytes were handled: the time limit counts from here once there are any, so readings
+    /// that queued up while the service was busy starting are never cut off.
+    first_bytes: Option<Instant>,
     last_reading: Instant,
     seen: [bool; KNOBS],
 }
@@ -365,7 +368,8 @@ impl Core {
                     out.push(Out::SaveState(self.state()));
                 }
                 self.last_frame = None;
-                self.sync = Some(StartupSync { started: now, last_reading: now, seen: [false; KNOBS] });
+                self.sync =
+                    Some(StartupSync { started: now, first_bytes: None, last_reading: now, seen: [false; KNOBS] });
             }
             Event::MixerLost => {
                 self.mixer_connected = false;
@@ -378,6 +382,9 @@ impl Core {
                 }
             }
             Event::Bytes(bytes) => {
+                if let Some(sync) = &mut self.sync {
+                    sync.first_bytes.get_or_insert(now);
+                }
                 for input in self.mixer.push(&bytes) {
                     self.mixer_input(input, now, &mut out);
                 }
@@ -720,7 +727,8 @@ impl Core {
         if let Some(sync) = &self.sync {
             let all_seen = sync.seen.iter().all(|s| *s);
             let quiet = now.duration_since(sync.last_reading) >= SYNC_QUIET;
-            if (all_seen && quiet) || now.duration_since(sync.started) >= SYNC_LIMIT {
+            let limit_from = sync.first_bytes.unwrap_or(sync.started);
+            if (all_seen && quiet) || now.duration_since(limit_from) >= SYNC_LIMIT {
                 self.sync = None;
                 self.lights_settle_until = Some(now + LIGHTS_SETTLE);
                 // the mixer's own knobs
@@ -1088,6 +1096,33 @@ mod tests {
         assert!(!core.is_syncing());
         assert_eq!(core.knob(0), Some(50));
         assert_eq!(core.knob(1), None);
+    }
+
+    #[test]
+    fn sync_counts_its_limit_from_the_first_bytes_when_the_service_was_busy() {
+        // the service is busy starting, so the board's readings queue up and get handled well after the connect
+        let start = Instant::now();
+        let late = start + SYNC_LIMIT + Duration::from_secs(1);
+        let mut core = core();
+        core.handle(Event::MixerConnected, start);
+        core.handle(Event::Bytes(vec![0xFE]), late);
+        core.tick(late);
+        assert!(core.is_syncing(), "a chunk without readings doesn't end the sync");
+        core.handle(packets(&[(0, 10), (1, 10), (2, 10), (3, 10), (4, 10)]), late);
+        core.tick(late);
+        core.handle(packets(&[(0, 44), (1, 71), (2, 63), (3, 69), (4, 66)]), late);
+        core.tick(late + SYNC_QUIET);
+        assert!(!core.is_syncing());
+        assert_eq!((0..KNOBS).map(|k| core.knob(k)).collect::<Vec<_>>(), [44, 71, 63, 69, 66].map(Some));
+    }
+
+    #[test]
+    fn sync_still_gives_up_on_a_mixer_that_sends_nothing() {
+        let start = Instant::now();
+        let mut core = core();
+        core.handle(Event::MixerConnected, start);
+        core.tick(start + SYNC_LIMIT);
+        assert!(!core.is_syncing());
     }
 
     #[test]

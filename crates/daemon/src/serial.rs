@@ -55,10 +55,20 @@ pub fn find_port() -> Option<PathBuf> {
     None
 }
 
+/// How long a read waits for the mixer. On Windows the LED writer's handle shares the reader's (synchronous) file
+/// object, so every LED write waits for the pending read: a long wait there delays frames until the board blanks.
+#[cfg(windows)]
+const READ_TIMEOUT: Duration = Duration::from_millis(10);
+#[cfg(not(windows))]
+const READ_TIMEOUT: Duration = Duration::from_millis(500);
+
 fn open(path: &Path) -> serialport::Result<Port> {
     #[cfg_attr(windows, allow(unused_mut, reason = "only Linux changes the port after opening"))]
-    let mut port =
-        serialport::new(path.to_string_lossy(), 115_200).timeout(Duration::from_millis(500)).open_native()?;
+    let mut port = serialport::new(path.to_string_lossy(), 115_200)
+        .timeout(READ_TIMEOUT)
+        // raising DTR resets the board, which then reports every knob (Linux raises it on open by itself)
+        .dtr_on_open(true)
+        .open_native()?;
     // Windows opens COM ports exclusively anyway
     #[cfg(not(windows))]
     port.set_exclusive(true)?;
