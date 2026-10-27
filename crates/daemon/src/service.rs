@@ -16,6 +16,7 @@ use cranked_protocol::{button_packet, knob_packet, led_frame};
 
 use crate::config::{Config, State};
 use crate::core::{Core, Out};
+use crate::platform::Platform;
 use crate::{
     audio, config, dbus, desktop, devices, home_assistant, parse_line, serial, server, shortcuts, tray, updater, Event,
     Options,
@@ -37,6 +38,8 @@ struct Requests {
 pub struct Service {
     core: Core,
     events: Sender<Event>,
+    /// This platform's sound system, for listing outputs (its `run` owns the audio thread).
+    audio_system: Arc<dyn audio::AudioSystem>,
     audio: Sender<audio::Command>,
     desktop: Sender<desktop::Command>,
     leds: serial::Writer,
@@ -59,7 +62,13 @@ pub struct Service {
 
 impl Service {
     /// Starts every worker thread and the desktop integrations (D-Bus API, shortcuts, tray).
-    pub fn start(options: &Options, config: Config, listener: UnixListener, events: Sender<Event>) -> Self {
+    pub fn start(
+        platform: Platform,
+        options: &Options,
+        config: Config,
+        listener: UnixListener,
+        events: Sender<Event>,
+    ) -> Self {
         let state_path = State::default_path();
         let state = State::load(&state_path);
         let (audio, audio_inbox) = mpsc::channel();
@@ -73,7 +82,8 @@ impl Service {
         }
         {
             let events = events.clone();
-            spawn("audio", move || audio::run(&audio_inbox, &events));
+            let audio_system = Arc::clone(&platform.audio);
+            spawn("audio", move || audio_system.run(&audio_inbox, &events));
         }
         if options.use_mixer {
             let (events, leds) = (events.clone(), leds.clone());
@@ -105,6 +115,7 @@ impl Service {
             core,
             api: dbus::start(events.clone()),
             events,
+            audio_system: platform.audio,
             audio,
             desktop,
             leds,
@@ -236,7 +247,7 @@ impl Service {
                     typing,
                     midi: devices::midi_controllers(),
                     serial: devices::serial_ports(),
-                    outputs: audio::list_outputs(),
+                    outputs: self.audio_system.outputs(),
                 }));
             }
             "learn-midi" => {

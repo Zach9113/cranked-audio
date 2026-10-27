@@ -1,18 +1,29 @@
 //! The sound system: stream events in, volume changes out. `PipeWire` (through its `PulseAudio` layer) on Linux,
 //! WASAPI audio sessions on Windows; both report the same `Event`s and take the same `Command`s.
 
-#[cfg(not(windows))]
-mod pulse;
-#[cfg(not(windows))]
-pub use pulse::{list_outputs, run};
 #[cfg(windows)]
 mod policy_config;
+#[cfg(not(windows))]
+pub mod pulse;
 #[cfg(windows)]
-mod wasapi;
-#[cfg(windows)]
-pub use wasapi::{list_outputs, run};
+pub mod wasapi;
 
+use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
+
+use cranked_ipc::AudioOutput;
+
+use crate::Event;
+
+/// The port to the sound system. Each platform has one adapter (`pulse::PipeWire`, `wasapi::Wasapi`), chosen in
+/// `platform::native()`; the rest of the daemon only talks to this trait.
+pub trait AudioSystem: Send + Sync {
+    /// Runs on the audio thread for the life of the service: carries out `commands` and reports streams, volumes,
+    /// levels and output switches as `Event`s.
+    fn run(&self, commands: &Receiver<Command>, events: &Sender<Event>);
+    /// The output devices, for the Settings page.
+    fn outputs(&self) -> Vec<AudioOutput>;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {

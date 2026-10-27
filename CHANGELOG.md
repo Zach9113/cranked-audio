@@ -7,6 +7,8 @@
   version and says to update with the package manager, instead of adding a second copy in `~/.local/bin`.
 
 ### Development
+- Platform ports and adapters (plan: `docs/platform-ports.md`): the sound system is the first port, an
+  `AudioSystem` trait with a PipeWire and a WASAPI adapter, picked once in `platform::native()`.
 - AUR package `cranked-audio-bin` (repackages the release tarball): `packaging/aur/cranked-audio-bin`, and
   `scripts/update-aur.sh vX.Y.Z` points it at a new release.
 - The workspace lint set (clippy pedantic plus most of restriction) is now switched on for every crate and clean.

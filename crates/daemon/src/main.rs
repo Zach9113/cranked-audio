@@ -13,6 +13,7 @@ mod duck;
 mod home_assistant;
 mod leds;
 mod matching;
+mod platform;
 mod serial;
 mod server;
 mod service;
@@ -154,7 +155,7 @@ fn main() {
         return eprintln!("Cranked Audio is already running");
     };
     let (events, inbox) = mpsc::channel();
-    Service::start(&options, config, listener, events).run(&inbox);
+    Service::start(platform::native(), &options, config, listener, events).run(&inbox);
 }
 
 #[cfg(test)]
