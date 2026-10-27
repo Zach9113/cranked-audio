@@ -345,13 +345,18 @@ fn run_command(
 ) {
     let no_context: *const GUID = std::ptr::null();
     // SAFETY (all arms): plain COM calls on live objects
+    // what we set is remembered as the session's state, so the next scan doesn't report our own change back as one
+    // from the app (the guard then "put back" volumes the knob had already moved past)
     let result = match command {
-        Command::SetStream { index, percent, .. } => match sessions.live.get(&index) {
-            Some(session) => unsafe { session.volume.SetMasterVolume(f32::from(percent) / 100.0, no_context) },
+        Command::SetStream { index, percent, .. } => match sessions.live.get_mut(&index) {
+            Some(session) => unsafe { session.volume.SetMasterVolume(f32::from(percent) / 100.0, no_context) }
+                .inspect(|()| session.stream.volume = f64::from(f32::from(percent) / 100.0) * 100.0),
             None => Ok(()),
         },
-        Command::MuteStream { index, mute } => match sessions.live.get(&index) {
-            Some(session) => unsafe { session.volume.SetMute(mute, no_context) },
+        Command::MuteStream { index, mute } => match sessions.live.get_mut(&index) {
+            Some(session) => {
+                unsafe { session.volume.SetMute(mute, no_context) }.inspect(|()| session.stream.muted = mute)
+            }
             None => Ok(()),
         },
         Command::SetMaster { percent } => endpoint_volume(enumerator)
