@@ -383,6 +383,9 @@ pub struct Config {
     /// Real audio outputs the user unchecked from Switch output.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub disabled_outputs: Vec<String>,
+    /// Global keyboard shortcuts (`action_id -> "Ctrl+Alt+Up"`), used when there is no desktop shortcut service.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub shortcuts: std::collections::BTreeMap<String, String>,
     pub leds: Leds,
     pub home_assistant: HomeAssistant,
     #[serde(rename = "profile")]
@@ -416,6 +419,7 @@ struct File {
     devices: Vec<Device>,
     enabled_outputs: Vec<String>,
     disabled_outputs: Vec<String>,
+    shortcuts: std::collections::BTreeMap<String, String>,
     leds: Leds,
     home_assistant: HomeAssistant,
     auto_lower: AutoLower,
@@ -435,6 +439,7 @@ impl Default for File {
             devices: Vec::new(),
             enabled_outputs: Vec::new(),
             disabled_outputs: Vec::new(),
+            shortcuts: std::collections::BTreeMap::new(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             auto_lower: AutoLower::default(),
@@ -493,6 +498,7 @@ impl Default for Config {
             devices: Vec::new(),
             enabled_outputs: Vec::new(),
             disabled_outputs: Vec::new(),
+            shortcuts: std::collections::BTreeMap::new(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             profiles: vec![Profile {
@@ -542,6 +548,7 @@ impl Config {
             devices: file.devices,
             enabled_outputs: file.enabled_outputs,
             disabled_outputs: file.disabled_outputs,
+            shortcuts: file.shortcuts,
             leds: file.leds,
             home_assistant: file.home_assistant,
             profiles,

@@ -124,6 +124,10 @@ export global General {
     callback add-knob();
     callback open-devices();
     callback open-shortcuts();
+    in-out property <bool> shortcuts-open: false;
+    in-out property <[string]> shortcut-labels;
+    in-out property <[string]> shortcut-keys;
+    callback set-shortcut(int, string);
     in property <[string]> theme-names;
     callback theme-changed(int);
     in-out property <float> brightness;
@@ -613,10 +617,24 @@ export component GeneralPage inherits ScrollView {
                     alignment: start;
                     Button { text: "Devices… (keyboard knob, MIDI, deej)"; clicked => { General.open-devices(); } }
                 }
-                Hint { text: "Every knob can also be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window. No keys are set at first: pick your own in System Settings (on KDE Plasma)."; }
+                Hint { text: "Every knob can also be turned up, turned down and pressed from the keyboard, and there are shortcuts for the next profile and for opening this window."; }
                 HorizontalLayout {
                     alignment: start;
-                    Button { text: "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
+                    Button { text: General.shortcuts-open ? "▴ Hide shortcuts" : "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
+                }
+                if General.shortcuts-open: VerticalLayout {
+                    spacing: 6px;
+                    Hint { text: "Type a key combination such as Ctrl+Alt+Up, Ctrl+Shift+M, Alt+F1 or F13 (leave blank for none), then click Save."; }
+                    for label[i] in General.shortcut-labels: HorizontalLayout {
+                        spacing: 8px;
+                        Label { text: label; width: 280px; }
+                        LineEdit {
+                            horizontal-stretch: 1;
+                            placeholder-text: "None (e.g. Ctrl+Alt+Up)";
+                            text: General.shortcut-keys[i];
+                            edited(val) => { General.set-shortcut(i, val); }
+                        }
+                    }
                 }
             }
         }

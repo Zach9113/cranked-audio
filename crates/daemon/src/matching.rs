@@ -25,7 +25,8 @@ pub struct Stream {
 /// Never touched, not even when named in a channel.
 const IGNORED: &[&str] = &["nvbroadcast", "nvidia broadcast", "cranked-selftest-ignored"];
 /// Never taken by a catch-all channel.
-const SYSTEM: &[&str] = &["libcanberra", "plasmashell", "kwin", "xdg-desktop-portal", "org.kde.", "kded"];
+const SYSTEM: &[&str] =
+    &["libcanberra", "plasmashell", "kwin", "xdg-desktop-portal", "org.kde.", "kded", "cranked-selftest"];
 const VOICE: &[&str] = &[
     "webrtc voiceengine",
     "discord",

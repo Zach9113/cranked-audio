@@ -291,9 +291,16 @@ impl Core {
                         None => "Not set up".into(),
                     }
                 };
+                let (min, max) = if config.controls_audio() {
+                    (config.min.min(config.max), config.max.max(config.min))
+                } else {
+                    (0, 100)
+                };
                 cranked_ipc::Knob {
                     name: config.label(channel),
                     level: self.level(channel),
+                    min,
+                    max,
                     color: config.color.clone(),
                     background: config.background.clone(),
                     muted_color: config.muted_color.clone(),
@@ -473,7 +480,8 @@ impl Core {
                 self.streams.clear();
                 self.metered.clear();
             }
-            Event::ClientConnected(_)
+            Event::ClientConnected(..)
+            | Event::ClientDisconnected(_)
             | Event::ClientLine(_)
             | Event::Tray(_)
             | Event::HomeAssistantEntities(_)
@@ -640,13 +648,14 @@ impl Core {
         out.push(Out::HomeAssistant(HomeAssistant::Call { service, entity }));
     }
 
-    fn mute_commands(&self, channel: usize, mute: bool) -> Vec<Out> {
-        let mut out: Vec<Out> = self
-            .streams
-            .values()
-            .filter(|(stream, c)| *c == Some(channel) && stream.muted != mute)
-            .map(|(stream, _)| Out::Audio(Audio::MuteStream { index: stream.index, mute }))
-            .collect();
+    fn mute_commands(&mut self, channel: usize, mute: bool) -> Vec<Out> {
+        let mut out = Vec::new();
+        for (stream, c) in self.streams.values_mut() {
+            if *c == Some(channel) {
+                stream.muted = mute;
+                out.push(Out::Audio(Audio::MuteStream { index: stream.index, mute }));
+            }
+        }
         if self.channels()[channel].master {
             out.push(Out::Audio(Audio::MuteMaster { mute }));
         }
@@ -1001,6 +1010,7 @@ mod tests {
             devices: Vec::new(),
             enabled_outputs: Vec::new(),
             disabled_outputs: Vec::new(),
+            shortcuts: std::collections::BTreeMap::new(),
             leds: Default::default(),
             home_assistant: Default::default(),
             profiles: vec![

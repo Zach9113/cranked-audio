@@ -14,7 +14,11 @@ pub fn listen() -> Option<UnixListener> {
     if UnixStream::connect(&path).is_ok() {
         return None;
     }
-    let _ = std::fs::remove_file(&path);
+    if path.exists() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            eprintln!("window socket: couldn't remove stale {} ({e})", path.display());
+        }
+    }
     match UnixListener::bind(&path) {
         Ok(listener) => Some(listener),
         Err(e) => {
@@ -25,10 +29,13 @@ pub fn listen() -> Option<UnixListener> {
 }
 
 pub fn run(listener: UnixListener, events: Sender<Event>) {
+    let mut next_id = 0u64;
     for client in listener.incoming().map_while(Result::ok) {
         let Ok(writer) = client.try_clone() else { continue };
         let _ = writer.set_write_timeout(Some(Duration::from_millis(200)));
-        if events.send(Event::ClientConnected(writer)).is_err() {
+        next_id += 1;
+        let id = next_id;
+        if events.send(Event::ClientConnected(id, writer)).is_err() {
             return;
         }
         let events = events.clone();
@@ -38,6 +45,7 @@ pub fn run(listener: UnixListener, events: Sender<Event>) {
                     return;
                 }
             }
+            let _ = events.send(Event::ClientDisconnected(id));
         });
     }
 }
@@ -45,7 +53,7 @@ pub fn run(listener: UnixListener, events: Sender<Event>) {
 /// Connected windows; each gets every new snapshot as one JSON line.
 #[derive(Default)]
 pub struct Clients {
-    streams: Vec<UnixStream>,
+    streams: Vec<(u64, UnixStream)>,
     last: Option<String>,
 }
 
@@ -54,12 +62,16 @@ impl Clients {
         self.streams.is_empty()
     }
 
-    pub fn add(&mut self, mut stream: UnixStream, snapshot: &cranked_ipc::Snapshot) {
+    pub fn add(&mut self, id: u64, mut stream: UnixStream, snapshot: &cranked_ipc::Snapshot) {
         let line = serde_json::to_string(&ServerMessage::Snapshot(snapshot.clone())).unwrap_or_default();
         if writeln!(stream, "{line}").is_ok() {
-            self.streams.push(stream);
+            self.streams.push((id, stream));
             self.last = Some(line);
         }
+    }
+
+    pub fn remove(&mut self, id: u64) {
+        self.streams.retain(|(cid, _)| *cid != id);
     }
 
     /// Sends the snapshot if it changed; drops windows that went away.
@@ -68,12 +80,12 @@ impl Clients {
         if self.last.as_deref() == Some(line.as_str()) {
             return;
         }
-        self.streams.retain_mut(|stream| writeln!(stream, "{line}").is_ok());
+        self.streams.retain_mut(|(_, stream)| writeln!(stream, "{line}").is_ok());
         self.last = Some(line);
     }
 
     pub fn send(&mut self, message: &ServerMessage) {
         let line = serde_json::to_string(message).unwrap_or_default();
-        self.streams.retain_mut(|stream| writeln!(stream, "{line}").is_ok());
+        self.streams.retain_mut(|(_, stream)| writeln!(stream, "{line}").is_ok());
     }
 }

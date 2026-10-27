@@ -49,8 +49,9 @@ pub enum Event {
     HomeAssistantEntities(Vec<cranked_ipc::Entity>),
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
-    /// A window connected / sent a line.
-    ClientConnected(cranked_ipc::UnixStream),
+    /// A window connected, disconnected or sent a line.
+    ClientConnected(u64, cranked_ipc::UnixStream),
+    ClientDisconnected(u64),
     ClientLine(String),
     Tray(tray::Action),
     /// A request over the D-Bus API.
@@ -192,7 +193,8 @@ fn main() {
     let device_generation = Arc::new(AtomicU64::new(0));
     devices::start(&core.config().devices, &events, &device_generation);
     let most_knobs = |config: &Config| config.profiles.iter().map(|p| p.channels.len()).max().unwrap_or(0);
-    let mut shortcuts = shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()));
+    let mut shortcuts =
+        shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
     let tray =
         tray::start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
     let mut tray_shows = (String::new(), Vec::<String>::new(), false);
@@ -210,8 +212,12 @@ fn main() {
         let mut cycle_profile = false;
         let mut restart_home_assistant = false;
         let event = match event {
-            Some(Event::ClientConnected(stream)) => {
-                clients.add(stream, &core.snapshot());
+            Some(Event::ClientConnected(id, stream)) => {
+                clients.add(id, stream, &core.snapshot());
+                None
+            }
+            Some(Event::ClientDisconnected(id)) => {
+                clients.remove(id);
                 None
             }
             Some(Event::ClientLine(line)) => {
@@ -306,6 +312,9 @@ fn main() {
             Some(Event::Tray(action)) => {
                 match action {
                     tray::Action::OpenWindow => {
+                        if !clients.is_empty() {
+                            clients.send(&ServerMessage::OpenPage(String::new()));
+                        }
                         if clients.is_empty() {
                             spawn_detached(&sibling("cranked-audio"), &[]);
                         }
@@ -345,6 +354,9 @@ fn main() {
                     None
                 }
                 dbus::Request::OpenWindow => {
+                    if !clients.is_empty() {
+                        clients.send(&ServerMessage::OpenPage(String::new()));
+                    }
                     if clients.is_empty() {
                         spawn_detached(&sibling("cranked-audio"), &[]);
                     }
@@ -469,7 +481,7 @@ fn main() {
                 || config.home_assistant_entities() != core.config().home_assistant_entities();
             restart_home_assistant |= home_assistant_changed;
             if let Some(shortcuts) = &mut shortcuts {
-                shortcuts.ensure(most_knobs(&config));
+                shortcuts.ensure(most_knobs(&config), &config.shortcuts);
             }
             if config.devices != core.config().devices {
                 devices::start(&config.devices, &events, &device_generation);

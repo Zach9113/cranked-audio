@@ -1,20 +1,45 @@
-//! Windows: media buttons control a player through Windows' media sessions, picked the way the Linux side picks an
-//! MPRIS player (a media key is the fallback). No volume popups yet, and the screen counts as always on.
+//! Windows: media buttons control a player through Windows' media sessions (picked the way the Linux side picks an
+//! MPRIS player, with a media key as fallback), volume/text popups show in a topmost non-activating OSD pill, and
+//! `watch_screen` turns off the mixer LEDs while the session is locked or the display sleeps.
 
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 
+use windows::core::PCWSTR;
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession as Session,
     GlobalSystemMediaTransportControlsSessionManager as SessionManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus as Status,
 };
+use windows::Win32::Foundation::{COLORREF, HANDLE, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, CreateFontW, CreatePen, CreateRoundRectRgn, CreateSolidBrush, DeleteObject, DrawTextW, EndPaint,
+    FillRect, InvalidateRect, RoundRect, SelectObject, SetBkMode, SetTextColor, SetWindowRgn, DT_LEFT, DT_NOPREFIX,
+    DT_RIGHT, DT_SINGLELINE, DT_VCENTER, FW_BOLD, FW_SEMIBOLD, HGDIOBJ, PAINTSTRUCT, PS_SOLID, TRANSPARENT,
+};
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Power::{RegisterPowerSettingNotification, POWERBROADCAST_SETTING};
+use windows::Win32::System::RemoteDesktop::{WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION};
+use windows::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, VIRTUAL_KEY,
     VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, GetSystemMetrics, KillTimer, PostMessageW,
+    RegisterClassW, SetLayeredWindowAttributes, SetTimer, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    TranslateMessage, DEVICE_NOTIFY_WINDOW_HANDLE, GWLP_USERDATA, HWND_TOPMOST, LWA_ALPHA, MSG, PBT_POWERSETTINGCHANGE,
+    SM_CXSCREEN, SWP_NOACTIVATE, SWP_SHOWWINDOW, SW_HIDE, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_DESTROY, WM_PAINT,
+    WM_POWERBROADCAST, WM_TIMER, WM_WTSSESSION_CHANGE, WNDCLASSW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP, WTS_SESSION_LOCK, WTS_SESSION_UNLOCK,
+};
 
 use super::{Command, MediaKey};
+
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
 
 fn tap(key: VIRTUAL_KEY) {
     let input = |flags| INPUT {
@@ -57,6 +82,9 @@ fn pick_session(manager: &SessionManager) -> windows::core::Result<Option<Sessio
 
 /// Ok(false) when there's no media session to send it to.
 fn send_to_session(key: MediaKey) -> windows::core::Result<bool> {
+    if std::env::var_os("CRANKED_MPRIS_PLAYER").is_some() {
+        return Ok(false);
+    }
     let manager = SessionManager::RequestAsync()?.join()?;
     let Some(session) = pick_session(&manager)? else { return Ok(false) };
     match key {
@@ -67,28 +95,349 @@ fn send_to_session(key: MediaKey) -> windows::core::Result<bool> {
     .join()
 }
 
+// ---------------------------------------------------------------- OSD Popups
+
+const OSD_WAKE: u32 = WM_APP + 1;
+const OSD_TIMER: usize = 1;
+const OSD_HIDE_MS: u32 = 1400;
+const OSD_WIDTH: i32 = 300;
+const OSD_HEIGHT: i32 = 54;
+
+#[derive(Default, Clone)]
+struct OsdContent {
+    text: String,
+    percent: Option<u8>,
+}
+
+static OSD_STATE: Mutex<OsdContent> = Mutex::new(OsdContent { text: String::new(), percent: None });
+
+const fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
+    COLORREF((r as u32) | ((g as u32) << 8) | ((b as u32) << 16))
+}
+
+unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    match msg {
+        OSD_WAKE => {
+            let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
+            let x = (screen_w - OSD_WIDTH) / 2;
+            let y = 44;
+            unsafe {
+                let rgn = CreateRoundRectRgn(0, 0, OSD_WIDTH + 1, OSD_HEIGHT + 1, 22, 22);
+                let _ = SetWindowRgn(hwnd, Some(rgn), false);
+                let _ = InvalidateRect(Some(hwnd), None, true);
+                let _ = SetWindowPos(
+                    hwnd,
+                    Some(HWND_TOPMOST),
+                    x,
+                    y,
+                    OSD_WIDTH,
+                    OSD_HEIGHT,
+                    SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                );
+                let _ = SetTimer(Some(hwnd), OSD_TIMER, OSD_HIDE_MS, None);
+            }
+            LRESULT(0)
+        }
+        WM_TIMER if wparam.0 == OSD_TIMER => {
+            unsafe {
+                let _ = KillTimer(Some(hwnd), OSD_TIMER);
+                let _ = ShowWindow(hwnd, SW_HIDE);
+            }
+            LRESULT(0)
+        }
+        WM_PAINT => {
+            let content = OSD_STATE.lock().map(|c| c.clone()).unwrap_or_default();
+            let mut ps = PAINTSTRUCT::default();
+            let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
+            let full = RECT { left: 0, top: 0, right: OSD_WIDTH, bottom: OSD_HEIGHT };
+            unsafe {
+                let bg = CreateSolidBrush(rgb(0x0E, 0x0E, 0x13));
+                FillRect(hdc, &full, bg);
+                let _ = DeleteObject(HGDIOBJ(bg.0));
+
+                let border_pen = CreatePen(PS_SOLID, 1, rgb(0x2A, 0x2A, 0x36));
+                let fill_brush = CreateSolidBrush(rgb(0x0E, 0x0E, 0x13));
+                let old_pen = SelectObject(hdc, HGDIOBJ(border_pen.0));
+                let old_brush = SelectObject(hdc, HGDIOBJ(fill_brush.0));
+                let _ = RoundRect(hdc, 0, 0, OSD_WIDTH - 1, OSD_HEIGHT - 1, 22, 22);
+                SelectObject(hdc, old_pen);
+                SelectObject(hdc, old_brush);
+                let _ = DeleteObject(HGDIOBJ(border_pen.0));
+                let _ = DeleteObject(HGDIOBJ(fill_brush.0));
+
+                SetBkMode(hdc, TRANSPARENT);
+                let face = wide("Segoe UI");
+                let mut face_buf = [0u16; 32];
+                for (dst, src) in face_buf.iter_mut().zip(face) {
+                    *dst = src;
+                }
+                let font = CreateFontW(
+                    -15,
+                    0,
+                    0,
+                    0,
+                    if content.percent.is_some() { FW_SEMIBOLD.0 as i32 } else { FW_BOLD.0 as i32 },
+                    0,
+                    0,
+                    0,
+                    windows::Win32::Graphics::Gdi::FONT_CHARSET(0),
+                    windows::Win32::Graphics::Gdi::FONT_OUTPUT_PRECISION(0),
+                    windows::Win32::Graphics::Gdi::FONT_CLIP_PRECISION(0),
+                    windows::Win32::Graphics::Gdi::FONT_QUALITY(5), // CLEARTYPE_QUALITY
+                    0,
+                    PCWSTR(face_buf.as_ptr()),
+                );
+                let old_font = SelectObject(hdc, HGDIOBJ(font.0));
+                SetTextColor(hdc, rgb(0xF4, 0xF4, 0xF6));
+
+                if let Some(percent) = content.percent {
+                    // Top row: Name on left, percentage on right
+                    let mut name_rc = RECT { left: 18, top: 8, right: OSD_WIDTH - 64, bottom: 28 };
+                    let mut name_w = wide(&content.text);
+                    DrawTextW(hdc, &mut name_w, &mut name_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+                    let mut pct_rc = RECT { left: OSD_WIDTH - 64, top: 8, right: OSD_WIDTH - 18, bottom: 28 };
+                    let mut pct_w = wide(&format!("{}%", percent));
+                    DrawTextW(hdc, &mut pct_w, &mut pct_rc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+                    // Bottom row: progress bar track + fill
+                    let bar_left = 18;
+                    let bar_right = OSD_WIDTH - 18;
+                    let bar_top = 34;
+                    let bar_bottom = 42;
+                    let track_rc = RECT { left: bar_left, top: bar_top, right: bar_right, bottom: bar_bottom };
+                    let track_brush = CreateSolidBrush(rgb(0x26, 0x26, 0x32));
+                    FillRect(hdc, &track_rc, track_brush);
+                    let _ = DeleteObject(HGDIOBJ(track_brush.0));
+
+                    let fill_w = ((bar_right - bar_left) * i32::from(percent.min(100))) / 100;
+                    if fill_w > 0 {
+                        let fill_rc =
+                            RECT { left: bar_left, top: bar_top, right: bar_left + fill_w, bottom: bar_bottom };
+                        let fill_color = if percent == 0 { rgb(0xE0, 0x7A, 0x6A) } else { rgb(0x00, 0xC8, 0xFF) };
+                        let fill = CreateSolidBrush(fill_color);
+                        FillRect(hdc, &fill_rc, fill);
+                        let _ = DeleteObject(HGDIOBJ(fill.0));
+                    }
+                } else {
+                    let mut text_rc = RECT { left: 18, top: 0, right: OSD_WIDTH - 18, bottom: OSD_HEIGHT };
+                    let mut text_w = wide(&content.text);
+                    DrawTextW(hdc, &mut text_w, &mut text_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                }
+
+                SelectObject(hdc, old_font);
+                let _ = DeleteObject(HGDIOBJ(font.0));
+                let _ = EndPaint(hwnd, &ps);
+            }
+            LRESULT(0)
+        }
+        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+fn spawn_osd_window() -> Option<isize> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("osd".into())
+        .spawn(move || unsafe {
+            let Ok(hinstance) = GetModuleHandleW(None) else {
+                let _ = tx.send(None);
+                return;
+            };
+            let class_name = wide("CrankedAudioOsd");
+            let wc = WNDCLASSW {
+                lpfnWndProc: Some(osd_wndproc),
+                hInstance: hinstance.into(),
+                lpszClassName: PCWSTR(class_name.as_ptr()),
+                ..Default::default()
+            };
+            let _ = RegisterClassW(&wc);
+            let ex_style = WINDOW_EX_STYLE(
+                WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_TRANSPARENT.0 | WS_EX_LAYERED.0,
+            );
+            let Ok(hwnd) = CreateWindowExW(
+                ex_style,
+                PCWSTR(class_name.as_ptr()),
+                PCWSTR::null(),
+                WINDOW_STYLE(WS_POPUP.0),
+                0,
+                0,
+                OSD_WIDTH,
+                OSD_HEIGHT,
+                None,
+                None,
+                Some(hinstance.into()),
+                None,
+            ) else {
+                let _ = tx.send(None);
+                return;
+            };
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 238, LWA_ALPHA);
+            let _ = tx.send(Some(hwnd.0 as isize));
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        })
+        .ok()?;
+    rx.recv().ok().flatten()
+}
+
 /// Runs forever on its own thread.
 pub fn run(commands: Receiver<Command>) {
     // SAFETY: once, on this thread, before any other COM call here
     let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+    let mut osd_hwnd: Option<isize> = None;
     for command in commands {
-        if let Command::Media(key) = command {
-            match send_to_session(key) {
-                Ok(true) => continue,
-                Ok(false) => {}
-                Err(e) => eprintln!("media: no session control ({e}), sending the key"),
+        match command {
+            Command::Media(key) => {
+                match send_to_session(key) {
+                    Ok(true) => continue,
+                    Ok(false) => {}
+                    Err(e) => eprintln!("media: no session control ({e}), sending the key"),
+                }
+                tap(match key {
+                    MediaKey::PlayPause => VK_MEDIA_PLAY_PAUSE,
+                    MediaKey::Next => VK_MEDIA_NEXT_TRACK,
+                    MediaKey::Previous => VK_MEDIA_PREV_TRACK,
+                });
             }
-            tap(match key {
-                MediaKey::PlayPause => VK_MEDIA_PLAY_PAUSE,
-                MediaKey::Next => VK_MEDIA_NEXT_TRACK,
-                MediaKey::Previous => VK_MEDIA_PREV_TRACK,
-            });
+            Command::Volume { percent, name, .. } => {
+                if osd_hwnd.is_none() {
+                    osd_hwnd = spawn_osd_window();
+                }
+                if let (Some(raw), Ok(mut state)) = (osd_hwnd, OSD_STATE.lock()) {
+                    state.text = name;
+                    state.percent = Some(percent);
+                    drop(state);
+                    let hwnd = HWND(raw as *mut core::ffi::c_void);
+                    unsafe {
+                        let _ = PostMessageW(Some(hwnd), OSD_WAKE, WPARAM(0), LPARAM(0));
+                    }
+                }
+            }
+            Command::Text { text, .. } => {
+                if osd_hwnd.is_none() {
+                    osd_hwnd = spawn_osd_window();
+                }
+                if let (Some(raw), Ok(mut state)) = (osd_hwnd, OSD_STATE.lock()) {
+                    state.text = text;
+                    state.percent = None;
+                    drop(state);
+                    let hwnd = HWND(raw as *mut core::ffi::c_void);
+                    unsafe {
+                        let _ = PostMessageW(Some(hwnd), OSD_WAKE, WPARAM(0), LPARAM(0));
+                    }
+                }
+            }
         }
     }
 }
 
-/// Not watched on Windows yet: the LEDs stay on while the screen sleeps.
-pub fn watch_screen(_events: Sender<crate::Event>) {}
+// ---------------------------------------------------------------- Screen Lock & Display Sleep Watcher
+
+struct ScreenWatchState {
+    display_off: bool,
+    locked: bool,
+    last_sent: Option<bool>,
+    events: Sender<crate::Event>,
+}
+
+/// Whether the mixer LEDs should blank given `display_state` (`0` = Off, `1` = On, `2` = Dimmed) and `locked`.
+pub fn should_blank_leds(display_off: bool, locked: bool) -> bool {
+    display_off || locked
+}
+
+impl ScreenWatchState {
+    fn notify(&mut self) {
+        let off = should_blank_leds(self.display_off, self.locked);
+        if self.last_sent != Some(off) {
+            self.last_sent = Some(off);
+            let _ = self.events.send(crate::Event::ScreenOff(off));
+        }
+    }
+}
+
+unsafe extern "system" fn screen_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let ptr = unsafe { windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWLP_USERDATA) }
+        as *mut Mutex<ScreenWatchState>;
+    if !ptr.is_null() {
+        let mutex = unsafe { &*ptr };
+        match msg {
+            WM_POWERBROADCAST if wparam.0 == PBT_POWERSETTINGCHANGE as usize && lparam.0 != 0 => {
+                let setting = unsafe { &*(lparam.0 as *const POWERBROADCAST_SETTING) };
+                if setting.PowerSetting == GUID_CONSOLE_DISPLAY_STATE {
+                    let state = setting.Data[0];
+                    if let Ok(mut guard) = mutex.lock() {
+                        guard.display_off = state == 0;
+                        guard.notify();
+                    }
+                }
+            }
+            WM_WTSSESSION_CHANGE => {
+                if let Ok(mut guard) = mutex.lock() {
+                    if wparam.0 == WTS_SESSION_LOCK as usize {
+                        guard.locked = true;
+                        guard.notify();
+                    } else if wparam.0 == WTS_SESSION_UNLOCK as usize {
+                        guard.locked = false;
+                        guard.notify();
+                    }
+                }
+            }
+            WM_DESTROY => return LRESULT(0),
+            _ => {}
+        }
+    }
+    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+}
+
+/// Reports `Event::ScreenOff(true)` while the session is locked or displays are off, `false` when back.
+pub fn watch_screen(events: Sender<crate::Event>) {
+    let state = Arc::new(Mutex::new(ScreenWatchState { display_off: false, locked: false, last_sent: None, events }));
+    if let Ok(mut guard) = state.lock() {
+        guard.notify();
+    }
+    unsafe {
+        let Ok(hinstance) = GetModuleHandleW(None) else { return };
+        let class_name = wide("CrankedAudioScreenWatch");
+        let wc = WNDCLASSW {
+            lpfnWndProc: Some(screen_wndproc),
+            hInstance: hinstance.into(),
+            lpszClassName: PCWSTR(class_name.as_ptr()),
+            ..Default::default()
+        };
+        let _ = RegisterClassW(&wc);
+        let Ok(hwnd) = CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            PCWSTR(class_name.as_ptr()),
+            PCWSTR::null(),
+            WINDOW_STYLE(WS_POPUP.0),
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
+            Some(hinstance.into()),
+            None,
+        ) else {
+            return;
+        };
+        let raw_state = Arc::into_raw(state);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, raw_state as isize);
+        let _ =
+            RegisterPowerSettingNotification(HANDLE(hwnd.0), &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
+        let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
+
+        let mut msg = MSG::default();
+        while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
+            let _ = TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -101,5 +450,13 @@ mod tests {
         assert!(rank(Some(Status::Paused), false) < rank(Some(Status::Stopped), true));
         assert!(rank(None, false) == rank(Some(Status::Closed), false));
         assert!(rank(Some(Status::Playing), true) < playing);
+    }
+
+    #[test]
+    fn screen_blanks_on_display_sleep_or_session_lock() {
+        assert!(!should_blank_leds(false, false));
+        assert!(should_blank_leds(true, false));
+        assert!(should_blank_leds(false, true));
+        assert!(should_blank_leds(true, true));
     }
 }
