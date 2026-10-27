@@ -4,7 +4,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use super::Request;
+use crate::dbus::Request;
 use crate::Event;
 
 pub const NAME: &str = "io.github.zach9113.CrankedAudio";
@@ -94,7 +94,7 @@ pub struct SessionBus {
     running: Option<Published>,
 }
 
-impl super::RemoteApi for SessionBus {
+impl crate::dbus::RemoteApi for SessionBus {
     fn start(&mut self, events: Sender<Event>) {
         self.running = start(events);
     }

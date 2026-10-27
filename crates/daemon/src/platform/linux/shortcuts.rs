@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 use std::sync::mpsc::Sender;
 
-use super::{all, Shortcut};
+use crate::shortcuts::{all, Shortcut};
 use crate::Event;
 
 const COMPONENT: &str = "cranked-audio";
@@ -23,7 +23,7 @@ pub struct KGlobalAccel {
     running: Option<Shortcuts>,
 }
 
-impl super::GlobalShortcuts for KGlobalAccel {
+impl crate::shortcuts::GlobalShortcuts for KGlobalAccel {
     fn start(&mut self, events: Sender<Event>, knobs: usize, _bindings: &BTreeMap<String, String>) {
         self.running = Shortcuts::start(events, knobs);
     }

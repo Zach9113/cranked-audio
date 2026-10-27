@@ -3,7 +3,7 @@
 use ksni::blocking::{Handle, TrayMethods as _};
 use ksni::menu::{MenuItem, RadioGroup, RadioItem, StandardItem};
 
-use super::{Action, Tray, ICONS};
+use crate::tray::{Action, Tray, ICONS};
 
 impl ksni::Tray for Tray {
     fn id(&self) -> String {
@@ -95,7 +95,7 @@ pub struct StatusNotifier {
     running: Option<Handle<Tray>>,
 }
 
-impl super::TrayIcon for StatusNotifier {
+impl crate::tray::TrayIcon for StatusNotifier {
     fn start(&mut self, tray: Tray) {
         self.running = start(tray);
     }

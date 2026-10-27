@@ -1,13 +1,5 @@
 //! The desktop around the app: media keys for the active player, volume popups, and whether the screen is off.
 
-#[cfg(not(windows))]
-pub mod linux;
-#[cfg(windows)]
-pub mod windows;
-// Win32 plumbing the other Windows adapters share; moves to platform/windows/ in the layout step
-#[cfg(windows)]
-pub use windows::{attach_input_desktop, CRANKED_EXTRA_INFO};
-
 use std::sync::mpsc::{Receiver, Sender};
 
 use cranked_ipc::settings::PopupStyle;

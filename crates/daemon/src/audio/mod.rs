@@ -1,13 +1,6 @@
 //! The sound system: stream events in, volume changes out. `PipeWire` (through its `PulseAudio` layer) on Linux,
 //! WASAPI audio sessions on Windows; both report the same `Event`s and take the same `Command`s.
 
-#[cfg(windows)]
-mod policy_config;
-#[cfg(not(windows))]
-pub mod pulse;
-#[cfg(windows)]
-pub mod wasapi;
-
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
@@ -58,13 +51,13 @@ pub enum Command {
 }
 
 /// Level readings per second for each watched stream.
-const METER_RATE: u32 = 25;
+pub const METER_RATE: u32 = 25;
 /// About -44 dBFS: quieter than speech or music, louder than silence and line noise.
-const LOUD: f32 = 0.0063;
+pub const LOUD: f32 = 0.0063;
 /// Readings in a row above `LOUD` before it counts (two readings = 80 ms).
-const LOUD_READINGS: u8 = 2;
+pub const LOUD_READINGS: u8 = 2;
 /// While loud, report at most this often.
-const REPORT_EVERY: Duration = Duration::from_millis(200);
+pub const REPORT_EVERY: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Output {

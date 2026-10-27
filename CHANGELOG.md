@@ -12,7 +12,8 @@
   (media keys, popups, screen-off watch) is the second: a `Desktop` trait with a Plasma and a Win32 adapter. The tray icon is the third: `TrayIcon` (`start`, `show`), and global shortcuts the fourth: `GlobalShortcuts`
   (`start`, `ensure`). The remote API is the fifth: `RemoteApi` (`start`, `publish`), D-Bus on Linux and a no-op
   adapter on Windows. Controllers are the sixth: each configured device runs as a `Box<dyn InputSource>`, keyboard
-  knobs come from an `InputHardware` port (evdev, Raw Input), and a unit test runs a fake one without hardware.
+  knobs come from an `InputHardware` port (evdev, Raw Input), and a unit test runs a fake one without hardware. Every adapter now lives under `platform/linux/` or
+  `platform/windows/`, and `platform/mod.rs` is the one place that picks the OS.
 - AUR package `cranked-audio-bin` (repackages the release tarball): `packaging/aur/cranked-audio-bin`, and
   `scripts/update-aur.sh vX.Y.Z` points it at a new release.
 - The workspace lint set (clippy pedantic plus most of restriction) is now switched on for every crate and clean.

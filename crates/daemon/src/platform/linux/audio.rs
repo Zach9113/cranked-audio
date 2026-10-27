@@ -21,7 +21,7 @@ use pulse::sample::{Format, Spec};
 use pulse::stream::{FlagSet as StreamFlags, PeekResult, Stream as PaStream};
 use pulse::volume::{ChannelVolumes, Volume};
 
-use super::{next_output, Command, Output, LOUD, LOUD_READINGS, METER_RATE, REPORT_EVERY};
+use crate::audio::{next_output, Command, Output, LOUD, LOUD_READINGS, METER_RATE, REPORT_EVERY};
 use crate::matching::Stream;
 use crate::Event;
 use cranked_protocol::convert::round_u8;
@@ -64,7 +64,7 @@ fn stream_from(info: &SinkInputInfo) -> Stream {
 /// The Linux audio adapter: `PipeWire` through its `PulseAudio` layer.
 pub struct PipeWire;
 
-impl super::AudioSystem for PipeWire {
+impl crate::audio::AudioSystem for PipeWire {
     fn start(&self, commands: Receiver<Command>, events: Sender<Event>) {
         crate::platform::spawn_thread("audio", move || run(&commands, &events));
     }

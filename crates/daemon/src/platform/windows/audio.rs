@@ -26,7 +26,7 @@ use windows::Win32::System::Threading::{
     OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 
-use super::{next_output, Command, Output, LOUD, LOUD_READINGS, METER_RATE, REPORT_EVERY};
+use crate::audio::{next_output, Command, Output, LOUD, LOUD_READINGS, METER_RATE, REPORT_EVERY};
 use crate::matching::Stream;
 use crate::Event;
 
@@ -36,7 +36,7 @@ const SCAN_EVERY: Duration = Duration::from_millis(300);
 /// The Windows audio adapter: WASAPI audio sessions.
 pub struct Wasapi;
 
-impl super::AudioSystem for Wasapi {
+impl crate::audio::AudioSystem for Wasapi {
     fn start(&self, commands: Receiver<Command>, events: Sender<Event>) {
         crate::platform::spawn_thread("audio", move || run(&commands, &events));
     }

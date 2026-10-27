@@ -14,7 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, PostThreadMessageW, TranslateMessage, MSG, WM_APP,
 };
 
-use super::{Action, Tray, ICONS};
+use crate::tray::{Action, Tray, ICONS};
 
 /// Posted to the tray thread when what the tray shows changed.
 const REFRESH: u32 = WM_APP + 1;
@@ -26,7 +26,7 @@ pub struct NotificationArea {
     running: Option<Handle>,
 }
 
-impl super::TrayIcon for NotificationArea {
+impl crate::tray::TrayIcon for NotificationArea {
     fn start(&mut self, tray: Tray) {
         self.running = start(tray);
     }
@@ -153,7 +153,7 @@ fn start(tray: Tray) -> Option<Handle> {
     let (ready, started) = mpsc::channel();
     let for_thread = Arc::clone(&state);
     let spawned = std::thread::Builder::new().name("tray".into()).spawn(move || {
-        crate::desktop::attach_input_desktop();
+        super::attach_input_desktop();
         let built = for_thread.lock().map_err(|e| e.to_string()).and_then(|mut guard| {
             let (icon, actions) = build(&guard.0)?;
             guard.1 = actions;

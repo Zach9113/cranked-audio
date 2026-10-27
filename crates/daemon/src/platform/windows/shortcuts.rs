@@ -20,7 +20,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_TIMER,
 };
 
-use super::Shortcut;
+use crate::shortcuts::Shortcut;
 use crate::Event;
 
 const RELOAD: u32 = WM_APP + 1;
@@ -91,7 +91,7 @@ pub struct HotKeys {
     running: Option<Shortcuts>,
 }
 
-impl super::GlobalShortcuts for HotKeys {
+impl crate::shortcuts::GlobalShortcuts for HotKeys {
     fn start(&mut self, events: Sender<Event>, _knobs: usize, bindings: &BTreeMap<String, String>) {
         self.running = Shortcuts::start(events, bindings);
     }
@@ -116,7 +116,7 @@ impl Shortcuts {
         std::thread::Builder::new()
             .name("shortcuts".into())
             .spawn(move || {
-                crate::desktop::attach_input_desktop();
+                super::attach_input_desktop();
                 // SAFETY: no arguments; this thread owns the hotkeys and runs their message loop
                 let tid = unsafe { GetCurrentThreadId() };
                 let _ = tx.send(tid);

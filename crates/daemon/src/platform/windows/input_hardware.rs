@@ -30,8 +30,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_TIMER,
 };
 
-use super::{is_board, send, Input, RETRY};
-use crate::desktop::{attach_input_desktop, MediaKey, CRANKED_EXTRA_INFO};
+use super::{attach_input_desktop, CRANKED_EXTRA_INFO};
+use crate::desktop::MediaKey;
+use crate::devices::{is_board, send, Input, RETRY};
 use crate::Event;
 
 /// Substrings in device names that indicate virtual injectors, monitor audio jacks, microphones, coolers or system
@@ -327,7 +328,7 @@ fn device_present(target: &str) -> bool {
 /// The Windows input hardware adapter: keyboard knobs through Raw Input and a low-level keyboard hook, COM ports.
 pub struct RawInput;
 
-impl super::InputHardware for RawInput {
+impl crate::devices::InputHardware for RawInput {
     fn keyboard_knobs(&self) -> (Vec<String>, Vec<String>) {
         keyboard_knobs()
     }
@@ -336,7 +337,7 @@ impl super::InputHardware for RawInput {
         serial_ports()
     }
 
-    fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn super::InputSource> {
+    fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn crate::devices::InputSource> {
         Box::new(RawInputKnob { name, knob, step, grab })
     }
 }
@@ -349,7 +350,7 @@ struct RawInputKnob {
     grab: bool,
 }
 
-impl super::InputSource for RawInputKnob {
+impl crate::devices::InputSource for RawInputKnob {
     fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool) {
         keyboard(&self.name, self.knob, self.step, self.grab, events, current);
     }

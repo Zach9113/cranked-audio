@@ -3,8 +3,8 @@
 use std::sync::mpsc::Sender;
 use std::time::Duration;
 
-use super::{is_board, send, Input, RETRY};
 use crate::desktop::MediaKey;
+use crate::devices::{is_board, send, Input, RETRY};
 use crate::Event;
 
 /// Whether an input device types (has letter keys): those are never taken over.
@@ -194,7 +194,7 @@ pub fn find_knob_device(name: &str) -> Option<(std::path::PathBuf, evdev::Device
 /// The Linux input hardware adapter: keyboard knobs through evdev, serial ports from /dev/serial/by-id.
 pub struct Evdev;
 
-impl super::InputHardware for Evdev {
+impl crate::devices::InputHardware for Evdev {
     fn keyboard_knobs(&self) -> (Vec<String>, Vec<String>) {
         keyboard_knobs()
     }
@@ -203,7 +203,7 @@ impl super::InputHardware for Evdev {
         serial_ports()
     }
 
-    fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn super::InputSource> {
+    fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn crate::devices::InputSource> {
         Box::new(EvdevKnob { name, knob, step, grab })
     }
 }
@@ -216,7 +216,7 @@ struct EvdevKnob {
     grab: bool,
 }
 
-impl super::InputSource for EvdevKnob {
+impl crate::devices::InputSource for EvdevKnob {
     fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool) {
         keyboard(&self.name, self.knob, self.step, self.grab, events, current);
     }

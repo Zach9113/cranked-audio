@@ -9,11 +9,6 @@
 //!
 //! Windows has no session bus; there the API isn't offered (yet).
 
-#[cfg(not(windows))]
-pub mod linux;
-#[cfg(windows)]
-pub mod windows;
-
 use std::sync::mpsc::Sender;
 
 use cranked_ipc::Snapshot;

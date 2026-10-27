@@ -9,7 +9,7 @@ use cranked_ipc::settings::PopupStyle;
 use zbus::blocking::Connection;
 use zbus::zvariant::{OwnedValue, Value};
 
-use super::{Command, MediaKey};
+use crate::desktop::{Command, MediaKey};
 
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
 /// playerctld tracks the most recently active player for us when it's running.
@@ -178,7 +178,7 @@ fn run_one(bus: &Connection, command: Command) -> zbus::Result<()> {
 /// The Linux desktop adapter: MPRIS media players, and KDE Plasma's on-screen display for popups.
 pub struct Plasma;
 
-impl super::Desktop for Plasma {
+impl crate::desktop::Desktop for Plasma {
     fn start(&self, commands: Receiver<Command>) {
         crate::platform::spawn_thread("desktop", move || run(commands));
     }

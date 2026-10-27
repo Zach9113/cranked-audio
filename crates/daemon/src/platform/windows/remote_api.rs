@@ -7,7 +7,7 @@ use crate::Event;
 /// The Windows remote API adapter: there is none yet, so nothing is offered.
 pub struct NotOffered;
 
-impl super::RemoteApi for NotOffered {
+impl crate::dbus::RemoteApi for NotOffered {
     fn start(&mut self, _events: Sender<Event>) {}
 
     fn publish(&self, _snapshot: &cranked_ipc::Snapshot) {}

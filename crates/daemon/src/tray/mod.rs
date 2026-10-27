@@ -1,10 +1,5 @@
 //! Tray icon: open the window, switch profiles, quit. Lives in the service so it's there without a window.
 
-#[cfg(not(windows))]
-pub mod linux;
-#[cfg(windows)]
-pub mod windows;
-
 use std::sync::mpsc::Sender;
 
 use crate::Event;
@@ -34,13 +29,13 @@ pub struct Tray {
 }
 
 impl Tray {
-    fn send(&self, action: Action) {
+    pub fn send(&self, action: Action) {
         let _ = self.events.send(Event::Tray(action));
     }
 }
 
 /// Pre-rendered by data/make-tray-icons.sh.
-const ICONS: [(i32, &[u8]); 4] = [
+pub const ICONS: [(i32, &[u8]); 4] = [
     (22, include_bytes!("../../../../data/tray/22.rgba")),
     (32, include_bytes!("../../../../data/tray/32.rgba")),
     (48, include_bytes!("../../../../data/tray/48.rgba")),

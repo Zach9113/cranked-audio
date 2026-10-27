@@ -44,7 +44,19 @@ contract explicit and swappable; they don't redesign it.
    `windows::NotOffered` (a no-op instead of `type Published = ((), ())`). *(#11)*
 6. **Devices.** `InputSource` per configured device, started from a `Vec<Box<dyn InputSource>>`; MIDI and deej
    sources are portable and shared. Keyboard knobs come from the `InputHardware` port (adapters `linux::Evdev`,
-   `windows::RawInput`), which also lists keyboards and serial ports for Settings. *(this PR)*
-7. **Layout and tests.** Move the adapters to `platform/linux/` and `platform/windows/` (the last `cfg` lines in
-   one module), add a fake `Platform`, and test the service against it. Then decide whether the Windows adapters
-   become their own crate so the daemon can `forbid(unsafe_code)`.
+   `windows::RawInput`), which also lists keyboards and serial ports for Settings. *(#12)*
+7. **Layout** *(7a, this PR)*. Every adapter lives in `platform/linux/` or `platform/windows/`, one file per port
+   (`audio`, `desktop`, `tray`, `shortcuts`, `remote_api`, `input_hardware`); the shared Win32 helpers
+   (`attach_input_desktop`, `CRANKED_EXTRA_INFO`) sit in `platform/windows/mod.rs`. The six port modules have no
+   `cfg` left; `platform/mod.rs` is the one place that picks the OS.
+8. **Fake platform and service tests** *(7b)*. A `Platform` of recording fakes, and tests that drive `Service`
+   through it without PipeWire, a desktop session or a VM.
+
+## Still OS-specific outside `platform/` (candidates for later ports)
+
+- `serial.rs`, the mixer link: Windows needs a read timeout, DTR on open and LED frames written from the reader
+  thread.
+- `updater.rs`: Linux runs the release's `install.sh`, Windows swaps the two `.exe` files. Its Windows half
+  (waiting for the old process with `OpenProcess`) is the last `unsafe` outside `platform/`; once it moves, the
+  rest of the daemon can `forbid(unsafe_code)` without a separate crate.
+- `main.rs`: one Windows block that waits for the old process after an update.

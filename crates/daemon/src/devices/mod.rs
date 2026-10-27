@@ -10,11 +10,6 @@ use std::time::{Duration, Instant};
 use cranked_ipc::settings::{Device, MidiControl};
 use cranked_protocol::convert::saturate_u8;
 
-#[cfg(not(windows))]
-pub mod linux;
-#[cfg(windows)]
-pub mod windows;
-
 use crate::desktop::MediaKey;
 use crate::Event;
 
@@ -36,7 +31,7 @@ pub struct Learned {
     pub number: u8,
 }
 
-const RETRY: Duration = Duration::from_secs(3);
+pub const RETRY: Duration = Duration::from_secs(3);
 
 /// The port to one configured controller. It runs on its own thread and turns what it reads into `Input` until
 /// `current()` turns false (new settings started its replacement).
@@ -81,7 +76,7 @@ pub fn start(sources: Vec<Box<dyn InputSource>>, events: &Sender<Event>, generat
     }
 }
 
-fn send(events: &Sender<Event>, input: Input) -> bool {
+pub fn send(events: &Sender<Event>, input: Input) -> bool {
     events.send(Event::Device(input)).is_ok()
 }
 

@@ -1,11 +1,6 @@
 //! Global shortcuts for the knobs, buttons, next profile and the window: KDE's `kglobalaccel` on Linux, and
 //! `RegisterHotKey` on Windows (configured in `config.toml` under `[shortcuts]` or in Settings).
 
-#[cfg(not(windows))]
-pub mod linux;
-#[cfg(windows)]
-pub mod windows;
-
 use std::collections::BTreeMap;
 use std::sync::mpsc::Sender;
 
