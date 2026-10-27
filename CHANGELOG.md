@@ -2,7 +2,13 @@
 
 ## Unreleased
 
+### Linux
+- Copies installed by a package manager (in `/usr`) no longer install updates themselves: Settings shows the new
+  version and says to update with the package manager, instead of adding a second copy in `~/.local/bin`.
+
 ### Development
+- AUR package `cranked-audio-bin` (repackages the release tarball): `packaging/aur/cranked-audio-bin`, and
+  `scripts/update-aur.sh vX.Y.Z` points it at a new release.
 - The workspace lint set (clippy pedantic plus most of restriction) is now switched on for every crate and clean.
   Warnings fail CI (new `CI` workflow: fmt, `clippy -D warnings`, unit tests) but not plain builds, so a newer Rust
   can't break source builds for users and packagers. A few pure-style rules are parked in `Cargo.toml` for now.

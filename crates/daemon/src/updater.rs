@@ -94,8 +94,16 @@ const PACKAGE_SUFFIX: &str = "-x86_64.tar.gz";
 #[cfg(windows)]
 const PACKAGE_SUFFIX: &str = "-windows-x86_64-experimental.zip";
 
-/// Whether this build can install updates itself.
-pub const CAN_INSTALL: bool = true;
+/// Whether this copy can install updates itself. A copy a package manager put in /usr can't: the release's
+/// installer would add a second copy in ~/.local/bin, so the package manager updates it instead.
+pub fn can_install() -> bool {
+    std::env::current_exe().is_ok_and(|program| !is_system_install(&program))
+}
+
+/// Whether a program lives in the system's own folders (installed by a package manager, e.g. from the AUR).
+pub fn is_system_install(program: &std::path::Path) -> bool {
+    cfg!(not(windows)) && program.starts_with("/usr")
+}
 
 /// A fresh folder only this user can open (never in a shared place like /tmp, never one that already existed),
 /// so nothing else on the machine can swap the installer between unpacking and running it.
@@ -368,6 +376,15 @@ mod tests {
         assert_eq!(checksum_in(&format!("{sum}  cranked-audio-v0.2.0-x86_64.tar.gz\n")), Some(sum));
         assert_eq!(checksum_in("not a checksum"), None);
         assert!(!is_newer("nightly", "0.1.0"), "unreadable versions are never newer");
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn packaged_copies_leave_updates_to_the_package_manager() {
+        assert!(is_system_install(std::path::Path::new("/usr/bin/cranked-audiod")));
+        assert!(!is_system_install(std::path::Path::new("/home/someone/.local/bin/cranked-audiod")));
+        assert!(!is_system_install(std::path::Path::new("/usrlocal/cranked-audiod")), "only the /usr folder itself");
+        assert!(can_install(), "the test program runs from target/, which is not a system install");
     }
 
     #[cfg(windows)]

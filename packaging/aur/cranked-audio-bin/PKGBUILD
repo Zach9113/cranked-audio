@@ -1,0 +1,69 @@
+# Maintainer: Zach9113 <https://github.com/Zach9113>
+# Repackages the release tarball that GitHub Actions builds for every tag.
+# New release: scripts/update-aur.sh vX.Y.Z (sets pkgver, the checksums and .SRCINFO).
+
+pkgname=cranked-audio-bin
+pkgver=2.2.0
+pkgrel=1
+pkgdesc='Per-app volume knobs on a USB mixer or on screen, with Home Assistant and a Plasma widget'
+arch=('x86_64')
+url='https://github.com/Zach9113/cranked-audio'
+license=('GPL-3.0-only')
+# linked: alsa-lib, fontconfig, glibc, libgcc, libpulse; loaded by the window at runtime: wayland or the X11 libraries
+depends=('alsa-lib' 'fontconfig' 'glibc' 'libgcc' 'libpulse'
+         'libx11' 'libxcb' 'libxcursor' 'libxi' 'libxkbcommon' 'libxkbcommon-x11' 'wayland')
+optdepends=('pipewire-pulse: PipeWire audio (PulseAudio works too)'
+            'plasma-workspace: the Plasma panel widget')
+provides=('cranked-audio')
+conflicts=('cranked-audio')
+options=('!strip' '!debug')
+install=cranked-audio.install
+source=("$url/releases/download/v$pkgver/cranked-audio-v$pkgver-x86_64.tar.gz"
+        "LICENSE-$pkgver::https://raw.githubusercontent.com/Zach9113/cranked-audio/v$pkgver/LICENSE")
+sha256sums=('f55776c9b38a37b926194f085f1fea86c21e3626bd6cfa131bcb371184bc978a'
+            'fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0')
+
+package() {
+  local app=io.github.zach9113.CrankedAudio
+  cd "cranked-audio-v$pkgver-x86_64"
+
+  install -Dm0755 bin/cranked-audiod bin/cranked-audio -t "$pkgdir/usr/bin/"
+  install -Dm0644 share/cranked-audio.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/$app.svg"
+  install -Dm0644 udev/60-cranked-audio.rules -t "$pkgdir/usr/lib/udev/rules.d/"
+  install -Dm0644 "$srcdir/LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+  local widget="$pkgdir/usr/share/plasma/plasmoids/io.github.zach9113.crankedaudio"
+  install -d "$widget"
+  cp -r --no-preserve=ownership plasmoid/. "$widget/"
+  find "$widget" -type d -exec chmod 0755 {} + -o -type f -exec chmod 0644 {} +
+
+  install -Dm0644 /dev/stdin "$pkgdir/usr/share/applications/$app.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Cranked Audio
+GenericName=Volume Knobs
+Comment=Per-app volume knobs, on a USB mixer or on screen
+Exec=/usr/bin/cranked-audio
+Icon=$app
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
+Keywords=volume;mixer;knob;audio;controller;
+StartupWMClass=$app
+EOF
+
+  install -Dm0644 /dev/stdin "$pkgdir/usr/lib/systemd/user/cranked-audio.service" <<EOF
+[Unit]
+Description=Cranked Audio (volume knobs)
+PartOf=graphical-session.target
+After=graphical-session.target pipewire-pulse.service
+
+[Service]
+ExecStart=/usr/bin/cranked-audiod
+# quitting from the tray is a clean exit and stays quit; a crash comes back
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+}

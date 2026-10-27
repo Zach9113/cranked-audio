@@ -1,0 +1,13 @@
+post_install() {
+  cat <<'EOF'
+==> Start Cranked Audio now and at every login (run as your user, not root):
+      systemctl --user enable --now cranked-audio
+==> Installed with ./install.sh before? Remove that copy first so it doesn't shadow this one:
+      ./install.sh --uninstall   (from the source folder or release tarball; settings are kept)
+==> Plug the mixer in again once so the new udev rule gives you access to it.
+EOF
+}
+
+post_upgrade() {
+  echo '==> Restart Cranked Audio to use the new version: systemctl --user restart cranked-audio'
+}

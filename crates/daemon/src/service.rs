@@ -256,7 +256,10 @@ impl Service {
                 });
             }
             "apply-update" => {
-                if let Some(info) = self.latest_release.clone() {
+                if !updater::can_install() {
+                    let status = "This copy came from a package manager; update it there.".into();
+                    self.update_status(status, None, false);
+                } else if let Some(info) = self.latest_release.clone() {
                     let events = self.events.clone();
                     spawn("updater-apply", move || {
                         let _ = events.send(Event::UpdateApplyResult(updater::apply_update(&info)));
@@ -358,7 +361,12 @@ impl Service {
             Ok(Some(info)) => {
                 let version = info.version.clone();
                 self.latest_release = Some(info);
-                self.update_status(format!("Update available: {version}"), Some(version), updater::CAN_INSTALL);
+                if updater::can_install() {
+                    self.update_status(format!("Update available: {version}"), Some(version), true);
+                } else {
+                    let status = format!("Update available: {version}. Update it with your package manager.");
+                    self.update_status(status, Some(version), false);
+                }
             }
             Ok(None) => {
                 self.latest_release = None;
