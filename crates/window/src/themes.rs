@@ -4,8 +4,9 @@ use cranked_protocol::convert::round_u8;
 use slint::Color;
 
 /// Theme names in the order the Settings page lists them.
-pub const NAMES: [(&str, &str); 5] = [
+pub const NAMES: [(&str, &str); 6] = [
     ("cranked", "Cranked (dark)"),
+    ("oled", "OLED (pure black)"),
     ("midnight", "Midnight (blue-black)"),
     ("graphite", "Graphite (grey)"),
     ("light", "Light"),
@@ -75,6 +76,27 @@ pub fn from_base(background: Color, card: Color, text: Color, accent: Color) -> 
 
 pub fn named(name: &str) -> Theme {
     match name {
+        "oled" => Theme {
+            background: hex(0x000000),
+            card: hex(0x09090c),
+            centre: hex(0x131318),
+            centre_hover: hex(0x1b1b22),
+            track: hex(0x1f1f27),
+            button: hex(0x111116),
+            button_hover: hex(0x1a1a22),
+            edge: hex(0x282832),
+            text: hex(0xf5f5f7),
+            text_strong: hex(0xffffff),
+            text_dim: hex(0xc8c8d2),
+            subtle: hex(0xa8a8b4),
+            faint: hex(0x888894),
+            hint: hex(0x686874),
+            list: hex(0x050507),
+            selected: hex(0x183824),
+            selected_hover: hex(0x20482e),
+            check: hex(0x00ff7f),
+            ok: hex(0x00e676),
+        },
         "midnight" => from_base(hex(0x0b0f1a), hex(0x131a2b), hex(0xe6ecf8), hex(0x5aa9ff)),
         "graphite" => from_base(hex(0x1e1f22), hex(0x2a2b2f), hex(0xececee), hex(0x9aa4b2)),
         "light" => from_base(hex(0xeef0f3), hex(0xffffff), hex(0x1d1f24), hex(0x1f9d55)),

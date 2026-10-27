@@ -43,6 +43,12 @@ jobs:
   build-windows:
     needs: build-release
     runs-on: windows-latest
+    # the Azure federated credential trusts runs in this environment
+    environment: release
+    permissions:
+      contents: write
+      # Azure sign-in through OpenID Connect: no Azure secret is stored in the repository
+      id-token: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -50,9 +56,38 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Build the Windows programs
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -BuildOnly
+
+      # Signing (Azure Artifact Signing) runs once the repository variable ARTIFACT_SIGNING_ACCOUNT is set; until
+      # then releases stay unsigned. Smart App Control (on by default in new Windows 11 installs) blocks unsigned
+      # programs. Set up: docs/windows-signing.md
+      - name: Azure sign-in
+        if: vars.ARTIFACT_SIGNING_ACCOUNT != ''
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign the Windows programs
+        if: vars.ARTIFACT_SIGNING_ACCOUNT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files: |
+            ${{ github.workspace }}\target\release\cranked-audiod.exe
+            ${{ github.workspace }}\target\release\cranked-audio.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
       - name: Build Windows zip
         shell: pwsh
-        run: ./scripts/package-windows.ps1
+        run: ./scripts/package-windows.ps1 -PackageOnly
 
       - name: Keep the zip with the workflow run
         uses: actions/upload-artifact@v4

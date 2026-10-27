@@ -8,11 +8,15 @@ export struct KnobData {
     // the knob's number in the service (counting from 0), even when other knobs are hidden
     index: int,
     name: string,
-    // 0..100, -1 while unknown
+    // 0..100 knob position, -1 while unknown
     level: int,
+    // mapped effective volume (min..max), -1 while unknown
+    volume: int,
     // dial arcs as SVG path commands (viewbox 100 x 100)
     fill-arc: string,
     rest-arc: string,
+    range-marks: string,
+    cap-label: string,
     // solid colours worked out by the window (no transparency: partial repaints would stack it up)
     fill-color: color,
     rest-color: color,
@@ -101,6 +105,16 @@ component Dial inherits Rectangle {
         stroke-width: 9px * Look.scale;
     }
 
+    if data.range-marks != "": Path {
+        width: 100%;
+        height: 100%;
+        viewbox-width: 100;
+        viewbox-height: 100;
+        commands: data.range-marks;
+        stroke: Palette.text-strong;
+        stroke-width: 2.5px * Look.scale;
+    }
+
     // turning: drag up/down anywhere on the dial (or scroll); with the button inside, the middle is the button
     area := TouchArea {
         property <int> start-level;
@@ -154,17 +168,17 @@ component Dial inherits Rectangle {
             }
         }
         if Look.show-percent || !root.button-inside: Text {
-            text: data.level < 0 ? "–" : data.level + "%";
+            text: data.volume < 0 ? "–" : data.volume + "%";
             horizontal-alignment: center;
             font-size: (root.button-inside ? 13px : 24px) * Look.scale;
             font-weight: 700;
             color: data.muted ? Palette.faint : Palette.text;
         }
-        if data.muted || data.lowered: Text {
-            text: data.muted ? "muted" : "lowered";
+        if data.muted || data.lowered || data.cap-label != "": Text {
+            text: data.muted ? "muted" : data.lowered ? "lowered" : data.cap-label;
             horizontal-alignment: center;
             font-size: 12px * Look.scale;
-            color: data.muted ? #e07a6a : #e0b050;
+            color: data.muted ? #e07a6a : data.lowered ? #e0b050 : Palette.check;
         }
     }
 
@@ -325,7 +339,7 @@ component KnobRow inherits Rectangle {
                 }
             }
             if Look.show-source: Text {
-                text: data.muted ? "muted" : data.lowered ? data.source + " · lowered" : data.source;
+                text: data.muted ? "muted" : data.lowered ? data.source + " · lowered" : data.cap-label != "" ? data.source + " · " + data.cap-label : data.source;
                 font-size: 12px * Look.scale;
                 color: Palette.subtle;
                 overflow: elide;
@@ -341,7 +355,7 @@ component KnobRow inherits Rectangle {
 
         if Look.show-percent: Text {
             width: 48px * Look.scale;
-            text: data.level < 0 ? "–" : data.level + "%";
+            text: data.volume < 0 ? "–" : data.volume + "%";
             horizontal-alignment: right;
             vertical-alignment: center;
             font-size: 15px * Look.scale;
@@ -420,7 +434,7 @@ component FaderColumn inherits Rectangle {
         }
 
         if Look.show-percent: Text {
-            text: data.level < 0 ? "–" : data.level + "%";
+            text: data.volume < 0 ? "–" : data.volume + "%";
             horizontal-alignment: center;
             font-size: 15px * Look.scale;
             font-weight: 700;
@@ -428,10 +442,10 @@ component FaderColumn inherits Rectangle {
         }
 
         if Look.show-source: Text {
-            text: data.muted ? "muted" : data.lowered ? "lowered" : data.source;
+            text: data.muted ? "muted" : data.lowered ? "lowered" : data.cap-label != "" ? data.cap-label : data.source;
             horizontal-alignment: center;
             font-size: 11px * Look.scale;
-            color: data.muted ? #e07a6a : data.lowered ? #e0b050 : Palette.subtle;
+            color: data.muted ? #e07a6a : data.lowered ? #e0b050 : data.cap-label != "" ? Palette.check : Palette.subtle;
             overflow: elide;
         }
 

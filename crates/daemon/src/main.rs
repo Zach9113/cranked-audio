@@ -46,8 +46,9 @@ pub enum Event {
     HomeAssistantEntities(Vec<cranked_ipc::Entity>),
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
-    /// A window connected / sent a line.
-    ClientConnected(cranked_ipc::UnixStream),
+    /// A window connected, disconnected or sent a line.
+    ClientConnected(u64, cranked_ipc::UnixStream),
+    ClientDisconnected(u64),
     ClientLine(String),
     Tray(tray::Action),
     /// A request over the D-Bus API.
@@ -94,6 +95,10 @@ pub struct Options {
     pub verbose: bool,
     pub print_config: bool,
     pub dry_run: bool,
+    /// Set by the old service when it restarts into an update (Windows): wait for that process to exit first.
+    pub wait_pid: Option<u32>,
+    /// Open the window once started (the old service had one open).
+    pub open_window: bool,
 }
 
 impl Options {
@@ -106,6 +111,8 @@ impl Options {
             verbose: false,
             print_config: false,
             dry_run: false,
+            wait_pid: None,
+            open_window: false,
         };
         while let Some(arg) = args.next() {
             match arg.as_str() {
@@ -115,6 +122,8 @@ impl Options {
                 "-v" | "--verbose" => options.verbose = true,
                 "--print-config" => options.print_config = true,
                 "--dry-run" => options.dry_run = true,
+                "--wait-pid" => options.wait_pid = Some(args.next()?.parse().ok()?),
+                "--open-window" => options.open_window = true,
                 _ => return None,
             }
         }
@@ -132,6 +141,14 @@ fn main() {
     };
     if options.print_config {
         return print!("{}", toml::to_string(&config).unwrap_or_default());
+    }
+    // after an update, the old service may still hold the socket and the mixer's port for a moment
+    #[cfg(windows)]
+    {
+        if let Some(pid) = options.wait_pid {
+            updater::wait_for_exit(pid, std::time::Duration::from_secs(15));
+        }
+        updater::remove_leftovers();
     }
     let Some(listener) = server::listen() else {
         return eprintln!("Cranked Audio is already running");
@@ -156,6 +173,11 @@ mod tests {
         assert!(options(&[]).unwrap().use_mixer);
         assert!(options(&["--config"]).is_none(), "--config needs a file");
         assert!(options(&["--bogus"]).is_none());
+        let restarted = options(&["-v", "--wait-pid", "4242", "--open-window"]).unwrap();
+        assert_eq!(restarted.wait_pid, Some(4242));
+        assert!(restarted.open_window && restarted.verbose);
+        assert!(options(&["--wait-pid"]).is_none(), "--wait-pid needs a process id");
+        assert!(options(&["--wait-pid", "x"]).is_none());
     }
 
     #[test]

@@ -26,6 +26,8 @@ const LED_EVERY: Duration = Duration::from_millis(40);
 const LED_EASE: f64 = 0.07;
 /// The mixer blanks its LEDs soon after a frame, so the current one is sent again this often.
 const LED_REFRESH: Duration = Duration::from_millis(250);
+/// Windows timers can fire a tick early; without this the refresh missed its wake-up and went out every 500 ms.
+const TIMER_SLACK: Duration = Duration::from_millis(20);
 /// A button's "Turning on ..." popup is followed by the result if it arrives within this time.
 const RESULT_WITHIN: Duration = Duration::from_secs(10);
 /// Without a mixer by then, the knobs start where they were last time.
@@ -76,6 +78,9 @@ pub fn catch_up(light: u8, previous: u8, knob: u8) -> u8 {
 
 struct StartupSync {
     started: Instant,
+    /// When the mixer's first bytes were handled: the time limit counts from here once there are any, so readings
+    /// that queued up while the service was busy starting are never cut off.
+    first_bytes: Option<Instant>,
     last_reading: Instant,
     seen: [bool; KNOBS],
 }
@@ -289,9 +294,16 @@ impl Core {
                         None => "Not set up".into(),
                     }
                 };
+                let (min, max) = if config.controls_audio() {
+                    (config.min.min(config.max), config.max.max(config.min))
+                } else {
+                    (0, 100)
+                };
                 cranked_ipc::Knob {
                     name: config.label(channel),
                     level: self.level(channel),
+                    min,
+                    max,
                     color: config.color.clone(),
                     background: config.background.clone(),
                     muted_color: config.muted_color.clone(),
@@ -368,7 +380,8 @@ impl Core {
                     out.push(Out::SaveState(self.state()));
                 }
                 self.last_frame = None;
-                self.sync = Some(StartupSync { started: now, last_reading: now, seen: [false; KNOBS] });
+                self.sync =
+                    Some(StartupSync { started: now, first_bytes: None, last_reading: now, seen: [false; KNOBS] });
             }
             Event::MixerLost => {
                 self.mixer_connected = false;
@@ -381,6 +394,9 @@ impl Core {
                 }
             }
             Event::Bytes(bytes) => {
+                if let Some(sync) = &mut self.sync {
+                    sync.first_bytes.get_or_insert(now);
+                }
                 for input in self.mixer.push(&bytes) {
                     self.mixer_input(input, now, &mut out);
                 }
@@ -437,6 +453,9 @@ impl Core {
             }
             Event::OutputSwitched(name) => {
                 let text = name.unwrap_or_else(|| "No other output".into());
+                if self.verbose {
+                    eprintln!("output: {text}");
+                }
                 out.extend(self.popup_text("audio-card", text));
             }
             Event::HomeAssistantState(state) => {
@@ -464,7 +483,8 @@ impl Core {
                 self.streams.clear();
                 self.metered.clear();
             }
-            Event::ClientConnected(_)
+            Event::ClientConnected(..)
+            | Event::ClientDisconnected(_)
             | Event::ClientLine(_)
             | Event::Tray(_)
             | Event::HomeAssistantEntities(_)
@@ -565,11 +585,11 @@ impl Core {
         }
     }
 
-    /// Without a mixer, a knob nobody has turned yet (and with no saved position) shows the volume its sound is
-    /// already at, instead of nothing; nothing is changed until it's turned.
+    /// Without a mixer (or for knobs past the mixer's five), a knob nobody has turned yet (and with no saved
+    /// position) shows the volume its sound is already at, instead of nothing; nothing is changed until it's turned.
     fn adopt(&mut self, channel: usize, percent: u8) {
         let untouched = channel < self.count() && self.knobs[channel].is_none() && self.saved[channel].is_none();
-        if untouched && !self.mixer_connected && self.channels()[channel].light.is_none() {
+        if untouched && (!self.mixer_connected || channel >= KNOBS) && self.channels()[channel].light.is_none() {
             self.knobs[channel] = Some(percent);
             self.filter.seed(channel, cranked_protocol::percent_to_raw(percent));
         }
@@ -608,7 +628,10 @@ impl Core {
             Action::PlayPause => out.push(Out::Desktop(Desktop::Media(MediaKey::PlayPause))),
             Action::Next => out.push(Out::Desktop(Desktop::Media(MediaKey::Next))),
             Action::Previous => out.push(Out::Desktop(Desktop::Media(MediaKey::Previous))),
-            Action::SwitchOutput => out.push(Out::Audio(Audio::SwitchOutput)),
+            Action::SwitchOutput => out.push(Out::Audio(Audio::SwitchOutput {
+                enabled: self.config.enabled_outputs.clone(),
+                disabled: self.config.disabled_outputs.clone(),
+            })),
             Action::NextProfile => self.next_profile(out),
             Action::HomeAssistantToggle(entity) => self.home_assistant_button("toggle", entity, now, out),
             Action::HomeAssistantOff(entity) => self.home_assistant_button("turn_off", entity, now, out),
@@ -628,13 +651,15 @@ impl Core {
         out.push(Out::HomeAssistant(HomeAssistant::Call { service, entity }));
     }
 
-    fn mute_commands(&self, channel: usize, mute: bool) -> Vec<Out> {
-        let mut out: Vec<Out> = self
-            .streams
-            .values()
-            .filter(|(stream, c)| *c == Some(channel) && stream.muted != mute)
-            .map(|(stream, _)| Out::Audio(Audio::MuteStream { index: stream.index, mute }))
-            .collect();
+    fn mute_commands(&mut self, channel: usize, mute: bool) -> Vec<Out> {
+        let mut out = Vec::new();
+        #[expect(clippy::iter_over_hash_type, reason = "each stream is muted on its own; order doesn't matter")]
+        for (stream, c) in self.streams.values_mut() {
+            if *c == Some(channel) {
+                stream.muted = mute;
+                out.push(Out::Audio(Audio::MuteStream { index: stream.index, mute }));
+            }
+        }
         if self.channels()[channel].master {
             out.push(Out::Audio(Audio::MuteMaster { mute }));
         }
@@ -724,7 +749,8 @@ impl Core {
         if let Some(sync) = &self.sync {
             let all_seen = sync.seen.iter().all(|s| *s);
             let quiet = now.duration_since(sync.last_reading) >= SYNC_QUIET;
-            if (all_seen && quiet) || now.duration_since(sync.started) >= SYNC_LIMIT {
+            let limit_from = sync.first_bytes.unwrap_or(sync.started);
+            if (all_seen && quiet) || now.duration_since(limit_from) >= SYNC_LIMIT {
                 self.sync = None;
                 self.lights_settle_until = Some(now + LIGHTS_SETTLE);
                 // the mixer's own knobs
@@ -832,7 +858,7 @@ impl Core {
             led_frame(&colors(&looks, leds.brightness, leds.dim_idle, gamma, leds.blend))
         };
         let since = self.last_led_send.map(|t| now.duration_since(t));
-        if self.last_frame == Some(frame) && since.is_some_and(|s| s < LED_REFRESH) {
+        if self.last_frame == Some(frame) && since.is_some_and(|s| s + TIMER_SLACK < LED_REFRESH) {
             self.led_waiting = false;
             return None;
         }
@@ -987,6 +1013,9 @@ mod tests {
             theme: "cranked".into(),
             look: Look::default(),
             devices: Vec::new(),
+            enabled_outputs: Vec::new(),
+            disabled_outputs: Vec::new(),
+            shortcuts: std::collections::BTreeMap::new(),
             leds: Leds::default(),
             home_assistant: crate::config::HomeAssistant::default(),
             profiles: vec![
@@ -1092,6 +1121,33 @@ mod tests {
         assert!(!core.is_syncing());
         assert_eq!(core.knob(0), Some(50));
         assert_eq!(core.knob(1), None);
+    }
+
+    #[test]
+    fn sync_counts_its_limit_from_the_first_bytes_when_the_service_was_busy() {
+        // the service is busy starting, so the board's readings queue up and get handled well after the connect
+        let start = Instant::now();
+        let late = start + SYNC_LIMIT + Duration::from_secs(1);
+        let mut core = core();
+        core.handle(Event::MixerConnected, start);
+        core.handle(Event::Bytes(vec![0xFE]), late);
+        core.tick(late);
+        assert!(core.is_syncing(), "a chunk without readings doesn't end the sync");
+        core.handle(packets(&[(0, 10), (1, 10), (2, 10), (3, 10), (4, 10)]), late);
+        core.tick(late);
+        core.handle(packets(&[(0, 44), (1, 71), (2, 63), (3, 69), (4, 66)]), late);
+        core.tick(late + SYNC_QUIET);
+        assert!(!core.is_syncing());
+        assert_eq!((0..KNOBS).map(|k| core.knob(k)).collect::<Vec<_>>(), [44, 71, 63, 69, 66].map(Some));
+    }
+
+    #[test]
+    fn sync_still_gives_up_on_a_mixer_that_sends_nothing() {
+        let start = Instant::now();
+        let mut core = core();
+        core.handle(Event::MixerConnected, start);
+        core.tick(start + SYNC_LIMIT);
+        assert!(!core.is_syncing());
     }
 
     #[test]
@@ -1249,7 +1305,10 @@ mod tests {
         let mut core = synced(start);
         let at = start + Duration::from_secs(1);
         assert_eq!(press(&mut core, 0, at), [Out::Desktop(Desktop::Media(MediaKey::PlayPause))]);
-        assert_eq!(press(&mut core, 3, at + Duration::from_secs(1)), [Out::Audio(Audio::SwitchOutput)]);
+        assert_eq!(
+            press(&mut core, 3, at + Duration::from_secs(1)),
+            [Out::Audio(Audio::SwitchOutput { enabled: Vec::new(), disabled: Vec::new() })]
+        );
         assert_eq!(
             press(&mut core, 4, at + Duration::from_secs(2)),
             [
@@ -1658,5 +1717,18 @@ mod tests {
         let later = start + Duration::from_secs(10);
         core.handle(packets(&[(4, 90), (4, 90)]), later);
         assert!(set_streams(&core.tick(later)).is_empty());
+    }
+
+    #[test]
+    fn knobs_past_the_mixer_adopt_volume_even_with_mixer_connected() {
+        let start = Instant::now();
+        let mut cfg = sized(6);
+        cfg.profiles[0].channels[5].master = true;
+        cfg.profiles[0].channels[5].apps.clear();
+        let mut core = Core::new(cfg, &State::default());
+        core.handle(Event::MixerConnected, start);
+        core.handle(Event::OutputVolume(84), start);
+        assert_eq!(core.knob(5), Some(84), "6th knob adopts master volume while 5-knob mixer is connected");
+        assert_eq!(core.knob(0), None, "mixer knobs still wait for hardware readings");
     }
 }

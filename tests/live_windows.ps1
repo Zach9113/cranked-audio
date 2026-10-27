@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 $Bin = (Resolve-Path $Bin).Path
 $work = Join-Path $env:TEMP "cranked-live-$PID"
 New-Item -ItemType Directory -Force $work | Out-Null
-$env:CRANKED_SOCKET = "$work\socket"; $env:XDG_STATE_HOME = "$work\state"
+$env:CRANKED_SOCKET = "$work\socket"; $env:XDG_STATE_HOME = "$work\state"; $env:CRANKED_MPRIS_PLAYER = "cranked_selftest"
 @'
 popups = false
 

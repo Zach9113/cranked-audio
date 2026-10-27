@@ -92,7 +92,8 @@ impl Service {
         core.verbose = options.verbose;
         let device_generation = Arc::new(AtomicU64::new(0));
         devices::start(&core.config().devices, &events, &device_generation);
-        let shortcuts = shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()));
+        let shortcuts =
+            shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
         let tray = tray::start(tray::Tray {
             events: events.clone(),
             profile: String::new(),
@@ -122,6 +123,9 @@ impl Service {
             dry_run: options.dry_run,
         };
         service.restart_home_assistant();
+        if options.open_window {
+            spawn_detached(&sibling("cranked-audio"), &[]);
+        }
         service
     }
 
@@ -149,8 +153,12 @@ impl Service {
     /// Answers the events the service handles itself; returns the rest (some turned into knob input) for `Core`.
     fn route(&mut self, event: Event, requests: &mut Requests) -> Option<Event> {
         match event {
-            Event::ClientConnected(stream) => {
-                self.clients.add(stream, &self.core.snapshot());
+            Event::ClientConnected(id, stream) => {
+                self.clients.add(id, stream, &self.core.snapshot());
+                None
+            }
+            Event::ClientDisconnected(id) => {
+                self.clients.remove(id);
                 None
             }
             Event::ClientLine(line) => {
@@ -228,6 +236,7 @@ impl Service {
                     typing,
                     midi: devices::midi_controllers(),
                     serial: devices::serial_ports(),
+                    outputs: audio::list_outputs(),
                 }));
             }
             "learn-midi" => {
@@ -280,6 +289,7 @@ impl Service {
                 eprintln!("quit from the tray");
                 self.clients.send(&ServerMessage::Quit);
                 self.leds.send(&led_frame(&[[(0, 0, 0); cranked_protocol::LEDS_PER_KNOB]; cranked_protocol::KNOBS]));
+                self.leds.flush();
                 let _ = std::fs::remove_file(cranked_ipc::socket_path());
                 std::process::exit(0);
             }
@@ -334,9 +344,12 @@ impl Service {
         set_knob(knob, saturate_u8((current + delta).clamp(0, 100)))
     }
 
-    fn open_window(&self) {
+    /// Brings an open window to the front, or starts one.
+    fn open_window(&mut self) {
         if self.clients.is_empty() {
             spawn_detached(&sibling("cranked-audio"), &[]);
+        } else {
+            self.clients.send(&ServerMessage::OpenPage(String::new()));
         }
     }
 
@@ -356,11 +369,42 @@ impl Service {
     }
 
     fn update_applied(&mut self, result: Result<(), String>) {
+        let installed = result.is_ok();
         let status = match result {
             Ok(()) => "Update installed! Restarting...".into(),
             Err(e) => format!("Install failed: {e}"),
         };
         self.update_status(status, None, false);
+        // Linux: install.sh restarts the service. Windows: this one starts the new one and leaves.
+        if cfg!(windows) && installed {
+            self.restart_into_update();
+        }
+    }
+
+    /// Windows: starts the new service, which waits for this one to exit (socket, mixer port) and reopens the
+    /// window if one was open, with the same options this one had (minus the restart ones).
+    fn restart_into_update(&mut self) {
+        let mut kept: Vec<std::ffi::OsString> = Vec::new();
+        let mut old = std::env::args_os().skip(1);
+        while let Some(arg) = old.next() {
+            match arg.to_str() {
+                Some("--wait-pid") => {
+                    old.next();
+                }
+                Some("--open-window") => {}
+                _ => kept.push(arg),
+            }
+        }
+        let pid = std::process::id().to_string();
+        let mut args: Vec<&std::ffi::OsStr> = kept.iter().map(std::ffi::OsString::as_os_str).collect();
+        args.extend([std::ffi::OsStr::new("--wait-pid"), std::ffi::OsStr::new(&pid)]);
+        if !self.clients.is_empty() {
+            args.push("--open-window".as_ref());
+        }
+        spawn_detached(&sibling("cranked-audiod"), &args);
+        self.clients.send(&ServerMessage::Quit);
+        let _ = std::fs::remove_file(cranked_ipc::socket_path());
+        std::process::exit(0);
     }
 
     fn update_status(&mut self, status: String, latest_version: Option<String>, can_install: bool) {
@@ -405,7 +449,7 @@ impl Service {
             devices::start(&config.devices, &self.events, &self.device_generation);
         }
         if let Some(shortcuts) = &mut self.shortcuts {
-            shortcuts.ensure(most_knobs(&config));
+            shortcuts.ensure(most_knobs(&config), &config.shortcuts);
         }
         self.core.set_config(config, out);
         self.clients.send(&ServerMessage::Config(self.core.config().clone()));

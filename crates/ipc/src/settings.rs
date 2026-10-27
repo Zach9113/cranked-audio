@@ -389,10 +389,34 @@ pub struct Config {
     /// Controllers besides the mixer and the on-screen knobs.
     #[serde(default, rename = "device")]
     pub devices: Vec<Device>,
+    /// Virtual audio outputs the user explicitly included in Switch output.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enabled_outputs: Vec<String>,
+    /// Real audio outputs the user unchecked from Switch output.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_outputs: Vec<String>,
+    /// Global keyboard shortcuts (`action_id -> "Ctrl+Alt+Up"`), used when there is no desktop shortcut service.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub shortcuts: std::collections::BTreeMap<String, String>,
     pub leds: Leds,
     pub home_assistant: HomeAssistant,
     #[serde(rename = "profile")]
     pub profiles: Vec<Profile>,
+}
+
+/// Whether an audio output is included when cycling outputs: real outputs are on unless in `disabled`, virtual
+/// outputs are off unless in `enabled` (matched by friendly description or system name, case-insensitive).
+#[must_use]
+pub fn output_enabled(description: &str, name: &str, real: bool, enabled: &[String], disabled: &[String]) -> bool {
+    let matches =
+        |list: &[String]| list.iter().any(|s| s.eq_ignore_ascii_case(description) || s.eq_ignore_ascii_case(name));
+    if matches(disabled) {
+        false
+    } else if matches(enabled) {
+        true
+    } else {
+        real
+    }
 }
 
 /// The file may list `[[channel]]` directly (one profile) or `[[profile]]` sections with their own channels.
@@ -406,6 +430,9 @@ struct File {
     look: Look,
     #[serde(rename = "device")]
     devices: Vec<Device>,
+    enabled_outputs: Vec<String>,
+    disabled_outputs: Vec<String>,
+    shortcuts: std::collections::BTreeMap<String, String>,
     leds: Leds,
     home_assistant: HomeAssistant,
     auto_lower: AutoLower,
@@ -423,6 +450,9 @@ impl Default for File {
             theme: default_theme(),
             look: Look::default(),
             devices: Vec::new(),
+            enabled_outputs: Vec::new(),
+            disabled_outputs: Vec::new(),
+            shortcuts: std::collections::BTreeMap::new(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             auto_lower: AutoLower::default(),
@@ -479,6 +509,9 @@ impl Default for Config {
             theme: default_theme(),
             look: Look::default(),
             devices: Vec::new(),
+            enabled_outputs: Vec::new(),
+            disabled_outputs: Vec::new(),
+            shortcuts: std::collections::BTreeMap::new(),
             leds: Leds::default(),
             home_assistant: HomeAssistant::default(),
             profiles: vec![Profile {
@@ -527,6 +560,9 @@ impl Config {
             theme: file.theme,
             look: file.look,
             devices: file.devices,
+            enabled_outputs: file.enabled_outputs,
+            disabled_outputs: file.disabled_outputs,
+            shortcuts: file.shortcuts,
             leds: file.leds,
             home_assistant: file.home_assistant,
             profiles,
