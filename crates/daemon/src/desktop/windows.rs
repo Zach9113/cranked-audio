@@ -2,6 +2,8 @@
 //! MPRIS player, with a media key as fallback), volume/text popups show in a topmost non-activating OSD pill, and
 //! `watch_screen` turns off the mixer LEDs while the session is locked or the display sleeps.
 
+#![expect(unsafe_code, reason = "Win32 windows, GDI painting and power/session notifications are raw FFI")]
+
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -53,12 +55,13 @@ extern "system" {
 /// the daemon was spawned from a background or sandboxed desktop.
 pub fn attach_input_desktop() {
     const GENERIC_ALL: u32 = 0x1000_0000;
-    unsafe {
-        let desk = OpenInputDesktop(0, 0, GENERIC_ALL);
-        if !desk.is_null() {
-            let _ = SetThreadDesktop(desk);
-            let _ = CloseDesktop(desk);
-        }
+    // SAFETY: plain flags; the handle is checked and closed below
+    let desk = unsafe { OpenInputDesktop(0, 0, GENERIC_ALL) };
+    if !desk.is_null() {
+        // SAFETY: the desktop handle opened above (this thread has no windows or hooks yet)
+        let _ = unsafe { SetThreadDesktop(desk) };
+        // SAFETY: the same handle, not used again (the thread keeps the desktop it was set to)
+        let _ = unsafe { CloseDesktop(desk) };
     }
 }
 
@@ -74,8 +77,9 @@ fn tap(key: VIRTUAL_KEY) {
         },
     };
     let inputs = [input(KEYBD_EVENT_FLAGS(0)), input(KEYEVENTF_KEYUP)];
+    let input_size = i32::try_from(std::mem::size_of::<INPUT>()).unwrap_or(i32::MAX);
     // SAFETY: two fully set up keyboard inputs, with their real size
-    let sent = unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) };
+    let sent = unsafe { SendInput(&inputs, input_size) };
     if sent as usize != inputs.len() {
         eprintln!("media: the key wasn't sent");
     }
@@ -142,12 +146,15 @@ const fn rgb(r: u8, g: u8, b: u8) -> COLORREF {
     COLORREF((r as u32) | ((g as u32) << 8) | ((b as u32) << 16))
 }
 
+#[expect(clippy::multiple_unsafe_ops_per_block, reason = "GDI painting: every call works on the one paint DC")]
 unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         OSD_WAKE => {
+            // SAFETY: a plain metrics query
             let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) };
             let x = (screen_w - OSD_WIDTH) / 2;
             let y = 44;
+            // SAFETY: calls on our own popup window, from its own thread; the region passes to the window
             unsafe {
                 let rgn = CreateRoundRectRgn(0, 0, OSD_WIDTH + 1, OSD_HEIGHT + 1, 22, 22);
                 let _ = SetWindowRgn(hwnd, Some(rgn), false);
@@ -166,6 +173,7 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
             LRESULT(0)
         }
         WM_TIMER if wparam.0 == OSD_TIMER => {
+            // SAFETY: our own timer and window, from the window's thread
             unsafe {
                 let _ = KillTimer(Some(hwnd), OSD_TIMER);
                 let _ = ShowWindow(hwnd, SW_HIDE);
@@ -175,11 +183,14 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
         WM_PAINT => {
             let content = OSD_STATE.lock().map(|c| c.clone()).unwrap_or_default();
             let mut ps = PAINTSTRUCT::default();
-            let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
+            // SAFETY: answering WM_PAINT for our own window; `ps` outlives the matching EndPaint below
+            let hdc = unsafe { BeginPaint(hwnd, &raw mut ps) };
             let full = RECT { left: 0, top: 0, right: OSD_WIDTH, bottom: OSD_HEIGHT };
+            // SAFETY: GDI calls on the paint DC above; every brush, pen and font made here is selected out and
+            // deleted again, and the buffers passed in outlive the calls
             unsafe {
                 let bg = CreateSolidBrush(rgb(0x0E, 0x0E, 0x13));
-                FillRect(hdc, &full, bg);
+                FillRect(hdc, &raw const full, bg);
                 let _ = DeleteObject(HGDIOBJ(bg.0));
 
                 let border_pen = CreatePen(PS_SOLID, 1, rgb(0x2A, 0x2A, 0x36));
@@ -194,7 +205,7 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
 
                 SetBkMode(hdc, TRANSPARENT);
                 let face = wide("Segoe UI");
-                let mut face_buf = [0u16; 32];
+                let mut face_buf = [0_u16; 32];
                 for (dst, src) in face_buf.iter_mut().zip(face) {
                     *dst = src;
                 }
@@ -203,7 +214,7 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
                     0,
                     0,
                     0,
-                    if content.percent.is_some() { FW_SEMIBOLD.0 as i32 } else { FW_BOLD.0 as i32 },
+                    if content.percent.is_some() { FW_SEMIBOLD.0.cast_signed() } else { FW_BOLD.0.cast_signed() },
                     0,
                     0,
                     0,
@@ -221,11 +232,11 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
                     // Top row: Name on left, percentage on right
                     let mut name_rc = RECT { left: 18, top: 8, right: OSD_WIDTH - 64, bottom: 28 };
                     let mut name_w = wide(&content.text);
-                    DrawTextW(hdc, &mut name_w, &mut name_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                    DrawTextW(hdc, &mut name_w, &raw mut name_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
                     let mut pct_rc = RECT { left: OSD_WIDTH - 64, top: 8, right: OSD_WIDTH - 18, bottom: 28 };
-                    let mut pct_w = wide(&format!("{}%", percent));
-                    DrawTextW(hdc, &mut pct_w, &mut pct_rc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                    let mut pct_w = wide(&format!("{percent}%"));
+                    DrawTextW(hdc, &mut pct_w, &raw mut pct_rc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
                     // Bottom row: progress bar track + fill
                     let bar_left = 18;
@@ -234,7 +245,7 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
                     let bar_bottom = 42;
                     let track_rc = RECT { left: bar_left, top: bar_top, right: bar_right, bottom: bar_bottom };
                     let track_brush = CreateSolidBrush(rgb(0x26, 0x26, 0x32));
-                    FillRect(hdc, &track_rc, track_brush);
+                    FillRect(hdc, &raw const track_rc, track_brush);
                     let _ = DeleteObject(HGDIOBJ(track_brush.0));
 
                     let fill_w = ((bar_right - bar_left) * i32::from(percent.min(100))) / 100;
@@ -242,30 +253,34 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
                         let fill_rc =
                             RECT { left: bar_left, top: bar_top, right: bar_left + fill_w, bottom: bar_bottom };
                         let fill_color = if percent == 0 { rgb(0xE0, 0x7A, 0x6A) } else { rgb(0x00, 0xC8, 0xFF) };
-                        let fill = CreateSolidBrush(fill_color);
-                        FillRect(hdc, &fill_rc, fill);
-                        let _ = DeleteObject(HGDIOBJ(fill.0));
+                        let bar_brush = CreateSolidBrush(fill_color);
+                        FillRect(hdc, &raw const fill_rc, bar_brush);
+                        let _ = DeleteObject(HGDIOBJ(bar_brush.0));
                     }
                 } else {
                     let mut text_rc = RECT { left: 18, top: 0, right: OSD_WIDTH - 18, bottom: OSD_HEIGHT };
                     let mut text_w = wide(&content.text);
-                    DrawTextW(hdc, &mut text_w, &mut text_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+                    DrawTextW(hdc, &mut text_w, &raw mut text_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
                 }
 
                 SelectObject(hdc, old_font);
                 let _ = DeleteObject(HGDIOBJ(font.0));
-                let _ = EndPaint(hwnd, &ps);
+                let _ = EndPaint(hwnd, &raw const ps);
             }
             LRESULT(0)
         }
+        // SAFETY: the default handling, with the arguments Windows gave us
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
 }
 
+#[expect(clippy::multiple_unsafe_ops_per_block, reason = "registering, creating and running one window")]
 fn spawn_osd_window() -> Option<isize> {
     let (tx, rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("osd".into())
+        // SAFETY: a window class and window owned by this thread; the class name outlives both calls that use it,
+        // and the message loop runs on the thread that made the window
         .spawn(move || unsafe {
             attach_input_desktop();
             let Ok(hinstance) = GetModuleHandleW(None) else {
@@ -279,7 +294,7 @@ fn spawn_osd_window() -> Option<isize> {
                 lpszClassName: PCWSTR(class_name.as_ptr()),
                 ..Default::default()
             };
-            let _ = RegisterClassW(&wc);
+            let _ = RegisterClassW(&raw const wc);
             let ex_style = WINDOW_EX_STYLE(
                 WS_EX_TOPMOST.0 | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_TRANSPARENT.0 | WS_EX_LAYERED.0,
             );
@@ -303,9 +318,9 @@ fn spawn_osd_window() -> Option<isize> {
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 238, LWA_ALPHA);
             let _ = tx.send(Some(hwnd.0 as isize));
             let mut msg = MSG::default();
-            while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
-                let _ = TranslateMessage(&msg);
-                DispatchMessageW(&msg);
+            while GetMessageW(&raw mut msg, None, 0, 0).0 > 0 {
+                let _ = TranslateMessage(&raw const msg);
+                DispatchMessageW(&raw const msg);
             }
         })
         .ok()?;
@@ -332,7 +347,7 @@ pub fn run(commands: Receiver<Command>) {
                     MediaKey::Previous => VK_MEDIA_PREV_TRACK,
                 });
             }
-            Command::Volume { percent, name, .. } => {
+            Command::Volume { percent, name, style: _ } => {
                 if osd_hwnd.is_none() {
                     osd_hwnd = spawn_osd_window();
                 }
@@ -341,12 +356,11 @@ pub fn run(commands: Receiver<Command>) {
                     state.percent = Some(percent);
                     drop(state);
                     let hwnd = HWND(raw as *mut core::ffi::c_void);
-                    unsafe {
-                        let _ = PostMessageW(Some(hwnd), OSD_WAKE, WPARAM(0), LPARAM(0));
-                    }
+                    // SAFETY: a plain message (no pointers) to our popup window, which lives as long as the program
+                    let _ = unsafe { PostMessageW(Some(hwnd), OSD_WAKE, WPARAM(0), LPARAM(0)) };
                 }
             }
-            Command::Text { text, .. } => {
+            Command::Text { text, icon: _, style: _ } => {
                 if osd_hwnd.is_none() {
                     osd_hwnd = spawn_osd_window();
                 }
@@ -355,9 +369,8 @@ pub fn run(commands: Receiver<Command>) {
                     state.percent = None;
                     drop(state);
                     let hwnd = HWND(raw as *mut core::ffi::c_void);
-                    unsafe {
-                        let _ = PostMessageW(Some(hwnd), OSD_WAKE, WPARAM(0), LPARAM(0));
-                    }
+                    // SAFETY: a plain message (no pointers) to our popup window, which lives as long as the program
+                    let _ = unsafe { PostMessageW(Some(hwnd), OSD_WAKE, WPARAM(0), LPARAM(0)) };
                 }
             }
         }
@@ -389,12 +402,15 @@ impl ScreenWatchState {
 }
 
 unsafe extern "system" fn screen_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // SAFETY: our own window; its user data is the state pointer `watch_screen` stored (0 until then)
     let ptr = unsafe { windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd, GWLP_USERDATA) }
         as *mut Mutex<ScreenWatchState>;
     if !ptr.is_null() {
+        // SAFETY: the pointer from `Arc::into_raw` in `watch_screen`, never released, so it stays valid
         let mutex = unsafe { &*ptr };
         match msg {
             WM_POWERBROADCAST if wparam.0 == PBT_POWERSETTINGCHANGE as usize && lparam.0 != 0 => {
+                // SAFETY: with PBT_POWERSETTINGCHANGE, Windows passes a POWERBROADCAST_SETTING (checked non-null above)
                 let setting = unsafe { &*(lparam.0 as *const POWERBROADCAST_SETTING) };
                 if setting.PowerSetting == GUID_CONSOLE_DISPLAY_STATE {
                     let state = setting.Data[0];
@@ -419,16 +435,21 @@ unsafe extern "system" fn screen_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, l
             _ => {}
         }
     }
+    // SAFETY: the default handling, with the arguments Windows gave us
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
 /// Reports `Event::ScreenOff(true)` while the session is locked or displays are off, `false` when back.
-pub fn watch_screen(events: Sender<crate::Event>) {
+#[expect(clippy::multiple_unsafe_ops_per_block, reason = "registering, creating and running one hidden window")]
+pub fn watch_screen(events: &Sender<crate::Event>) {
     attach_input_desktop();
+    let events = events.clone();
     let state = Arc::new(Mutex::new(ScreenWatchState { display_off: false, locked: false, last_sent: None, events }));
     if let Ok(mut guard) = state.lock() {
         guard.notify();
     }
+    // SAFETY: a window class and hidden window owned by this thread; the class name outlives the calls that use
+    // it, the state pointer handed to the window is never released, and the message loop runs on this thread
     unsafe {
         let Ok(hinstance) = GetModuleHandleW(None) else { return };
         let class_name = wide("CrankedAudioScreenWatch");
@@ -438,7 +459,7 @@ pub fn watch_screen(events: Sender<crate::Event>) {
             lpszClassName: PCWSTR(class_name.as_ptr()),
             ..Default::default()
         };
-        let _ = RegisterClassW(&wc);
+        let _ = RegisterClassW(&raw const wc);
         let Ok(hwnd) = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             PCWSTR(class_name.as_ptr()),
@@ -462,9 +483,9 @@ pub fn watch_screen(events: Sender<crate::Event>) {
         let _ = WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION);
 
         let mut msg = MSG::default();
-        while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+        while GetMessageW(&raw mut msg, None, 0, 0).0 > 0 {
+            let _ = TranslateMessage(&raw const msg);
+            DispatchMessageW(&raw const msg);
         }
     }
 }
@@ -478,7 +499,7 @@ mod tests {
         let playing = rank(Some(Status::Playing), false);
         assert!(playing < rank(Some(Status::Paused), true));
         assert!(rank(Some(Status::Paused), false) < rank(Some(Status::Stopped), true));
-        assert!(rank(None, false) == rank(Some(Status::Closed), false));
+        assert_eq!(rank(None, false), rank(Some(Status::Closed), false));
         assert!(rank(Some(Status::Playing), true) < playing);
     }
 

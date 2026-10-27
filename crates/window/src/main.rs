@@ -1443,7 +1443,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         general.on_set_shortcut(move |index, val| {
             let Some(w) = weak.upgrade() else { return };
             let model = w.global::<General>().get_shortcut_keys();
-            let i = index as usize;
+            let Some(i) = slint_index(index) else { return };
             if i < model.row_count() {
                 model.set_row_data(i, val);
             }

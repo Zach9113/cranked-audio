@@ -1,11 +1,14 @@
 //! Windows: a notification-area icon (through tray-icon) on its own thread, which runs the message loop the icon
 //! and its menu need. Left click opens the window; right click shows the menu.
 
+#![expect(unsafe_code, reason = "the Win32 message loop is raw FFI")]
+
 use std::collections::HashMap;
 use std::sync::{mpsc, Arc, Mutex};
 
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use windows::Win32::Foundation::{LPARAM, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, PostThreadMessageW, TranslateMessage, MSG, WM_APP,
@@ -29,7 +32,7 @@ impl Handle {
             change(&mut guard.0);
         }
         // SAFETY: posting a plain message (no pointers) to a thread that runs a message loop
-        let _ = unsafe { PostThreadMessageW(self.thread, REFRESH, Default::default(), Default::default()) };
+        let _ = unsafe { PostThreadMessageW(self.thread, REFRESH, WPARAM::default(), LPARAM::default()) };
     }
 }
 
@@ -80,7 +83,7 @@ fn build(tray: &Tray) -> Result<(TrayIcon, HashMap<MenuId, Action>), String> {
 fn run(icon: &TrayIcon, state: &Arc<Mutex<(Tray, HashMap<MenuId, Action>)>>) {
     let mut message = MSG::default();
     // SAFETY: `message` outlives each call; GetMessageW returns 0 on WM_QUIT and -1 on errors
-    while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
+    while unsafe { GetMessageW(&raw mut message, None, 0, 0) }.0 > 0 {
         if message.hwnd.is_invalid() && message.message == REFRESH {
             if let Ok(mut guard) = state.lock() {
                 let (menu, new_actions) = menu(&guard.0);
@@ -92,9 +95,10 @@ fn run(icon: &TrayIcon, state: &Arc<Mutex<(Tray, HashMap<MenuId, Action>)>>) {
             }
         }
         // SAFETY: a message GetMessageW just filled in
+        let _ = unsafe { TranslateMessage(&raw const message) };
+        // SAFETY: the same message
         unsafe {
-            let _ = TranslateMessage(&message);
-            DispatchMessageW(&message);
+            DispatchMessageW(&raw const message);
         }
     }
 }
@@ -111,8 +115,14 @@ pub fn start(tray: Tray) -> Option<Handle> {
     }));
     let for_icon = Arc::clone(&state);
     TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
-        if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. }
-        | TrayIconEvent::DoubleClick { button: MouseButton::Left, .. } = event
+        if let TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            id: _,
+            position: _,
+            rect: _,
+        }
+        | TrayIconEvent::DoubleClick { button: MouseButton::Left, id: _, position: _, rect: _ } = event
         {
             if let Ok(guard) = for_icon.lock() {
                 guard.0.send(Action::OpenWindow);

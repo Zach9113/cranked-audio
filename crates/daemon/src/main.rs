@@ -485,7 +485,8 @@ fn main() {
                                 }
                             }
                             let pid = std::process::id().to_string();
-                            let mut args: Vec<&std::ffi::OsStr> = kept.iter().map(|a| a.as_os_str()).collect();
+                            let mut args: Vec<&std::ffi::OsStr> =
+                                kept.iter().map(std::ffi::OsString::as_os_str).collect();
                             args.extend([std::ffi::OsStr::new("--wait-pid"), std::ffi::OsStr::new(&pid)]);
                             if !clients.is_empty() {
                                 args.push("--open-window".as_ref());

@@ -2,11 +2,14 @@
 //! sessions are looked at a few times a second and changes are reported as the same stream events Linux sends.
 //! A session's volume is the percentage the Windows mixer shows; the System knob moves the default output.
 
+#![expect(unsafe_code, reason = "WASAPI is COM: every call into it is an unsafe FFI call, each with a SAFETY note")]
+
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant};
 
-use windows::core::{Interface, GUID, PCWSTR, PWSTR};
+use cranked_protocol::convert::round_u8;
+use windows::core::{Interface as _, BOOL, GUID, PCWSTR, PWSTR};
 use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
 use windows::Win32::Foundation::{CloseHandle, PROPERTYKEY, S_OK};
 use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
@@ -31,13 +34,13 @@ use crate::Event;
 const SCAN_EVERY: Duration = Duration::from_millis(300);
 
 /// Runs forever on its own thread; starts over when Windows audio goes away (the audio service restarted).
-pub fn run(commands: Receiver<Command>, events: Sender<Event>) {
+pub fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
     // SAFETY: this thread's COM apartment, undone below when the session ends
     if let Err(e) = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok() {
         return eprintln!("audio: COM didn't start ({e})");
     }
     loop {
-        match session(&commands, &events) {
+        match session(commands, events) {
             Ok(()) => break,
             Err(e) => eprintln!("audio: {e}; reconnecting"),
         }
@@ -45,7 +48,7 @@ pub fn run(commands: Receiver<Command>, events: Sender<Event>) {
         std::thread::sleep(Duration::from_secs(1));
     }
     // SAFETY: matches the CoInitializeEx above; every COM object of this thread is gone by now
-    unsafe { CoUninitialize() };
+    unsafe { CoUninitialize() }
 }
 
 /// One app's session as last seen.
@@ -81,7 +84,8 @@ fn com_string(text: PWSTR) -> String {
     }
     // SAFETY: COM handed us a NUL-terminated string we own; read it, then free it once
     let string = unsafe { text.to_string() }.unwrap_or_default();
-    unsafe { CoTaskMemFree(Some(text.0.cast())) };
+    // SAFETY: the string is read above and freed only here
+    unsafe { CoTaskMemFree(Some(text.0.cast())) }
     string
 }
 
@@ -93,11 +97,11 @@ fn wide(text: &str) -> Vec<u16> {
 fn program(pid: u32) -> Option<(String, String)> {
     // SAFETY: a query-only handle, closed below
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
-    let mut buffer = [0u16; 1024];
-    let mut length = buffer.len() as u32;
+    let mut buffer = [0_u16; 1024];
+    let mut length = u32::try_from(buffer.len()).unwrap_or(u32::MAX);
     // SAFETY: the buffer and its length in characters
     let named =
-        unsafe { QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, PWSTR(buffer.as_mut_ptr()), &mut length) };
+        unsafe { QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, PWSTR(buffer.as_mut_ptr()), &raw mut length) };
     // SAFETY: the handle opened above
     let _ = unsafe { CloseHandle(process) };
     named.ok()?;
@@ -115,17 +119,21 @@ fn file_description(path: &str) -> Option<String> {
     if size == 0 {
         return None;
     }
-    let mut data = vec![0u8; size as usize];
+    let mut data = vec![0_u8; size as usize];
     // SAFETY: `data` is `size` bytes long
     unsafe { GetFileVersionInfoW(PCWSTR(path.as_ptr()), None, size, data.as_mut_ptr().cast()) }.ok()?;
     let query = |key: &str| -> Option<&[u8]> {
         let key = wide(key);
         let mut value = std::ptr::null_mut();
-        let mut length = 0u32;
+        let mut length = 0_u32;
         // SAFETY: VerQueryValueW points `value` into `data`, which outlives the slice made from it
-        let found =
-            unsafe { VerQueryValueW(data.as_ptr().cast(), PCWSTR(key.as_ptr()), &mut value, &mut length).as_bool() };
-        (found && !value.is_null()).then(|| unsafe { std::slice::from_raw_parts(value.cast::<u8>(), length as usize) })
+        let found = unsafe {
+            VerQueryValueW(data.as_ptr().cast(), PCWSTR(key.as_ptr()), &raw mut value, &raw mut length).as_bool()
+        };
+        (found && !value.is_null()).then(|| {
+            // SAFETY: `value` points at `length` bytes inside `data`
+            unsafe { std::slice::from_raw_parts(value.cast::<u8>(), length as usize) }
+        })
     };
     // language and code page of the strings, then the description in UTF-16 (length in characters)
     let translation = query("\\VarFileInfo\\Translation")?;
@@ -136,12 +144,13 @@ fn file_description(path: &str) -> Option<String> {
     let key = format!("\\StringFileInfo\\{language:04x}{code_page:04x}\\FileDescription");
     let key = wide(&key);
     let mut value = std::ptr::null_mut();
-    let mut length = 0u32;
+    let mut length = 0_u32;
     // SAFETY: as above; the value is `length` UTF-16 characters including the NUL
-    let found = unsafe { VerQueryValueW(data.as_ptr().cast(), PCWSTR(key.as_ptr()), &mut value, &mut length) };
+    let found = unsafe { VerQueryValueW(data.as_ptr().cast(), PCWSTR(key.as_ptr()), &raw mut value, &raw mut length) };
     if !found.as_bool() || value.is_null() || length == 0 {
         return None;
     }
+    // SAFETY: `value` points at `length` UTF-16 characters inside `data`
     let text = unsafe { std::slice::from_raw_parts(value.cast::<u16>(), length as usize) };
     let text = text.split(|&c| c == 0).next().unwrap_or(text);
     let text = String::from_utf16_lossy(text).trim().to_string();
@@ -149,26 +158,24 @@ fn file_description(path: &str) -> Option<String> {
 }
 
 fn friendly_name(device: &IMMDevice) -> Option<String> {
-    // SAFETY: plain COM calls on a live device
-    unsafe {
-        let store = device.OpenPropertyStore(STGM_READ).ok()?;
-        let value = store.GetValue(&PKEY_Device_FriendlyName).ok()?;
-        Some(value.to_string())
-    }
+    // SAFETY: a plain COM call on a live device
+    let store = unsafe { device.OpenPropertyStore(STGM_READ) }.ok()?;
+    // SAFETY: a plain COM call on the store opened above
+    let value = unsafe { store.GetValue(&PKEY_Device_FriendlyName) }.ok()?;
+    Some(value.to_string())
 }
 
 /// The output's parent device, e.g. `USB\VID_...`, `HDAUDIO\FUNC_01...` or `{1}.ROOT\STEAMSTREAMINGSPEAKERS\0000`
 /// (not in the SDK headers; the same key the Sound control panel shows as the device instance).
-const PKEY_PARENT_DEVICE: PROPERTYKEY =
+static PKEY_PARENT_DEVICE: PROPERTYKEY =
     PROPERTYKEY { fmtid: GUID::from_u128(0xb3f8fa53_0004_438e_9003_51a46e139bfc), pid: 2 };
 
 fn parent_device(device: &IMMDevice) -> Option<String> {
-    // SAFETY: plain COM calls on a live device
-    unsafe {
-        let store = device.OpenPropertyStore(STGM_READ).ok()?;
-        let value = store.GetValue(&PKEY_PARENT_DEVICE).ok()?;
-        Some(value.to_string())
-    }
+    // SAFETY: a plain COM call on a live device
+    let store = unsafe { device.OpenPropertyStore(STGM_READ) }.ok()?;
+    // SAFETY: a plain COM call on the store above, with a key that lives for the whole program
+    let value = unsafe { store.GetValue(&raw const PKEY_PARENT_DEVICE) }.ok()?;
+    Some(value.to_string())
 }
 
 /// Real outputs sit on a bus (USB, HD Audio, PCI, Bluetooth); software-only ones (Steam Streaming Speakers, virtual
@@ -180,33 +187,36 @@ pub fn is_virtual_output(parent: &str) -> bool {
 }
 
 pub fn list_outputs() -> Vec<cranked_ipc::AudioOutput> {
-    // SAFETY: plain COM calls on the calling thread
-    unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let Ok(enumerator) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else {
-            return Vec::new();
-        };
-        let Ok(devices) = active_outputs(&enumerator) else { return Vec::new() };
-        devices
-            .iter()
-            .map(|(id, device)| cranked_ipc::AudioOutput {
-                name: id.clone(),
-                description: friendly_name(device).unwrap_or_else(|| id.clone()),
-                real: !parent_device(device).is_some_and(|parent| is_virtual_output(&parent)),
-            })
-            .collect()
-    }
+    // SAFETY: joins (or keeps) this thread's COM apartment; a second call on the same thread is harmless
+    let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+    // SAFETY: a plain COM call
+    let Ok(enumerator) = (unsafe { CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) })
+    else {
+        return Vec::new();
+    };
+    let Ok(devices) = active_outputs(&enumerator) else { return Vec::new() };
+    devices
+        .iter()
+        .map(|(id, device)| cranked_ipc::AudioOutput {
+            name: id.clone(),
+            description: friendly_name(device).unwrap_or_else(|| id.clone()),
+            real: !parent_device(device).is_some_and(|parent| is_virtual_output(&parent)),
+        })
+        .collect()
 }
 
 fn active_outputs(enumerator: &IMMDeviceEnumerator) -> windows::core::Result<Vec<(String, IMMDevice)>> {
     let mut outputs = Vec::new();
-    // SAFETY: plain COM calls; ids are freed by com_string
-    unsafe {
-        let devices = enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)?;
-        for i in 0..devices.GetCount()? {
-            let device = devices.Item(i)?;
-            outputs.push((com_string(device.GetId()?), device));
-        }
+    // SAFETY: a plain COM call
+    let devices = unsafe { enumerator.EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE) }?;
+    // SAFETY: a plain COM call on the collection above
+    let count = unsafe { devices.GetCount() }?;
+    for i in 0..count {
+        // SAFETY: an index below the collection's count
+        let device = unsafe { devices.Item(i) }?;
+        // SAFETY: a plain COM call; com_string frees the id
+        let id = com_string(unsafe { device.GetId() }?);
+        outputs.push((id, device));
     }
     Ok(outputs)
 }
@@ -232,7 +242,7 @@ impl Sessions {
     }
 
     fn output_number(&mut self, id: &str) -> u32 {
-        let next = self.outputs.len() as u32 + 1;
+        let next = u32::try_from(self.outputs.len()).unwrap_or(u32::MAX).saturating_add(1);
         *self.outputs.entry(id.to_string()).or_insert(next)
     }
 
@@ -243,9 +253,12 @@ impl Sessions {
             let sink = self.output_number(&id);
             // SAFETY: a plain COM call on a live device
             let Ok(manager) = (unsafe { device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) }) else { continue };
-            // SAFETY: plain COM calls
+            // SAFETY: a plain COM call on the manager above
             let Ok(list) = (unsafe { manager.GetSessionEnumerator() }) else { continue };
-            for i in 0..unsafe { list.GetCount() }.unwrap_or(0) {
+            // SAFETY: a plain COM call on the list above
+            let count = unsafe { list.GetCount() }.unwrap_or(0);
+            for i in 0..count {
+                // SAFETY: an index below the list's count
                 let Ok(control) = (unsafe { list.GetSession(i) }) else { continue };
                 let Ok(control) = control.cast::<IAudioSessionControl2>() else { continue };
                 if let Some(number) = self.look_at(&control, sink, events) {
@@ -268,16 +281,16 @@ impl Sessions {
 
     /// One session: its stream number when it's alive, after reporting it if it's new or changed.
     fn look_at(&mut self, control: &IAudioSessionControl2, sink: u32, events: &Sender<Event>) -> Option<u32> {
-        // SAFETY: plain COM calls on a live session
-        let (state, instance, pid, system, display) = unsafe {
-            (
-                control.GetState().ok()?,
-                com_string(control.GetSessionInstanceIdentifier().ok()?),
-                control.GetProcessId().unwrap_or(0),
-                control.IsSystemSoundsSession() == S_OK,
-                control.GetDisplayName().map(com_string).unwrap_or_default(),
-            )
-        };
+        // SAFETY: a plain COM call on a live session
+        let state = unsafe { control.GetState() }.ok()?;
+        // SAFETY: a plain COM call on a live session; com_string frees the id
+        let instance = com_string(unsafe { control.GetSessionInstanceIdentifier() }.ok()?);
+        // SAFETY: a plain COM call on a live session
+        let pid = unsafe { control.GetProcessId() }.unwrap_or(0);
+        // SAFETY: a plain COM call on a live session
+        let system = unsafe { control.IsSystemSoundsSession() } == S_OK;
+        // SAFETY: a plain COM call on a live session; com_string frees the name
+        let display = unsafe { control.GetDisplayName() }.map(com_string).unwrap_or_default();
         if state == AudioSessionStateExpired {
             return None;
         }
@@ -301,10 +314,10 @@ impl Sessions {
                 Session { pid, volume: control.cast().ok()?, meter: control.cast().ok()?, stream: Stream::default() }
             }
         };
-        // SAFETY: plain COM calls on a live session
-        let (volume, muted) = unsafe {
-            (session.volume.GetMasterVolume().unwrap_or(1.0), session.volume.GetMute().is_ok_and(|m| m.as_bool()))
-        };
+        // SAFETY: a plain COM call on a live session
+        let volume = unsafe { session.volume.GetMasterVolume() }.unwrap_or(1.0);
+        // SAFETY: a plain COM call on a live session
+        let muted = unsafe { session.volume.GetMute() }.is_ok_and(BOOL::as_bool);
         let stream = Stream {
             index: number,
             app_name,
@@ -340,7 +353,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
     if let Ok(endpoint) = endpoint_volume(&enumerator) {
         // SAFETY: a plain COM call
         if let Ok(level) = unsafe { endpoint.GetMasterVolumeLevelScalar() } {
-            let _ = events.send(Event::OutputVolume((level * 100.0).round().clamp(0.0, 100.0) as u8));
+            let _ = events.send(Event::OutputVolume(round_u8((f64::from(level) * 100.0).clamp(0.0, 100.0))));
         }
     }
     let _ = events.send(Event::AudioReady);
@@ -351,7 +364,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
     loop {
         let wait = if meters.is_empty() { SCAN_EVERY } else { meter_every };
         match commands.recv_timeout(wait) {
-            Ok(command) => run_command(command, &enumerator, &mut sessions, &mut meters, events),
+            Ok(command) => run_command(&command, &enumerator, &mut sessions, &mut meters, events),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return Ok(()),
         }
@@ -366,6 +379,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
 
 /// Peak readings of the watched sessions; reports `Event::Loud` the way the Linux meter does.
 fn read_meters(sessions: &Sessions, meters: &mut HashMap<u32, Meter>, events: &Sender<Event>) {
+    #[expect(clippy::iter_over_hash_type, reason = "each watched session on its own; order doesn't matter")]
     for (number, meter) in meters.iter_mut() {
         let Some(session) = sessions.live.get(number) else { continue };
         // SAFETY: a plain COM call on a live session
@@ -379,38 +393,42 @@ fn read_meters(sessions: &Sessions, meters: &mut HashMap<u32, Meter>, events: &S
 }
 
 fn run_command(
-    command: Command,
+    command: &Command,
     enumerator: &IMMDeviceEnumerator,
     sessions: &mut Sessions,
     meters: &mut HashMap<u32, Meter>,
     events: &Sender<Event>,
 ) {
     let no_context: *const GUID = std::ptr::null();
-    // SAFETY (all arms): plain COM calls on live objects
     // what we set is remembered as the session's state, so the next scan doesn't report our own change back as one
     // from the app (the guard then "put back" volumes the knob had already moved past)
-    let result = match command {
-        Command::SetStream { index, percent, .. } => match sessions.live.get_mut(&index) {
+    let result = match *command {
+        Command::SetStream { index, percent, channels: _ } => match sessions.live.get_mut(&index) {
+            // SAFETY: a plain COM call on a live session
             Some(session) => unsafe { session.volume.SetMasterVolume(f32::from(percent) / 100.0, no_context) }
                 .inspect(|()| session.stream.volume = f64::from(f32::from(percent) / 100.0) * 100.0),
             None => Ok(()),
         },
         Command::MuteStream { index, mute } => match sessions.live.get_mut(&index) {
             Some(session) => {
+                // SAFETY: a plain COM call on a live session
                 unsafe { session.volume.SetMute(mute, no_context) }.inspect(|()| session.stream.muted = mute)
             }
             None => Ok(()),
         },
-        Command::SetMaster { percent } => endpoint_volume(enumerator)
-            .and_then(|e| unsafe { e.SetMasterVolumeLevelScalar(f32::from(percent) / 100.0, no_context) }),
-        Command::MuteMaster { mute } => {
-            endpoint_volume(enumerator).and_then(|e| unsafe { e.SetMute(mute, no_context) })
-        }
-        Command::SwitchOutput { enabled, disabled } => {
-            switch_output(enumerator, &enabled, &disabled, events);
+        Command::SetMaster { percent } => endpoint_volume(enumerator).and_then(|endpoint| {
+            // SAFETY: a plain COM call on the default output
+            unsafe { endpoint.SetMasterVolumeLevelScalar(f32::from(percent) / 100.0, no_context) }
+        }),
+        Command::MuteMaster { mute } => endpoint_volume(enumerator).and_then(|endpoint| {
+            // SAFETY: a plain COM call on the default output
+            unsafe { endpoint.SetMute(mute, no_context) }
+        }),
+        Command::SwitchOutput { ref enabled, ref disabled } => {
+            switch_output(enumerator, enabled, disabled, events);
             Ok(())
         }
-        Command::Meter { index, on, .. } => {
+        Command::Meter { index, on, sink: _ } => {
             if on {
                 meters.entry(index).or_default();
             } else {
@@ -424,67 +442,29 @@ fn run_command(
     }
 }
 
-#[allow(non_snake_case, reason = "COM method names")]
-mod policy_config {
-    use windows::core::PCWSTR;
-    use windows::Win32::Media::Audio::ERole;
-
-    /// Windows' own way to pick the default output; not in the public SDK (the volume mixers that switch outputs,
-    /// like EarTrumpet and SoundSwitch, use it the same way). Only the methods up to SetDefaultEndpoint are called.
-    #[windows_core::interface("f8679f50-850a-41cf-9c72-430f290290c8")]
-    pub unsafe trait IPolicyConfig: windows::core::IUnknown {
-        fn GetMixFormat(&self, device: PCWSTR, format: *mut *mut std::ffi::c_void) -> windows::core::HRESULT;
-        fn GetDeviceFormat(
-            &self,
-            device: PCWSTR,
-            default: i32,
-            format: *mut *mut std::ffi::c_void,
-        ) -> windows::core::HRESULT;
-        fn ResetDeviceFormat(&self, device: PCWSTR) -> windows::core::HRESULT;
-        fn SetDeviceFormat(
-            &self,
-            device: PCWSTR,
-            endpoint: *mut std::ffi::c_void,
-            mix: *mut std::ffi::c_void,
-        ) -> windows::core::HRESULT;
-        fn GetProcessingPeriod(&self, device: PCWSTR, default: i32, a: *mut i64, b: *mut i64)
-            -> windows::core::HRESULT;
-        fn SetProcessingPeriod(&self, device: PCWSTR, period: *mut i64) -> windows::core::HRESULT;
-        fn GetShareMode(&self, device: PCWSTR, mode: *mut std::ffi::c_void) -> windows::core::HRESULT;
-        fn SetShareMode(&self, device: PCWSTR, mode: *mut std::ffi::c_void) -> windows::core::HRESULT;
-        fn GetPropertyValue(
-            &self,
-            device: PCWSTR,
-            key: *const std::ffi::c_void,
-            value: *mut std::ffi::c_void,
-        ) -> windows::core::HRESULT;
-        fn SetPropertyValue(
-            &self,
-            device: PCWSTR,
-            key: *const std::ffi::c_void,
-            value: *mut std::ffi::c_void,
-        ) -> windows::core::HRESULT;
-        pub fn SetDefaultEndpoint(&self, device: PCWSTR, role: ERole) -> windows::core::HRESULT;
-    }
-}
-use policy_config::IPolicyConfig;
+use super::policy_config::IPolicyConfig;
 
 const POLICY_CONFIG_CLIENT: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
 
 fn set_default_output(id: &str) -> windows::core::Result<()> {
     let id = wide(id);
-    // SAFETY: COM calls with a NUL-terminated device id that outlives them
-    unsafe {
-        let policy: IPolicyConfig = CoCreateInstance(&POLICY_CONFIG_CLIENT, None, CLSCTX_ALL)?;
-        for role in [eConsole, eMultimedia, eCommunications] {
-            policy.SetDefaultEndpoint(PCWSTR(id.as_ptr()), role).ok()?;
-        }
+    // SAFETY: a plain COM call
+    let policy: IPolicyConfig = unsafe { CoCreateInstance(&POLICY_CONFIG_CLIENT, None, CLSCTX_ALL) }?;
+    for role in [eConsole, eMultimedia, eCommunications] {
+        // SAFETY: a NUL-terminated device id that outlives the call
+        unsafe { policy.SetDefaultEndpoint(PCWSTR(id.as_ptr()), role) }.ok()?;
     }
     Ok(())
 }
 
 fn switch_output(enumerator: &IMMDeviceEnumerator, enabled: &[String], disabled: &[String], events: &Sender<Event>) {
-    let current = default_output(enumerator).ok().and_then(|d| unsafe { d.GetId() }.ok()).map(com_string);
+    let current = default_output(enumerator)
+        .ok()
+        .and_then(|device| {
+            // SAFETY: a plain COM call on a live device; com_string frees the id
+            unsafe { device.GetId() }.ok()
+        })
+        .map(com_string);
     let Ok(devices) = active_outputs(enumerator) else { return eprintln!("audio: no answer about outputs") };
     let outputs: Vec<Output> = devices
         .iter()

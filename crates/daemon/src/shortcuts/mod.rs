@@ -26,7 +26,10 @@ pub enum Shortcut {
 }
 
 impl Shortcut {
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(
+        all(windows, not(test)),
+        expect(dead_code, reason = "Windows keys shortcuts by the settings, not by id")
+    )]
     pub fn id(self) -> String {
         match self {
             Shortcut::Up(k) => format!("knob-{}-up", k + 1),
@@ -37,7 +40,7 @@ impl Shortcut {
         }
     }
 
-    #[cfg_attr(windows, allow(dead_code))]
+    #[cfg_attr(windows, expect(dead_code))]
     pub fn friendly(self) -> String {
         match self {
             Shortcut::Up(k) => format!("Knob {}: turn up", k + 1),
@@ -79,7 +82,7 @@ impl Shortcut {
 }
 
 /// The shortcuts for `knobs` knobs.
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(all(windows, not(test)), expect(dead_code, reason = "Windows registers only shortcuts that have keys"))]
 pub fn all(knobs: usize) -> Vec<Shortcut> {
     let mut list = Vec::new();
     for knob in 0..knobs {

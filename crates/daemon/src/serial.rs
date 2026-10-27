@@ -93,6 +93,7 @@ impl Writer {
     }
 
     /// Frames are written straight away here.
+    #[expect(clippy::unused_self, reason = "the same call as on Windows, where it waits for the reader thread")]
     pub fn flush(&self) {}
 
     fn set(&self, port: Option<Port>) {

@@ -29,7 +29,7 @@ pub fn listen() -> Option<UnixListener> {
 }
 
 pub fn run(listener: &UnixListener, events: &Sender<Event>) {
-    let mut next_id = 0u64;
+    let mut next_id = 0_u64;
     for client in listener.incoming().map_while(Result::ok) {
         let Ok(writer) = client.try_clone() else { continue };
         let _ = writer.set_write_timeout(Some(Duration::from_millis(200)));

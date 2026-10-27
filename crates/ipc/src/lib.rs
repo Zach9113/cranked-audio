@@ -76,7 +76,7 @@ pub struct DeviceChoices {
     pub midi: Vec<String>,
     /// serial ports (for deej boxes).
     pub serial: Vec<String>,
-    /// active audio output devices (for picking which ones Switch output cycles through)
+    /// active audio output devices (for picking which ones Switch output cycles through).
     #[serde(default)]
     pub outputs: Vec<AudioOutput>,
 }

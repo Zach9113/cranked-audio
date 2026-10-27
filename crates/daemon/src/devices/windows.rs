@@ -2,6 +2,8 @@
 //! `WH_KEYBOARD_LL` so volume/mute/media keys from the knob can be taken over without affecting typing), and serial
 //! ports by USB vendor.
 
+#![expect(unsafe_code, reason = "Raw Input, HID strings and the low-level keyboard hook are raw Win32 calls")]
+
 use std::collections::HashSet;
 use std::sync::mpsc::Sender;
 use std::sync::Mutex;
@@ -35,7 +37,6 @@ use crate::Event;
 /// Substrings in device names that indicate virtual injectors, monitor audio jacks, microphones, coolers or system
 /// buttons that shouldn't appear as knob candidates.
 pub fn is_bad_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
     const BAD: &[&str] = &[
         "cranked audio",
         "passthrough",
@@ -63,6 +64,7 @@ pub fn is_bad_name(name: &str) -> bool {
         "webcam",
         "headset mic",
     ];
+    let lower = name.to_lowercase();
     let realtek = lower.split(|c: char| !c.is_ascii_alphanumeric()).any(|word| {
         word.strip_prefix("alc").is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
     });
@@ -86,14 +88,15 @@ fn hid_strings(device_path: &[u16]) -> Option<(String, String)> {
     if handle == INVALID_HANDLE_VALUE {
         return None;
     }
-    let mut m_buf = [0u16; 128];
-    let mut p_buf = [0u16; 128];
-    let m_ok = unsafe {
-        HidD_GetManufacturerString(handle, m_buf.as_mut_ptr() as *mut core::ffi::c_void, (m_buf.len() * 2) as u32)
-    };
-    let p_ok = unsafe {
-        HidD_GetProductString(handle, p_buf.as_mut_ptr() as *mut core::ffi::c_void, (p_buf.len() * 2) as u32)
-    };
+    let mut m_buf = [0_u16; 128];
+    let mut p_buf = [0_u16; 128];
+    // both buffers are 256 bytes
+    let buf_bytes = u32::try_from(std::mem::size_of_val(&m_buf)).unwrap_or(0);
+    // SAFETY: the handle opened above and a buffer of `buf_bytes` bytes
+    let m_ok = unsafe { HidD_GetManufacturerString(handle, m_buf.as_mut_ptr().cast::<core::ffi::c_void>(), buf_bytes) };
+    // SAFETY: as above
+    let p_ok = unsafe { HidD_GetProductString(handle, p_buf.as_mut_ptr().cast::<core::ffi::c_void>(), buf_bytes) };
+    // SAFETY: the same handle, not used again
     let _ = unsafe { CloseHandle(handle) };
 
     let decode = |ok: bool, buf: &[u16]| -> String {
@@ -133,13 +136,15 @@ pub fn format_hid_name(manufacturer: &str, product: &str, consumer_control: bool
 
 /// Input devices that have volume keys or Consumer Control endpoints, by name, and which of them also type.
 pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
-    let mut count = 0u32;
-    let list_size = std::mem::size_of::<RAWINPUTDEVICELIST>() as u32;
-    if unsafe { GetRawInputDeviceList(None, &mut count, list_size) } != 0 || count == 0 {
+    let mut count = 0_u32;
+    let list_size = u32::try_from(std::mem::size_of::<RAWINPUTDEVICELIST>()).unwrap_or(0);
+    // SAFETY: asking only for the count, into a local
+    if unsafe { GetRawInputDeviceList(None, &raw mut count, list_size) } != 0 || count == 0 {
         return (Vec::new(), Vec::new());
     }
     let mut devices = vec![RAWINPUTDEVICELIST::default(); count as usize];
-    let fetched = unsafe { GetRawInputDeviceList(Some(devices.as_mut_ptr()), &mut count, list_size) };
+    // SAFETY: a buffer of `count` entries, as Windows just said it needs
+    let fetched = unsafe { GetRawInputDeviceList(Some(devices.as_mut_ptr()), &raw mut count, list_size) };
     if fetched == u32::MAX {
         return (Vec::new(), Vec::new());
     }
@@ -147,14 +152,16 @@ pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
 
     let mut found: Vec<(bool, String)> = Vec::new();
     for dev in devices {
-        let mut info = RID_DEVICE_INFO { cbSize: std::mem::size_of::<RID_DEVICE_INFO>() as u32, ..Default::default() };
+        let info_bytes = u32::try_from(std::mem::size_of::<RID_DEVICE_INFO>()).unwrap_or(0);
+        let mut info = RID_DEVICE_INFO { cbSize: info_bytes, ..Default::default() };
         let mut info_size = info.cbSize;
+        // SAFETY: a device handle from the list above and a RID_DEVICE_INFO of the size we pass
         let ok = unsafe {
             GetRawInputDeviceInfoW(
                 Some(dev.hDevice),
                 RIDI_DEVICEINFO,
-                Some(&mut info as *mut _ as *mut core::ffi::c_void),
-                &mut info_size,
+                Some((&raw mut info).cast::<core::ffi::c_void>()),
+                &raw mut info_size,
             )
         };
         if ok == u32::MAX {
@@ -163,6 +170,7 @@ pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
         let (is_typing, is_consumer) = match dev.dwType {
             RIM_TYPEKEYBOARD => (true, false),
             RIM_TYPEHID => {
+                // SAFETY: for RIM_TYPEHID devices Windows fills in the `hid` member of the union
                 let hid = unsafe { info.Anonymous.hid };
                 // UsagePage 0x000C Usage 0x0001 = Consumer Control (volume wheel / media keys)
                 if hid.usUsagePage == 0x000C && hid.usUsage == 0x0001 {
@@ -174,18 +182,20 @@ pub fn keyboard_knobs() -> (Vec<String>, Vec<String>) {
             _ => continue,
         };
 
-        let mut name_len = 0u32;
-        let _ = unsafe { GetRawInputDeviceInfoW(Some(dev.hDevice), RIDI_DEVICENAME, None, &mut name_len) };
+        let mut name_len = 0_u32;
+        // SAFETY: asking only for the name's length, into a local
+        let _ = unsafe { GetRawInputDeviceInfoW(Some(dev.hDevice), RIDI_DEVICENAME, None, &raw mut name_len) };
         if name_len == 0 {
             continue;
         }
-        let mut path = vec![0u16; (name_len + 1) as usize];
+        let mut path = vec![0_u16; usize::try_from(name_len).unwrap_or(0) + 1];
+        // SAFETY: a buffer one character longer than the name length Windows just gave
         let written = unsafe {
             GetRawInputDeviceInfoW(
                 Some(dev.hDevice),
                 RIDI_DEVICENAME,
-                Some(path.as_mut_ptr() as *mut core::ffi::c_void),
-                &mut name_len,
+                Some(path.as_mut_ptr().cast::<core::ffi::c_void>()),
+                &raw mut name_len,
             )
         };
         if written == u32::MAX {
@@ -269,11 +279,13 @@ static HOOK_CTX: Mutex<Option<HookContext>> = Mutex::new(None);
 
 unsafe extern "system" fn ll_keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && lparam.0 != 0 {
+        // SAFETY: for WH_KEYBOARD_LL with code >= 0, lparam points to a KBDLLHOOKSTRUCT (checked non-null above)
         let kb = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
         // Ignore synthetic media key events sent by our own fallback in `desktop/windows.rs`, while still allowing
         // hardware/driver consumer-control events even if a HID filter sets `LLKHF_INJECTED`.
         if kb.dwExtraInfo != CRANKED_EXTRA_INFO {
-            let msg = wparam.0 as u32;
+            // keyboard message ids are small; anything that doesn't fit isn't one
+            let msg = u32::try_from(wparam.0).unwrap_or(0);
             let down = match msg {
                 WM_KEYDOWN | WM_SYSKEYDOWN => Some(true),
                 WM_KEYUP | WM_SYSKEYUP => Some(false),
@@ -283,7 +295,7 @@ unsafe extern "system" fn ll_keyboard_proc(code: i32, wparam: WPARAM, lparam: LP
                 if let Ok(mut guard) = HOOK_CTX.lock() {
                     if let Some(ctx) = guard.as_mut() {
                         let (input, swallow) =
-                            vk_input(kb.vkCode as u16, down, &mut ctx.mute_down, ctx.knob, ctx.step, ctx.grab);
+                            vk_input(vk_code(kb.vkCode), down, &mut ctx.mute_down, ctx.knob, ctx.step, ctx.grab);
                         if let Some(input) = input {
                             let _ = send(&ctx.events, input);
                         }
@@ -295,7 +307,13 @@ unsafe extern "system" fn ll_keyboard_proc(code: i32, wparam: WPARAM, lparam: LP
             }
         }
     }
+    // SAFETY: passing the event on unchanged, with the arguments Windows gave us
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
+/// Virtual-key codes are 1..=254; anything else isn't a key we handle.
+fn vk_code(code: u32) -> u16 {
+    u16::try_from(code).unwrap_or(0)
 }
 
 fn device_present(target: &str) -> bool {
@@ -323,7 +341,10 @@ pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<E
         if let Ok(mut guard) = HOOK_CTX.lock() {
             *guard = Some(HookContext { knob, step, grab, mute_down: false, events: events.clone() });
         }
+        // SAFETY: this program's own module handle
         let hmod = unsafe { GetModuleHandleW(None) }.ok().map(Into::into);
+        // SAFETY: a low-level hook (runs on this thread, which pumps messages below) with a callback that lives for
+        // the whole program; it is removed again before the loop starts over
         let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(ll_keyboard_proc), hmod, 0) };
         let Ok(hook) = hook else {
             eprintln!("keyboard knob: couldn't install keyboard hook for {name:?}");
@@ -332,21 +353,25 @@ pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<E
         };
         eprintln!("keyboard knob: {name} on knob {}{}", knob + 1, if grab { ", taken over" } else { "" });
         // Keep the message loop completely non-blocking so Windows never times out `LowLevelHooksTimeout`.
+        // SAFETY: a thread timer (no window, no callback): it arrives as WM_TIMER here
         let timer = unsafe { SetTimer(None, 0, 500, None) };
         let mut msg = MSG::default();
-        while current() && unsafe { GetMessageW(&mut msg, None, 0, 0) }.0 > 0 {
+        // SAFETY: `msg` outlives each call; GetMessageW returns 0 on WM_QUIT and -1 on errors
+        while current() && unsafe { GetMessageW(&raw mut msg, None, 0, 0) }.0 > 0 {
             if msg.message == WM_TIMER && !current() {
                 break;
             }
+            // SAFETY: a message GetMessageW just filled in
+            let _ = unsafe { TranslateMessage(&raw const msg) };
+            // SAFETY: the same message
             unsafe {
-                let _ = TranslateMessage(&msg);
-                DispatchMessageW(&msg);
+                DispatchMessageW(&raw const msg);
             }
         }
-        unsafe {
-            let _ = KillTimer(None, timer);
-            let _ = UnhookWindowsHookEx(hook);
-        }
+        // SAFETY: the timer started above
+        let _ = unsafe { KillTimer(None, timer) };
+        // SAFETY: the hook installed above, not used again
+        let _ = unsafe { UnhookWindowsHookEx(hook) };
         if let Ok(mut guard) = HOOK_CTX.lock() {
             *guard = None;
         }

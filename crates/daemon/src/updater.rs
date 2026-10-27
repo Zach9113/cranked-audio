@@ -136,11 +136,15 @@ fn sha256_of(path: &std::path::Path) -> Result<String, String> {
 
 #[cfg(windows)]
 fn sha256_of(path: &std::path::Path) -> Result<String, String> {
-    use sha2::{Digest, Sha256};
+    use sha2::{Digest as _, Sha256};
     let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
     let mut hasher = Sha256::new();
     std::io::copy(&mut file, &mut hasher).map_err(|e| e.to_string())?;
-    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hasher.finalize().iter().fold(String::new(), |mut hex, byte| {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    }))
 }
 
 /// The two programs a Windows package carries; both are swapped together.
@@ -160,6 +164,7 @@ pub fn apply_update(release: &ReleaseInfo) -> Result<(), String> {
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
     let dir = base.join(format!("update-{}-{nanos:x}", std::process::id()));
     std::fs::create_dir_all(&base).map_err(|e| e.to_string())?;
+    #[expect(clippy::create_dir, reason = "a folder that already existed must fail: someone else could have made it")]
     std::fs::create_dir(&dir).map_err(|e| format!("can't create {} ({e})", dir.display()))?;
     let result = install_windows(&dir, &install_dir, &release.package_url, checksum_url);
     let _ = std::fs::remove_dir_all(&dir);
@@ -188,6 +193,7 @@ fn install_windows(
     // Windows' own tar (bsdtar) reads zips; named by its full path so nothing on PATH stands in for it
     let system = std::env::var_os("SystemRoot").map_or_else(|| "C:\\Windows".into(), std::path::PathBuf::from);
     let unpacked = dir.join("unpacked");
+    #[expect(clippy::create_dir, reason = "inside the fresh folder above; its parent always exists")]
     std::fs::create_dir(&unpacked).map_err(|e| e.to_string())?;
     let status = Command::new(system.join("System32").join("tar.exe"))
         .arg("-xf")
@@ -253,16 +259,18 @@ pub fn remove_leftovers() {
 
 /// Waits (up to `limit`) for the old service to exit, so it has freed the socket and the mixer's port.
 #[cfg(windows)]
+#[expect(unsafe_code, reason = "waiting for a process is a raw Win32 call")]
 pub fn wait_for_exit(pid: u32, limit: std::time::Duration) {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE};
-    // SAFETY: plain Win32 calls; the handle is closed again
+    // SAFETY: a wait-only handle, closed below
+    let Ok(process) = (unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) }) else { return };
+    // SAFETY: the handle opened above
     unsafe {
-        if let Ok(process) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
-            WaitForSingleObject(process, limit.as_millis().try_into().unwrap_or(u32::MAX));
-            let _ = CloseHandle(process);
-        }
+        WaitForSingleObject(process, limit.as_millis().try_into().unwrap_or(u32::MAX));
     }
+    // SAFETY: the same handle, not used again
+    let _ = unsafe { CloseHandle(process) };
 }
 
 #[cfg(not(windows))]

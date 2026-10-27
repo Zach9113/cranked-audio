@@ -653,6 +653,7 @@ impl Core {
 
     fn mute_commands(&mut self, channel: usize, mute: bool) -> Vec<Out> {
         let mut out = Vec::new();
+        #[expect(clippy::iter_over_hash_type, reason = "each stream is muted on its own; order doesn't matter")]
         for (stream, c) in self.streams.values_mut() {
             if *c == Some(channel) {
                 stream.muted = mute;

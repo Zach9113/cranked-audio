@@ -2,6 +2,8 @@
 //! (e.g. `"knob-1-up" = "Ctrl+Alt+Up"`, `"knob-1-button" = "Ctrl+Alt+M"`, `"open-window" = "Ctrl+Alt+C"`).
 //! Button shortcuts track key release via `GetAsyncKeyState` so short tap = press action and long hold = hold action.
 
+#![expect(unsafe_code, reason = "hotkeys and their message loop are raw Win32 calls")]
+
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
@@ -97,9 +99,10 @@ impl Shortcuts {
             .name("shortcuts".into())
             .spawn(move || {
                 crate::desktop::attach_input_desktop();
+                // SAFETY: no arguments; this thread owns the hotkeys and runs their message loop
                 let tid = unsafe { GetCurrentThreadId() };
                 let _ = tx.send(tid);
-                run_loop(events, for_thread);
+                run_loop(&events, &for_thread);
             })
             .ok()?;
         let thread = rx.recv().ok()?;
@@ -113,9 +116,8 @@ impl Shortcuts {
             }
             *guard = updated.clone();
         }
-        unsafe {
-            let _ = PostThreadMessageW(self.thread, RELOAD, WPARAM(0), LPARAM(0));
-        }
+        // SAFETY: posting a plain message (no pointers) to a thread that runs a message loop
+        let _ = unsafe { PostThreadMessageW(self.thread, RELOAD, WPARAM(0), LPARAM(0)) };
     }
 }
 
@@ -124,15 +126,15 @@ fn apply_registrations(
     active: &mut HashMap<i32, (Shortcut, u32)>,
     held_buttons: &mut HashMap<usize, u32>,
 ) {
+    #[expect(clippy::iter_over_hash_type, reason = "every hotkey is released; order doesn't matter")]
     for &id in active.keys() {
-        unsafe {
-            let _ = UnregisterHotKey(None, id);
-        }
+        // SAFETY: a hotkey id this thread registered
+        let _ = unsafe { UnregisterHotKey(None, id) };
     }
     active.clear();
     held_buttons.clear();
 
-    let mut next_id = 1i32;
+    let mut next_id = 1_i32;
     for (action_id, key_spec) in bindings {
         if key_spec.trim().is_empty() {
             continue;
@@ -151,6 +153,7 @@ fn apply_registrations(
         }
         let id = next_id;
         next_id += 1;
+        // SAFETY: registers for this thread's message queue (no window)
         if let Err(e) = unsafe { RegisterHotKey(None, id, mods, vk) } {
             eprintln!("shortcuts: couldn't register {key_spec} for {action_id} ({e})");
             continue;
@@ -159,7 +162,7 @@ fn apply_registrations(
     }
 }
 
-fn run_loop(events: Sender<Event>, bindings: Arc<Mutex<BTreeMap<String, String>>>) {
+fn run_loop(events: &Sender<Event>, bindings: &Mutex<BTreeMap<String, String>>) {
     let mut active: HashMap<i32, (Shortcut, u32)> = HashMap::new();
     let mut held_buttons: HashMap<usize, u32> = HashMap::new();
     let mut poll_timer: usize = 0;
@@ -169,7 +172,8 @@ fn run_loop(events: Sender<Event>, bindings: Arc<Mutex<BTreeMap<String, String>>
     }
 
     let mut msg = MSG::default();
-    while unsafe { GetMessageW(&mut msg, None, 0, 0) }.0 > 0 {
+    // SAFETY: `msg` outlives each call; GetMessageW returns 0 on WM_QUIT and -1 on errors
+    while unsafe { GetMessageW(&raw mut msg, None, 0, 0) }.0 > 0 {
         if msg.hwnd.is_invalid() && msg.message == RELOAD {
             if let Ok(latest) = bindings.lock() {
                 apply_registrations(&latest, &mut active, &mut held_buttons);
@@ -177,7 +181,8 @@ fn run_loop(events: Sender<Event>, bindings: Arc<Mutex<BTreeMap<String, String>>
             continue;
         }
         if msg.message == WM_HOTKEY {
-            let id = msg.wParam.0 as i32;
+            // our hotkey ids are small; anything else isn't ours
+            let id = i32::try_from(msg.wParam.0).unwrap_or(-1);
             if let Some(&(shortcut, vk)) = active.get(&id) {
                 match shortcut {
                     Shortcut::Button(knob) => {
@@ -187,6 +192,7 @@ fn run_loop(events: Sender<Event>, bindings: Arc<Mutex<BTreeMap<String, String>>
                                 let _ = events.send(Event::Remote(req));
                             }
                             if poll_timer == 0 {
+                                // SAFETY: a thread timer (no window, no callback): it arrives as WM_TIMER here
                                 poll_timer = unsafe { SetTimer(None, 0, 40, None) };
                             }
                         }
@@ -202,7 +208,8 @@ fn run_loop(events: Sender<Event>, bindings: Arc<Mutex<BTreeMap<String, String>>
         }
         if msg.message == WM_TIMER && !held_buttons.is_empty() {
             held_buttons.retain(|&knob, &mut vk| {
-                let still_down = unsafe { GetAsyncKeyState(vk as i32) } < 0;
+                // SAFETY: a plain key state query; virtual-key codes fit in an i32
+                let still_down = unsafe { GetAsyncKeyState(vk.cast_signed()) } < 0;
                 if !still_down {
                     if let Some(req) = Shortcut::Button(knob).request(Some(false)) {
                         let _ = events.send(Event::Remote(req));
@@ -211,16 +218,17 @@ fn run_loop(events: Sender<Event>, bindings: Arc<Mutex<BTreeMap<String, String>>
                 still_down
             });
             if held_buttons.is_empty() && poll_timer != 0 {
-                unsafe {
-                    let _ = KillTimer(None, poll_timer);
-                }
+                // SAFETY: the thread timer started above
+                let _ = unsafe { KillTimer(None, poll_timer) };
                 poll_timer = 0;
             }
             continue;
         }
+        // SAFETY: a message GetMessageW just filled in
+        let _ = unsafe { TranslateMessage(&raw const msg) };
+        // SAFETY: the same message
         unsafe {
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+            DispatchMessageW(&raw const msg);
         }
     }
 }

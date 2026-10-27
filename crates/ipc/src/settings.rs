@@ -406,6 +406,7 @@ pub struct Config {
 
 /// Whether an audio output is included when cycling outputs: real outputs are on unless in `disabled`, virtual
 /// outputs are off unless in `enabled` (matched by friendly description or system name, case-insensitive).
+#[must_use]
 pub fn output_enabled(description: &str, name: &str, real: bool, enabled: &[String], disabled: &[String]) -> bool {
     let matches =
         |list: &[String]| list.iter().any(|s| s.eq_ignore_ascii_case(description) || s.eq_ignore_ascii_case(name));
