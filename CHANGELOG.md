@@ -9,7 +9,8 @@
 ### Development
 - Platform ports and adapters (plan: `docs/platform-ports.md`): the sound system is the first port, an
   `AudioSystem` trait with a PipeWire and a WASAPI adapter, picked once in `platform::native()`. The desktop
-  (media keys, popups, screen-off watch) is the second: a `Desktop` trait with a Plasma and a Win32 adapter. The tray icon is the third: `TrayIcon` (`start`, `show`).
+  (media keys, popups, screen-off watch) is the second: a `Desktop` trait with a Plasma and a Win32 adapter. The tray icon is the third: `TrayIcon` (`start`, `show`), and global shortcuts the fourth: `GlobalShortcuts`
+  (`start`, `ensure`).
 - AUR package `cranked-audio-bin` (repackages the release tarball): `packaging/aur/cranked-audio-bin`, and
   `scripts/update-aur.sh vX.Y.Z` points it at a new release.
 - The workspace lint set (clippy pedantic plus most of restriction) is now switched on for every crate and clean.

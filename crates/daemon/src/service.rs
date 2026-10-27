@@ -48,7 +48,7 @@ pub struct Service {
     tray: Box<dyn tray::TrayIcon>,
     /// What the tray last showed: profile, profiles, mixer connected.
     tray_shows: (String, Vec<String>, bool),
-    shortcuts: Option<shortcuts::Shortcuts>,
+    shortcuts: Box<dyn shortcuts::GlobalShortcuts>,
     home_assistant_calls: Option<Sender<home_assistant::Command>>,
     home_assistant_generation: Arc<AtomicU64>,
     device_generation: Arc<AtomicU64>,
@@ -95,8 +95,8 @@ impl Service {
         core.verbose = options.verbose;
         let device_generation = Arc::new(AtomicU64::new(0));
         devices::start(&core.config().devices, &events, &device_generation);
-        let shortcuts =
-            shortcuts::Shortcuts::start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
+        let mut shortcuts = platform.shortcuts;
+        shortcuts.start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
         let mut tray = platform.tray;
         tray.start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
         let config_path = options.config_path.clone();
@@ -456,9 +456,7 @@ impl Service {
         if config.devices != current.devices {
             devices::start(&config.devices, &self.events, &self.device_generation);
         }
-        if let Some(shortcuts) = &mut self.shortcuts {
-            shortcuts.ensure(most_knobs(&config), &config.shortcuts);
-        }
+        self.shortcuts.ensure(most_knobs(&config), &config.shortcuts);
         self.core.set_config(config, out);
         self.clients.send(&ServerMessage::Config(self.core.config().clone()));
         home_assistant_changed

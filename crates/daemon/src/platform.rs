@@ -3,6 +3,7 @@
 
 use crate::audio::AudioSystem;
 use crate::desktop::Desktop;
+use crate::shortcuts::GlobalShortcuts;
 use crate::tray::TrayIcon;
 
 /// This platform's adapters, one per port.
@@ -10,6 +11,7 @@ pub struct Platform {
     pub audio: Box<dyn AudioSystem>,
     pub desktop: Box<dyn Desktop>,
     pub tray: Box<dyn TrayIcon>,
+    pub shortcuts: Box<dyn GlobalShortcuts>,
 }
 
 /// The adapters for the operating system this daemon was built for.
@@ -19,12 +21,14 @@ pub fn native() -> Platform {
         audio: Box::new(crate::audio::pulse::PipeWire),
         desktop: Box::new(crate::desktop::linux::Plasma),
         tray: Box::new(crate::tray::linux::StatusNotifier::default()),
+        shortcuts: Box::new(crate::shortcuts::linux::KGlobalAccel::default()),
     };
     #[cfg(windows)]
     let platform = Platform {
         audio: Box::new(crate::audio::wasapi::Wasapi),
         desktop: Box::new(crate::desktop::windows::Win32),
         tray: Box::new(crate::tray::windows::NotificationArea::default()),
+        shortcuts: Box::new(crate::shortcuts::windows::HotKeys::default()),
     };
     platform
 }

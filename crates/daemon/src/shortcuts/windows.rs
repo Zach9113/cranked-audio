@@ -85,13 +85,31 @@ fn parse_vk(key: &str) -> Option<u32> {
     }
 }
 
-pub struct Shortcuts {
+/// The Windows shortcuts adapter: `RegisterHotKey` for the keys set in our settings, on a thread with a message loop.
+#[derive(Default)]
+pub struct HotKeys {
+    running: Option<Shortcuts>,
+}
+
+impl super::GlobalShortcuts for HotKeys {
+    fn start(&mut self, events: Sender<Event>, _knobs: usize, bindings: &BTreeMap<String, String>) {
+        self.running = Shortcuts::start(events, bindings);
+    }
+
+    fn ensure(&mut self, _knobs: usize, bindings: &BTreeMap<String, String>) {
+        if let Some(running) = &mut self.running {
+            running.ensure(bindings);
+        }
+    }
+}
+
+struct Shortcuts {
     bindings: Arc<Mutex<BTreeMap<String, String>>>,
     thread: u32,
 }
 
 impl Shortcuts {
-    pub fn start(events: Sender<Event>, _knobs: usize, initial: &BTreeMap<String, String>) -> Option<Shortcuts> {
+    fn start(events: Sender<Event>, initial: &BTreeMap<String, String>) -> Option<Shortcuts> {
         let bindings = Arc::new(Mutex::new(initial.clone()));
         let for_thread = Arc::clone(&bindings);
         let (tx, rx) = mpsc::channel();
@@ -109,7 +127,7 @@ impl Shortcuts {
         Some(Shortcuts { bindings, thread })
     }
 
-    pub fn ensure(&mut self, _knobs: usize, updated: &BTreeMap<String, String>) {
+    fn ensure(&mut self, updated: &BTreeMap<String, String>) {
         if let Ok(mut guard) = self.bindings.lock() {
             if *guard == *updated {
                 return;

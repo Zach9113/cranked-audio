@@ -17,14 +17,32 @@ const FRIENDLY: &str = "Cranked Audio";
 /// kglobalaccel's "this action exists now" flag: loads the keys the user saved for it.
 const SET_PRESENT: u32 = 2;
 
-pub struct Shortcuts {
+/// The Linux shortcuts adapter: KDE's kglobalaccel (the keys are picked in System Settings, not in our settings).
+#[derive(Default)]
+pub struct KGlobalAccel {
+    running: Option<Shortcuts>,
+}
+
+impl super::GlobalShortcuts for KGlobalAccel {
+    fn start(&mut self, events: Sender<Event>, knobs: usize, _bindings: &BTreeMap<String, String>) {
+        self.running = Shortcuts::start(events, knobs);
+    }
+
+    fn ensure(&mut self, knobs: usize, _bindings: &BTreeMap<String, String>) {
+        if let Some(running) = &mut self.running {
+            running.ensure(knobs);
+        }
+    }
+}
+
+struct Shortcuts {
     connection: zbus::blocking::Connection,
     registered: usize,
 }
 
 impl Shortcuts {
     /// Registers the shortcuts for `knobs` knobs and listens for them. None when there's no kglobalaccel.
-    pub fn start(events: Sender<Event>, knobs: usize, _bindings: &BTreeMap<String, String>) -> Option<Shortcuts> {
+    fn start(events: Sender<Event>, knobs: usize) -> Option<Shortcuts> {
         let connection = zbus::blocking::Connection::session().ok()?;
         let mut shortcuts = Shortcuts { connection, registered: 0 };
         if let Err(e) = shortcuts.register(0, knobs) {
@@ -33,12 +51,12 @@ impl Shortcuts {
         }
         shortcuts.registered = knobs;
         let connection = shortcuts.connection.clone();
-        std::thread::spawn(move || listen(&connection, &events));
+        crate::platform::spawn_thread("shortcuts", move || listen(&connection, &events));
         Some(shortcuts)
     }
 
     /// Makes sure there are shortcuts for `knobs` knobs (ones for knobs since removed stay, keeping their keys).
-    pub fn ensure(&mut self, knobs: usize, _bindings: &BTreeMap<String, String>) {
+    fn ensure(&mut self, knobs: usize) {
         if knobs > self.registered {
             match self.register(self.registered, knobs) {
                 Ok(()) => self.registered = knobs,

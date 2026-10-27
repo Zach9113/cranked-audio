@@ -35,10 +35,11 @@ contract explicit and swappable; they don't redesign it.
 
 1. **Audio.** `AudioSystem` trait (`start`, `outputs`), `platform::native()`, `Service::start` takes the `Platform`. *(done, #7)*
 2. **Desktop.** Media keys, popups and the screen watch behind `Desktop` (`start`, `watch_screen`), adapters
-   `linux::Plasma` and `windows::Win32`. *(this PR)*
+   `linux::Plasma` and `windows::Win32`. *(#8)*
 3. **Tray.** `TrayIcon` with `start` and `show`; adapters `linux::StatusNotifier` and `windows::NotificationArea`
-   keep their own running icon. *(this PR)*
-4. **Shortcuts.** `GlobalShortcuts` with `start`/`ensure`.
+   keep their own running icon. *(#9)*
+4. **Shortcuts.** `GlobalShortcuts` with `start`/`ensure`; adapters `linux::KGlobalAccel` and `windows::HotKeys`.
+   *(this PR)*
 5. **Remote API.** `RemoteApi` with `publish`; Windows plugs in a no-op adapter instead of `type Published = ((), ())`.
 6. **Devices.** `InputSource` per device; MIDI and deej are portable and shared, keyboard knobs per platform.
 7. **Layout and tests.** Move the adapters to `platform/linux/` and `platform/windows/` (the last `cfg` lines in

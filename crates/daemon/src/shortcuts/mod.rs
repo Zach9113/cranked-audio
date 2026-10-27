@@ -2,15 +2,25 @@
 //! `RegisterHotKey` on Windows (configured in `config.toml` under `[shortcuts]` or in Settings).
 
 #[cfg(not(windows))]
-mod linux;
-#[cfg(not(windows))]
-pub use linux::Shortcuts;
+pub mod linux;
 #[cfg(windows)]
-mod windows;
-#[cfg(windows)]
-pub use windows::Shortcuts;
+pub mod windows;
+
+use std::collections::BTreeMap;
+use std::sync::mpsc::Sender;
 
 use crate::dbus::Request;
+use crate::Event;
+
+/// The port to the desktop's global shortcuts. Each platform has one adapter (`linux::KGlobalAccel`,
+/// `windows::HotKeys`), chosen in `platform::native()`; it keeps its own registrations.
+pub trait GlobalShortcuts {
+    /// Registers the shortcuts for `knobs` knobs (keys from `bindings` where the platform takes them from the
+    /// settings) and reports presses as `Event::Remote`. Without a shortcut service it says so once and stays away.
+    fn start(&mut self, events: Sender<Event>, knobs: usize, bindings: &BTreeMap<String, String>);
+    /// Catches up with new settings: shortcuts for more knobs, or changed keys.
+    fn ensure(&mut self, knobs: usize, bindings: &BTreeMap<String, String>);
+}
 
 /// Points one turn shortcut (or one key repeat) moves a knob.
 pub const STEP: i32 = 2;
