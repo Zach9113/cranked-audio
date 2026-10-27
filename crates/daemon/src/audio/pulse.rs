@@ -61,8 +61,21 @@ fn stream_from(info: &SinkInputInfo) -> Stream {
     }
 }
 
+/// The Linux audio adapter: `PipeWire` through its `PulseAudio` layer.
+pub struct PipeWire;
+
+impl super::AudioSystem for PipeWire {
+    fn start(&self, commands: Receiver<Command>, events: Sender<Event>) {
+        super::spawn_audio_thread(move || run(&commands, &events));
+    }
+
+    fn outputs(&self) -> Vec<cranked_ipc::AudioOutput> {
+        list_outputs()
+    }
+}
+
 /// Runs forever on its own thread; reconnects when the sound server restarts.
-pub fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
+fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
     loop {
         match session(commands, events) {
             Ok(()) => return,
@@ -350,7 +363,7 @@ fn switch_output(
     let _ = events.send(Event::OutputSwitched(Some(next.description)));
 }
 
-pub fn list_outputs() -> Vec<cranked_ipc::AudioOutput> {
+fn list_outputs() -> Vec<cranked_ipc::AudioOutput> {
     let Some(mut mainloop) = Mainloop::new() else { return Vec::new() };
     let Some(mut context) = Context::new(&mainloop, "Cranked Audio outputs") else { return Vec::new() };
     if context.connect(None, FlagSet::NOFAIL, None).is_err() || mainloop.start().is_err() {

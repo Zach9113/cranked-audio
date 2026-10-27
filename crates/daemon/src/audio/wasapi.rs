@@ -33,8 +33,21 @@ use crate::Event;
 /// How often the sessions are looked at (new apps, apps gone, volume changed elsewhere).
 const SCAN_EVERY: Duration = Duration::from_millis(300);
 
+/// The Windows audio adapter: WASAPI audio sessions.
+pub struct Wasapi;
+
+impl super::AudioSystem for Wasapi {
+    fn start(&self, commands: Receiver<Command>, events: Sender<Event>) {
+        super::spawn_audio_thread(move || run(&commands, &events));
+    }
+
+    fn outputs(&self) -> Vec<cranked_ipc::AudioOutput> {
+        list_outputs()
+    }
+}
+
 /// Runs forever on its own thread; starts over when Windows audio goes away (the audio service restarted).
-pub fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
+fn run(commands: &Receiver<Command>, events: &Sender<Event>) {
     // SAFETY: this thread's COM apartment, undone below when the session ends
     if let Err(e) = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok() {
         return eprintln!("audio: COM didn't start ({e})");
@@ -186,7 +199,7 @@ pub fn is_virtual_output(parent: &str) -> bool {
     instance.get(..5).is_some_and(|prefix| prefix.eq_ignore_ascii_case("ROOT\\"))
 }
 
-pub fn list_outputs() -> Vec<cranked_ipc::AudioOutput> {
+fn list_outputs() -> Vec<cranked_ipc::AudioOutput> {
     // SAFETY: joins (or keeps) this thread's COM apartment; a second call on the same thread is harmless
     let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
     // SAFETY: a plain COM call
