@@ -13,6 +13,7 @@ use windows::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE, LPARAM, LRES
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VIRTUAL_KEY, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK, VK_VOLUME_DOWN, VK_VOLUME_MUTE,
     VK_VOLUME_UP,
@@ -23,12 +24,12 @@ use windows::Win32::UI::Input::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, KillTimer, SetTimer, SetWindowsHookExW, TranslateMessage,
-    UnhookWindowsHookEx, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
-    WM_SYSKEYUP, WM_TIMER,
+    UnhookWindowsHookEx, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WM_TIMER,
 };
 
 use super::{is_board, send, Input, RETRY};
-use crate::desktop::MediaKey;
+use crate::desktop::{attach_input_desktop, MediaKey, CRANKED_EXTRA_INFO};
 use crate::Event;
 
 /// Substrings in device names that indicate virtual injectors, monitor audio jacks, microphones, coolers or system
@@ -269,8 +270,9 @@ static HOOK_CTX: Mutex<Option<HookContext>> = Mutex::new(None);
 unsafe extern "system" fn ll_keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && lparam.0 != 0 {
         let kb = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
-        // Ignore synthetic key events injected via SendInput so our own media key fallback is never intercepted
-        if (kb.flags.0 & LLKHF_INJECTED.0) == 0 {
+        // Ignore synthetic media key events sent by our own fallback in `desktop/windows.rs`, while still allowing
+        // hardware/driver consumer-control events even if a HID filter sets `LLKHF_INJECTED`.
+        if kb.dwExtraInfo != CRANKED_EXTRA_INFO {
             let msg = wparam.0 as u32;
             let down = match msg {
                 WM_KEYDOWN | WM_SYSKEYDOWN => Some(true),
@@ -305,6 +307,7 @@ fn device_present(target: &str) -> bool {
 }
 
 pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<Event>, current: &dyn Fn() -> bool) {
+    attach_input_desktop();
     let knob = knob.saturating_sub(1);
     let mut reported = false;
     while current() {
@@ -320,23 +323,20 @@ pub fn keyboard(name: &str, knob: usize, step: u8, grab: bool, events: &Sender<E
         if let Ok(mut guard) = HOOK_CTX.lock() {
             *guard = Some(HookContext { knob, step, grab, mute_down: false, events: events.clone() });
         }
-        let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(ll_keyboard_proc), None, 0) };
+        let hmod = unsafe { GetModuleHandleW(None) }.ok().map(Into::into);
+        let hook = unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(ll_keyboard_proc), hmod, 0) };
         let Ok(hook) = hook else {
             eprintln!("keyboard knob: couldn't install keyboard hook for {name:?}");
             std::thread::sleep(RETRY);
             continue;
         };
         eprintln!("keyboard knob: {name} on knob {}{}", knob + 1, if grab { ", taken over" } else { "" });
-        let timer = unsafe { SetTimer(None, 0, 250, None) };
+        // Keep the message loop completely non-blocking so Windows never times out `LowLevelHooksTimeout`.
+        let timer = unsafe { SetTimer(None, 0, 500, None) };
         let mut msg = MSG::default();
-        let mut ticks = 0u32;
         while current() && unsafe { GetMessageW(&mut msg, None, 0, 0) }.0 > 0 {
-            if msg.message == WM_TIMER {
-                ticks = ticks.wrapping_add(1);
-                // Re-check device presence every ~3 seconds
-                if ticks.is_multiple_of(12) && !device_present(name) {
-                    break;
-                }
+            if msg.message == WM_TIMER && !current() {
+                break;
             }
             unsafe {
                 let _ = TranslateMessage(&msg);

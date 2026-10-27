@@ -96,6 +96,7 @@ impl Shortcuts {
         std::thread::Builder::new()
             .name("shortcuts".into())
             .spawn(move || {
+                crate::desktop::attach_input_desktop();
                 let tid = unsafe { GetCurrentThreadId() };
                 let _ = tx.send(tid);
                 run_loop(events, for_thread);

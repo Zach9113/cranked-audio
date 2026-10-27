@@ -123,6 +123,7 @@ pub fn start(tray: Tray) -> Option<Handle> {
     let (ready, started) = mpsc::channel();
     let for_thread = Arc::clone(&state);
     let spawned = std::thread::Builder::new().name("tray".into()).spawn(move || {
+        crate::desktop::attach_input_desktop();
         let built = for_thread.lock().map_err(|e| e.to_string()).and_then(|mut guard| {
             let (icon, actions) = build(&guard.0)?;
             guard.1 = actions;
