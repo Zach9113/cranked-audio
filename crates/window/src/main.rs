@@ -16,7 +16,7 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use cranked_ipc::settings::{Channel, Config, Device, LedBlend, PopupStyle};
+use cranked_ipc::settings::{Channel, Config, Device, PopupStyle};
 use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot, UnixStream};
 use cranked_protocol::convert::{round_u8, saturate_i32, saturate_u8, to_f32};
 use slint::{Color, ComponentHandle as _, Model as _, ModelRc, SharedString, VecModel};
@@ -521,12 +521,6 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
         PopupStyle::Notifications => 3,
     });
     general.set_brightness(f32::from(config.leds.brightness));
-    general.set_led_blend(match config.leds.blend {
-        LedBlend::Classic => 0,
-        LedBlend::Smooth => 1,
-        LedBlend::Clean => 2,
-        LedBlend::Soft => 3,
-    });
     general.set_dim_idle(config.leds.dim_idle);
     let auto = &profile.auto_lower;
     general.set_auto_enabled(auto.enabled);
@@ -644,12 +638,6 @@ fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize)
         _ => PopupStyle::Auto,
     };
     config.leds.brightness = round_u8(f64::from(general.get_brightness()).clamp(0.0, 100.0));
-    config.leds.blend = match general.get_led_blend() {
-        1 => LedBlend::Smooth,
-        2 => LedBlend::Clean,
-        3 => LedBlend::Soft,
-        _ => LedBlend::Classic,
-    };
     config.leds.dim_idle = general.get_dim_idle();
     let url = general.get_home_assistant_url().trim().to_string();
     config.home_assistant.url = (!url.is_empty()).then_some(url);

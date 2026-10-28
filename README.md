@@ -112,7 +112,7 @@ Open **Cranked Audio** from the app menu or click the tray icon. Right-click the
 Next and Previous track, Switch output, your profiles and Quit. Drag or scroll a knob to turn it; right-click a knob
 to choose its apps, colours and range, and right-click a button to choose what a press and a hold do.
 **Settings** covers the look, knobs, profiles, Auto-lower, popups, keyboard shortcuts, Home Assistant and
-**Devices** (keyboard knobs, MIDI controllers and deej boxes). Mixer light settings (brightness, fill, calibration)
+**Devices** (keyboard knobs, MIDI controllers and deej boxes). Mixer light settings (brightness, calibration)
 appear once a mixer has been connected.
 
 For keyboard shortcuts, open **Settings > Set shortcuts…** (or System Settings > Shortcuts > Cranked Audio) and give

@@ -8,8 +8,10 @@
   sliders stay.
 - New setups start with a measured LED correction for the 5-knob mixer (red 0.86, green 1.06, blue 0.98), so
   dimmed colours look right without calibrating. Existing settings keep their own values.
-- New LED fill "Soft": neighbouring LEDs overlap, so the level glides around a knob instead of stepping from one
-  LED to the next (Settings, Mixer lights).
+- Knob lights look smoother: brightness now follows how eyes see light (the CIE lightness curve), and the LED the
+  level is passing through mixes its two colours in OKLab, so the fill glides instead of each LED seeming to snap on.
+  This replaces the four LED fill modes (the setting is gone; old settings files still load). Redo the LED
+  calibration once after updating.
 - The tray menu has more in it: Settings…, Play/Pause, Next and Previous track, and Switch output, next to Open,
   your profiles, Edit settings file… and Quit.
 

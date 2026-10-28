@@ -39,6 +39,8 @@ const CALIBRATION_TIMEOUT: Duration = Duration::from_secs(180);
 /// How many seen app names to remember.
 const SEEN_APPS: usize = 200;
 /// While the screen is off, touching a knob or button lights the LEDs for this long.
+/// How bright lowered knobs' LEDs look at least while Auto-lower holds them down (they dim with the volume).
+const DUCKED_LED_FLOOR: f64 = 0.35;
 const WAKE_FOR: Duration = Duration::from_secs(30);
 /// After the mixer connects, knob readings don't move lights for this long (it sends warm-up readings).
 const LIGHTS_SETTLE: Duration = Duration::from_secs(4);
@@ -877,7 +879,7 @@ impl Core {
                 muted: self.muted[channel],
                 idle: config.controls_audio() && !playing,
                 scale: if self.auto_lower().dim_leds && self.auto_lower().lowers(channel) {
-                    self.ducker.factor().powf(2.2).max(0.08)
+                    self.ducker.factor().max(DUCKED_LED_FLOOR)
                 } else {
                     1.0
                 },
@@ -892,7 +894,7 @@ impl Core {
             Some((_, CalibrationPattern::Compare(first, second))) => {
                 led_frame(&comparison(first, second, leds.brightness))
             }
-            None => led_frame(&colors(&looks, leds.brightness, leds.dim_idle, leds.gamma, leds.blend)),
+            None => led_frame(&colors(&looks, leds.brightness, leds.dim_idle, leds.gamma)),
         };
         let since = self.last_led_send.map(|t| now.duration_since(t));
         if self.last_frame == Some(frame) && since.is_some_and(|s| s + TIMER_SLACK < LED_REFRESH) {

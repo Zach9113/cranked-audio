@@ -63,10 +63,11 @@ Numbers marked (measured) come from probing the real mixer or the live system in
 - On-screen volume popup when a knob turns (channel or playing app name + level); a text popup for button
   actions (muted/unmuted, output name, profile name). Uses KDE's OSD when on Plasma, falls back to standard
   freedesktop notifications on GNOME, Sway, Hyprland, etc. Optional.
-- LEDs per knob: fill from the left with the active colour by level, the rest in the background colour. The edge
-  LED's mix follows an S-curve (eases in/out, exactly 50/50 in the middle), so 50% shows colour / even mix /
-  background. The shown level glides to a new value (~70 ms time constant) instead of stepping. Muted channel = muted colour. Global brightness. Dim to 25% when the
-  channel has no playing streams (optional). All off while the screen is locked or the displays are asleep;
+- LEDs per knob: fill from the left with the active colour by level, the rest in the background colour. Brightness
+  and colour are worked out as eyes see them and turned into LED power last: dimming follows the CIE 1931 lightness
+  curve (looking half as bright = about 18% power), and the LED the level is in mixes background to level colour in
+  OKLab (the middle looks halfway, no grey or dark dip). The shown level glides to a new value (~70 ms time constant) instead of stepping. Muted channel = muted colour. Global brightness. Dim to look half as bright
+  when the channel has no playing streams (optional). All off while the screen is locked or the displays are asleep;
   back on with the screen or any knob/button input.
 
 ## 6. Auto-lower (ducking)
@@ -76,7 +77,7 @@ Numbers marked (measured) come from probing the real mixer or the live system in
 - Trigger = playback level of a trigger channel's streams or of voice-chat streams above about -44 dBFS for 50 ms.
   Measure the stream's own output (never the mic). A lowered channel never triggers itself.
 - Fade down over 0.25 s, stay down until 1.2 s after the last trigger, fade back over 0.8 s. Knob turns, new
-  streams and the fast guard all respect the lowered level. LEDs of lowered channels dim by factor^2.2 (min 8%).
+  streams and the fast guard all respect the lowered level. LEDs of lowered channels dim to look `factor` as bright (at least 35%).
 
 ## 7. Home Assistant (optional)
 

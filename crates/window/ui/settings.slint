@@ -131,7 +131,6 @@ export global General {
     in property <[string]> theme-names;
     callback theme-changed(int);
     in-out property <float> brightness;
-    in-out property <int> led-blend;
     in-out property <bool> dim-idle;
     // LED calibration: per-channel correction for dimming
     in-out property <float> gamma-red: 1.0;
@@ -754,14 +753,6 @@ export component GeneralPage inherits ScrollView {
                     Label { text: "LED brightness"; width: 110px; }
                     Slider { minimum: 0; maximum: 100; value <=> General.brightness; }
                     Label { text: round(General.brightness) + "%"; width: 44px; }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Label { text: "LED fill"; width: 110px; }
-                    ComboBox {
-                        model: ["Classic fade (like Turn Up)", "Smooth blend", "Only my two colours", "Soft (LEDs overlap, no steps)"];
-                        current-index <=> General.led-blend;
-                    }
                 }
                 CheckBox { text: "Dim a knob's lights when nothing on it is playing"; checked <=> General.dim-idle; }
                 HorizontalLayout {
