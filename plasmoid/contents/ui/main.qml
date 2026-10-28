@@ -87,14 +87,16 @@ PlasmoidItem {
         });
     }
 
+    function applyState(json) {
+        try {
+            root.snapshot = JSON.parse(String(json));
+        } catch (e) {
+            root.snapshot = null;
+        }
+    }
+
     function refresh() {
-        call("GetState", [], "", value => {
-            try {
-                root.snapshot = JSON.parse(String(value));
-            } catch (e) {
-                root.snapshot = null;
-            }
-        });
+        call("GetState", [], "", applyState);
     }
 
     function setKnob(index, percent) {
@@ -113,9 +115,23 @@ PlasmoidItem {
         call("Hold", [new DBus.uint32(index)], "(u)", refresh);
     }
 
-    // quick while the popup is open, slow otherwise (just enough for the tooltip)
+    // the service announces every change of its State property, so the widget follows the knobs as they move
+    DBus.Properties {
+        id: liveState
+        busType: DBus.BusType.Session
+        service: root.api.service
+        path: root.api.path
+        iface: root.api.iface
+        onPropertiesChanged: (interfaceName, changedProperties) => {
+            root.running = true;
+            if (changedProperties.State !== undefined)
+                root.applyState(changedProperties.State);
+        }
+    }
+
+    // a slow safety net: notices the service going away or coming back
     Timer {
-        interval: root.expanded || Plasmoid.formFactor === PlasmaCore.Types.Planar ? 250 : 5000
+        interval: 5000
         running: true
         repeat: true
         triggeredOnStart: true

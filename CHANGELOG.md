@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Linux
+- The Plasma widget follows the knobs live: the service now offers its state as a D-Bus property (`State`, with
+  `PropertiesChanged`), and the widget listens instead of asking every 5 seconds while it sat in the panel.
 - Copies installed by a package manager (in `/usr`) no longer install updates themselves: Settings shows the new
   version and says to update with the package manager, instead of adding a second copy in `~/.local/bin`.
 

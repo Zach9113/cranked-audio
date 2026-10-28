@@ -1,5 +1,6 @@
 //! Linux: the API on the session bus (see the module above).
 
+use std::collections::HashMap;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -28,6 +29,13 @@ impl Api {
     /// Everything the window shows, as JSON (knobs with names, levels, colours, what's playing, button actions).
     fn get_state(&self) -> String {
         self.state.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// The same JSON as a property, so listeners (the Plasma widget) get `PropertiesChanged` on every change instead
+    /// of asking on a timer.
+    #[zbus(property)]
+    fn state(&self) -> String {
+        self.get_state()
     }
 
     /// Turn knob `knob` (0-based) to `percent` (0..100), like turning it by hand.
@@ -84,8 +92,8 @@ impl Api {
     }
 
     /// Sent whenever the state changes, with the new JSON.
-    #[zbus(signal)]
-    async fn state_changed(emitter: &zbus::object_server::SignalEmitter<'_>, state: &str) -> zbus::Result<()>;
+    #[zbus(signal, name = "StateChanged")]
+    async fn announce_state(emitter: &zbus::object_server::SignalEmitter<'_>, state: &str) -> zbus::Result<()>;
 }
 
 /// The Linux remote API adapter: the interface above on the session bus.
@@ -140,4 +148,12 @@ fn publish(connection: &zbus::blocking::Connection, state: &Mutex<String>, json:
         json.clone_into(&mut current);
     }
     let _ = connection.emit_signal(None::<&str>, PATH, INTERFACE, "StateChanged", &(json,));
+    let changed = HashMap::from([("State", zbus::zvariant::Value::from(json))]);
+    let _ = connection.emit_signal(
+        None::<&str>,
+        PATH,
+        "org.freedesktop.DBus.Properties",
+        "PropertiesChanged",
+        &(INTERFACE, changed, Vec::<&str>::new()),
+    );
 }
