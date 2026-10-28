@@ -759,7 +759,7 @@ export component GeneralPage inherits ScrollView {
                     spacing: 8px;
                     Label { text: "LED fill"; width: 110px; }
                     ComboBox {
-                        model: ["Classic fade (like Turn Up)", "Smooth blend", "Only my two colours"];
+                        model: ["Classic fade (like Turn Up)", "Smooth blend", "Only my two colours", "Soft (LEDs overlap, no steps)"];
                         current-index <=> General.led-blend;
                     }
                 }

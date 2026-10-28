@@ -22,6 +22,8 @@ pub struct KnobLook {
 
 /// How dim the edge LED gets when the level sits exactly at its middle (half one colour, half the other).
 const EDGE_FLOOR: f64 = 0.6;
+/// With the Soft fill, how far each LED's fade reaches into its neighbours' share of the dial, as a part of its own.
+const SOFT_REACH: f64 = 0.5;
 
 /// The edge LED as the level moves through it: whichever of the two picked colours covers more of its share of
 /// the dial, at a brightness that says how much (full when it fills the LED, `EDGE_FLOOR` when the boundary sits
@@ -47,11 +49,25 @@ fn edge_for(blend: LedBlend, background: Rgb, color: Rgb, amount: f64) -> (Rgb, 
         LedBlend::Clean => edge(background, color, x),
         // Turn Up's curves: the level colour comes in slowly (x^2.2) as the background goes out quickly ((1-x)^3)
         LedBlend::Classic => (mix((1.0 - x).powi(3), x.powf(2.2)), 1.0),
-        LedBlend::Smooth => {
+        LedBlend::Smooth | LedBlend::Soft => {
             let w = x * x * (3.0 - 2.0 * x);
             (mix(1.0 - w, w), 1.0)
         }
     }
+}
+
+/// How far LED `index` has turned from background to level colour at `level` (0..100). Each LED owns an equal share
+/// of the dial; with the Soft fill its fade reaches into its neighbours' shares, so two LEDs change together.
+fn led_fill(blend: LedBlend, level: f64, index: usize) -> f64 {
+    let per_led = 100.0 / f64::from(saturate_u8(LEDS_PER_KNOB));
+    let start = f64::from(saturate_u8(index)) * per_led;
+    let (start, end) = if blend == LedBlend::Soft {
+        let reach = per_led * SOFT_REACH;
+        ((start - reach).max(0.0), (start + per_led + reach).min(100.0))
+    } else {
+        (start, start + per_led)
+    };
+    ((level - start) / (end - start)).clamp(0.0, 1.0)
 }
 
 /// Dims a colour to `factor` of its brightness, correcting each channel by `gamma` so the LED keeps its tint.
@@ -79,9 +95,8 @@ pub fn knob_colors(
     if look.muted {
         return [dim(look.muted_color, factor, gamma); LEDS_PER_KNOB];
     }
-    let per_led = 100.0 / f64::from(saturate_u8(LEDS_PER_KNOB));
     std::array::from_fn(|i| {
-        let fill = ((level - f64::from(saturate_u8(i)) * per_led) / per_led).clamp(0.0, 1.0);
+        let fill = led_fill(blend, level, i);
         let (colour, share) = edge_for(blend, look.background, look.color, fill);
         dim(colour, factor * share, gamma)
     })
@@ -205,6 +220,30 @@ mod tests {
         let cal = calibration(&[orange; KNOBS], 100, PLAIN);
         assert_eq!(cal[0][0], orange);
         assert!(cal[0][1].0 < 240 && cal[0][2].0 < cal[0][1].0, "full, then dimmer, then dimmer still");
+    }
+
+    #[test]
+    fn the_soft_fill_fades_neighbouring_leds_together() {
+        let partly = |fill: f64| fill > 0.0 && fill < 1.0;
+        let changing = |blend, level| (0..LEDS_PER_KNOB).filter(|&i| partly(led_fill(blend, level, i))).count();
+        assert_eq!(changing(LedBlend::Classic, 30.0), 1, "one LED at a time steps around the knob");
+        assert_eq!(changing(LedBlend::Soft, 30.0), 2, "two LEDs share the move, so it glides");
+        for blend in [LedBlend::Classic, LedBlend::Soft] {
+            assert!((0..LEDS_PER_KNOB).all(|i| led_fill(blend, 0.0, i) == 0.0), "{blend:?}: empty at 0");
+            assert!(
+                (0..LEDS_PER_KNOB).all(|i| (led_fill(blend, 100.0, i) - 1.0).abs() < f64::EPSILON),
+                "{blend:?}: full at 100"
+            );
+            let mut previous = [0.0; LEDS_PER_KNOB];
+            for level in 0..=100 {
+                let fills: [f64; LEDS_PER_KNOB] = std::array::from_fn(|i| led_fill(blend, f64::from(level), i));
+                assert!(
+                    fills.iter().zip(previous).all(|(now, before)| *now >= before),
+                    "{blend:?}: only ever fills up"
+                );
+                previous = fills;
+            }
+        }
     }
 
     #[test]

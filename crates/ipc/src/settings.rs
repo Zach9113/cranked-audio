@@ -201,9 +201,14 @@ pub struct Leds {
     pub blend: LedBlend,
 }
 
+/// The dimming correction new setups start with: measured on the 5-knob mixer (CH343, 1a86:55d3) with the guided
+/// calibration, so its LEDs keep their colour when dimmed without anyone calibrating. Every mixer of this model has
+/// the same LEDs; anyone can still calibrate their own.
+pub const MIXER_GAMMA: [f64; 3] = [0.86, 1.06, 0.98];
+
 impl Default for Leds {
     fn default() -> Self {
-        Self { brightness: 80, dim_idle: true, gamma: [1.0; 3], blend: LedBlend::default() }
+        Self { brightness: 80, dim_idle: true, gamma: MIXER_GAMMA, blend: LedBlend::default() }
     }
 }
 
@@ -218,6 +223,9 @@ pub enum LedBlend {
     Smooth,
     /// Only the two picked colours, never a mix: the edge LED switches at its middle, dimmed near the switch.
     Clean,
+    /// Neighbouring LEDs overlap: the next one starts fading in before the current one is done, so the level glides
+    /// around the knob instead of stepping from LED to LED.
+    Soft,
 }
 
 /// Calibration sliders go this far either way.

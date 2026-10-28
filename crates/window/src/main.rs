@@ -525,6 +525,7 @@ fn load_general(window: &MainWindow, link: &Link) -> bool {
         LedBlend::Classic => 0,
         LedBlend::Smooth => 1,
         LedBlend::Clean => 2,
+        LedBlend::Soft => 3,
     });
     general.set_dim_idle(config.leds.dim_idle);
     let auto = &profile.auto_lower;
@@ -646,6 +647,7 @@ fn store_general(window: &MainWindow, config: &mut Config, profile_index: usize)
     config.leds.blend = match general.get_led_blend() {
         1 => LedBlend::Smooth,
         2 => LedBlend::Clean,
+        3 => LedBlend::Soft,
         _ => LedBlend::Classic,
     };
     config.leds.dim_idle = general.get_dim_idle();
@@ -1521,7 +1523,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_open_calibration(move || {
             let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
-            let gamma = link.config.as_ref().map_or([1.0; 3], |c| c.leds.gamma);
+            let gamma = link.config.as_ref().map_or(cranked_ipc::settings::MIXER_GAMMA, |c| c.leds.gamma);
             let general = w.global::<General>();
             general.set_gamma_red(to_f32(gamma[0]));
             general.set_gamma_green(to_f32(gamma[1]));

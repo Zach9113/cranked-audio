@@ -6,6 +6,10 @@
 - Guided LED calibration: the mixer shows two corrections side by side (knobs 1–2 and 4–5) and you pick the side
   that stays the same white as it dims, about 15 times; it finds the setting for red, green and blue. The manual
   sliders stay.
+- New setups start with a measured LED correction for the 5-knob mixer (red 0.86, green 1.06, blue 0.98), so
+  dimmed colours look right without calibrating. Existing settings keep their own values.
+- New LED fill "Soft": neighbouring LEDs overlap, so the level glides around a knob instead of stepping from one
+  LED to the next (Settings, Mixer lights).
 - The tray menu has more in it: Settings…, Play/Pause, Next and Previous track, and Switch output, next to Open,
   your profiles, Edit settings file… and Quit.
 
