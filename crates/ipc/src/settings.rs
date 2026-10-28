@@ -199,14 +199,9 @@ pub struct Leds {
     pub gamma: [f64; 3],
 }
 
-/// The dimming correction new setups start with: measured on the 5-knob mixer (CH343, 1a86:55d3) with the guided
-/// calibration, so its LEDs keep their colour when dimmed without anyone calibrating. Every mixer of this model has
-/// the same LEDs; anyone can still calibrate their own.
-pub const MIXER_GAMMA: [f64; 3] = [0.86, 1.06, 0.98];
-
 impl Default for Leds {
     fn default() -> Self {
-        Self { brightness: 80, dim_idle: true, gamma: MIXER_GAMMA }
+        Self { brightness: 80, dim_idle: true, gamma: [1.0; 3] }
     }
 }
 
