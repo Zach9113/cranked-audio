@@ -626,6 +626,20 @@ mod tests {
                 }
             }
         }
+
+        /// Starts looking afresh: what was recorded so far no longer counts.
+        fn forget(&mut self) {
+            while self.inbox.try_recv().is_ok() {}
+            self.seen.clear();
+        }
+    }
+
+    fn app(index: u32, name: &str, volume: f64) -> Stream {
+        Stream { index, app_name: name.into(), volume, channels: 2, writable: true, ..Stream::default() }
+    }
+
+    fn sets(index: u32, percent: u8) -> impl Fn(&Recorded) -> bool {
+        move |r| matches!(r, Recorded::Audio(audio::Command::SetStream { index: i, percent: p, channels: _ }) if *i == index && *p == percent)
     }
 
     /// Runs a service on the fake platform with `config`, its files in a temp folder (emptied first, so test runs
@@ -712,5 +726,94 @@ mod tests {
             "a popup names the new profile: {:?}",
             recording.seen
         );
+    }
+
+    #[test]
+    fn a_button_tap_reaches_the_media_player_and_a_hold_mutes_its_apps() {
+        let config = "[[channel]]\nname = \"Music\"\napps = [\"player\"]\npress = \"play_pause\"\nhold = \"mute\"\n";
+        let (events, mut recording) = start_service("buttons", config);
+        events.send(Event::AudioReady).unwrap();
+        events.send(Event::Stream(app(3, "player", 50.0))).unwrap();
+        let button = |down| Event::Remote(dbus::Request::Button { button: 0, down });
+
+        events.send(button(true)).unwrap();
+        events.send(button(false)).unwrap();
+        let play_pause =
+            |r: &Recorded| matches!(r, Recorded::Desktop(desktop::Command::Media(desktop::MediaKey::PlayPause)));
+        assert!(recording.saw(play_pause), "a tap is play/pause: {:?}", recording.seen);
+
+        // a person's next press comes later than the bounce guard (presses within 200 ms of the last count as bounce)
+        std::thread::sleep(Duration::from_millis(300));
+        events.send(button(true)).unwrap();
+        std::thread::sleep(crate::buttons::HOLD_AFTER + Duration::from_millis(200));
+        events.send(button(false)).unwrap();
+        let muted = |r: &Recorded| matches!(r, Recorded::Audio(audio::Command::MuteStream { index: 3, mute: true }));
+        assert!(recording.saw(muted), "a hold mutes the player: {:?}", recording.seen);
+    }
+
+    #[test]
+    fn controller_input_turns_its_knobs_apps() {
+        let (events, mut recording) = start_service("controller", "[[channel]]\nname = \"Game\"\napps = [\"game\"]\n");
+        events.send(Event::AudioReady).unwrap();
+        events.send(Event::Stream(app(4, "game", 100.0))).unwrap();
+        events.send(Event::Device(devices::Input::Set { knob: 0, percent: 40 })).unwrap();
+        assert!(recording.saw(sets(4, 40)), "a fader sets the game to 40%: {:?}", recording.seen);
+        events.send(Event::Device(devices::Input::Step { knob: 0, delta: -5 })).unwrap();
+        assert!(recording.saw(sets(4, 35)), "a knob turn steps it to 35%: {:?}", recording.seen);
+    }
+
+    #[test]
+    fn switching_output_asks_the_sound_system_and_shows_where_it_went() {
+        let config = "[[channel]]\nname = \"Output\"\npress = \"switch_output\"\n";
+        let (events, mut recording) = start_service("output", config);
+        events.send(Event::Remote(dbus::Request::Button { button: 0, down: true })).unwrap();
+        events.send(Event::Remote(dbus::Request::Button { button: 0, down: false })).unwrap();
+        let asked =
+            |r: &Recorded| matches!(r, Recorded::Audio(audio::Command::SwitchOutput { enabled: _, disabled: _ }));
+        assert!(recording.saw(asked), "the press asks the sound system to switch: {:?}", recording.seen);
+
+        // what the sound system answers once it switched
+        events.send(Event::OutputSwitched(Some("Desk speakers".into()))).unwrap();
+        let shown = |r: &Recorded| matches!(r, Recorded::Desktop(desktop::Command::Text { text, icon: _, style: _ }) if text == "Desk speakers");
+        assert!(recording.saw(shown), "a popup names the new output: {:?}", recording.seen);
+    }
+
+    #[test]
+    fn sound_on_a_trigger_app_lowers_the_music_and_brings_it_back() {
+        let config = "[auto_lower]\nenabled = true\nlower = [1]\ntriggers = [2]\nvoice_chat = false\namount = 50\n\
+                      [[channel]]\nname = \"Music\"\napps = [\"music\"]\n\
+                      [[channel]]\nname = \"Talk\"\napps = [\"talk\"]\n";
+        let (events, mut recording) = start_service("auto-lower", config);
+        events.send(Event::AudioReady).unwrap();
+        events.send(Event::Stream(app(1, "music", 60.0))).unwrap();
+        events.send(Event::Stream(app(2, "talk", 80.0))).unwrap();
+        events.send(Event::Remote(dbus::Request::SetKnob { knob: 0, percent: 60 })).unwrap();
+        events.send(Event::Remote(dbus::Request::SetKnob { knob: 1, percent: 80 })).unwrap();
+        let metered =
+            |r: &Recorded| matches!(r, Recorded::Audio(audio::Command::Meter { index: 2, on: true, sink: _ }));
+        assert!(recording.saw(metered), "the trigger app is metered: {:?}", recording.seen);
+        assert!(recording.saw(sets(1, 60)), "the music starts at 60%: {:?}", recording.seen);
+
+        // the sound system reports the talk app loud every 200 ms for a while, like someone talking
+        for _ in 0..8 {
+            events.send(Event::Loud(2)).unwrap();
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        assert!(recording.saw(sets(1, 30)), "the music is lowered by half: {:?}", recording.seen);
+        recording.forget();
+        assert!(recording.saw(sets(1, 60)), "and comes back once it's quiet: {:?}", recording.seen);
+    }
+
+    #[test]
+    fn an_app_changing_its_own_volume_is_put_back() {
+        let (events, mut recording) = start_service("guard", "[[channel]]\nname = \"Chat\"\napps = [\"chat\"]\n");
+        events.send(Event::AudioReady).unwrap();
+        events.send(Event::Stream(app(5, "chat", 100.0))).unwrap();
+        events.send(Event::Remote(dbus::Request::SetKnob { knob: 0, percent: 30 })).unwrap();
+        assert!(recording.saw(sets(5, 30)), "the knob sets the chat app to 30%: {:?}", recording.seen);
+        recording.forget();
+        // the sound system reports the app at 90% (it raised itself)
+        events.send(Event::Stream(app(5, "chat", 90.0))).unwrap();
+        assert!(recording.saw(sets(5, 30)), "it's put back to the knob's 30%: {:?}", recording.seen);
     }
 }
