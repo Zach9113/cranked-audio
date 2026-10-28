@@ -30,6 +30,8 @@ package() {
   install -Dm0755 bin/cranked-audiod bin/cranked-audio -t "$pkgdir/usr/bin/"
   install -Dm0644 share/cranked-audio.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/$app.svg"
   install -Dm0644 udev/60-cranked-audio.rules -t "$pkgdir/usr/lib/udev/rules.d/"
+  # desktops that run XDG autostart but not systemd's graphical session (XFCE, Cinnamon, MATE, LXQt, ...)
+  install -Dm0644 "share/$app.Autostart.desktop" -t "$pkgdir/etc/xdg/autostart/"
   install -Dm0644 "$srcdir/LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
   local widget="$pkgdir/usr/share/plasma/plasmoids/io.github.zach9113.crankedaudio"

@@ -10,13 +10,14 @@ root=$(cd "$(dirname "$0")" && pwd)
 bin="$HOME/.local/bin"
 share="${XDG_DATA_HOME:-$HOME/.local/share}"
 units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+autostart="${XDG_CONFIG_HOME:-$HOME/.config}/autostart"
 service=cranked-audio.service
 app=io.github.zach9113.CrankedAudio
 
 if [ "${1:-}" = "--uninstall" ]; then
   systemctl --user disable --now "$service" 2>/dev/null || true
   command -v kpackagetool6 >/dev/null && kpackagetool6 --type Plasma/Applet --remove io.github.zach9113.crankedaudio >/dev/null 2>&1 || true
-  rm -f "$bin/cranked-audiod" "$bin/cranked-audio" "$units/$service" \
+  rm -f "$bin/cranked-audiod" "$bin/cranked-audio" "$units/$service" "$autostart/$app.Autostart.desktop" \
     "$share/applications/$app.desktop" "$share/icons/hicolor/scalable/apps/$app.svg"
   [ -w /etc/udev/rules.d/60-cranked-audio.rules ] && rm -f /etc/udev/rules.d/60-cranked-audio.rules 2>/dev/null || true
   systemctl --user daemon-reload
@@ -26,7 +27,7 @@ fi
 
 (cd "$root" && RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=. --remap-path-prefix=$HOME=~" cargo build --release --locked)
 
-install -d "$bin" "$share/applications" "$share/icons/hicolor/scalable/apps" "$units"
+install -d "$bin" "$share/applications" "$share/icons/hicolor/scalable/apps" "$units" "$autostart"
 # udev rule for mixer permissions without requiring group changes (installed if writable)
 if [ -w /etc/udev/rules.d ]; then
   install -m 0644 "$root/data/60-cranked-audio.rules" /etc/udev/rules.d/60-cranked-audio.rules
@@ -36,6 +37,8 @@ fi
 install -m 0755 "$root/target/release/cranked-audiod" "$bin/cranked-audiod.new" && mv -f "$bin/cranked-audiod.new" "$bin/cranked-audiod"
 install -m 0755 "$root/target/release/cranked-audio" "$bin/cranked-audio.new" && mv -f "$bin/cranked-audio.new" "$bin/cranked-audio"
 install -m 0644 "$root/data/cranked-audio.svg" "$share/icons/hicolor/scalable/apps/$app.svg"
+# desktops that run XDG autostart but not systemd's graphical session (XFCE, Cinnamon, MATE, LXQt, ...)
+install -m 0644 "$root/data/$app.Autostart.desktop" "$autostart/$app.Autostart.desktop"
 
 cat > "$share/applications/$app.desktop" <<EOF
 [Desktop Entry]
@@ -79,3 +82,14 @@ systemctl --user restart --no-block "$service"
 command -v update-desktop-database >/dev/null && update-desktop-database "$share/applications" 2>/dev/null || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$share/icons/hicolor" 2>/dev/null || true
 echo "Installed. Cranked Audio is running and starts at login; open it from the app menu or the tray."
+# Hyprland and Sway start only what their own config says (uwsm sessions start the service by themselves)
+if ! systemctl --user is-active --quiet graphical-session.target; then
+  start_line='dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && systemctl --user start cranked-audio'
+  if [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    echo "Hyprland: to start Cranked Audio at login, add this line to ~/.config/hypr/hyprland.conf:"
+    echo "  exec-once = $start_line"
+  elif [ -n "${SWAYSOCK:-}" ]; then
+    echo "Sway: to start Cranked Audio at login, add this line to ~/.config/sway/config:"
+    echo "  exec $start_line"
+  fi
+fi

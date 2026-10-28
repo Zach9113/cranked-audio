@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Cranked Audio service
+Comment=Starts the Cranked Audio service at login on desktops that don't start systemd's graphical session (XFCE, Cinnamon, MATE, LXQt and others); does nothing where it already runs
+Exec=sh -c "dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE; systemctl --user start cranked-audio.service"
+Icon=io.github.zach9113.CrankedAudio
+Terminal=false
+NoDisplay=true

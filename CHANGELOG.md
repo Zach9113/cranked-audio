@@ -14,6 +14,9 @@
   your profiles, Edit settings file… and Quit.
 
 ### Linux
+- Starts at login on more desktops: an autostart entry covers XFCE, Cinnamon, MATE, LXQt and others that don't
+  start systemd's graphical session, and on Hyprland and Sway the installer prints the one line to add to their
+  config (README, "Starting at login on other desktops").
 - The Plasma widget follows the knobs live: the service now offers its state as a D-Bus property (`State`, with
   `PropertiesChanged`), and the widget listens instead of asking every 5 seconds while it sat in the panel.
 - Copies installed by a package manager (in `/usr`) no longer install updates themselves: Settings shows the new

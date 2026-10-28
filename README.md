@@ -45,7 +45,7 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
 
 - Linux with PipeWire (with `pipewire-pulse`) or PulseAudio (Windows is an experimental preview, see
   [below](#windows-experimental-preview))
-- systemd user services (for starting at login)
+- systemd user services (for starting at login; see [other desktops](#starting-at-login-on-other-desktops))
 - KDE Plasma is recommended (popups, tray); other desktops get standard notifications and a tray icon where supported
 - Optional: the USB mixer; Home Assistant
 
@@ -64,6 +64,19 @@ Or install a prebuilt release (no compiler needed; the download is checked again
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/Zach9113/cranked-audio/main/install-release.sh | bash
+```
+
+### Starting at login on other desktops
+
+The service starts with your desktop session through systemd. KDE Plasma and GNOME need nothing else; XFCE,
+Cinnamon, MATE, LXQt and other desktops that run autostart entries get one from the installer. Hyprland and Sway
+start only what their own config says (unless you use uwsm), so add one line there:
+
+```ini
+# Hyprland: ~/.config/hypr/hyprland.conf
+exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && systemctl --user start cranked-audio
+# Sway: ~/.config/sway/config
+exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP && systemctl --user start cranked-audio
 ```
 
 ### Install with Atoll Dynamic Island (All-in-One)
