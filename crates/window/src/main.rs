@@ -72,6 +72,11 @@ fn color(hex: &str) -> Color {
     Color::from_rgb_u8(red, green, blue)
 }
 
+/// A colour as the settings file writes it (`#RRGGBB`), for the colour wheel.
+fn color_hex(picked: Color) -> String {
+    format!("#{:02X}{:02X}{:02X}", picked.red(), picked.green(), picked.blue())
+}
+
 // The theme in use (dial colours are mixed toward its card colour).
 thread_local! {
     static THEME: RefCell<themes::Theme> = RefCell::new(themes::named("cranked"));
@@ -1276,6 +1281,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     lists.set_swatches(ModelRc::new(VecModel::from(editor::SWATCHES.iter().map(|s| color(s)).collect::<Vec<Color>>())));
     lists.set_swatch_hex(strings(editor::SWATCHES));
     lists.on_parse_color(|text| color(&text));
+    lists.on_color_hex(|picked| color_hex(picked).into());
 
     let knob = window.global::<KnobSettings>();
     {
@@ -1868,6 +1874,13 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn colours_round_trip_through_their_hex_text() {
+        for text in ["#5C059C", "#FFB900", "#080B10", "#000000", "#FFFFFF"] {
+            assert_eq!(color_hex(color(text)), text);
+        }
+    }
 
     #[test]
     fn dial_arcs() {

@@ -63,6 +63,8 @@ export global Lists {
     in property <[string]> swatch-hex;
     in property <bool> home-assistant;
     pure callback parse-color(string) -> color;
+    // a colour as the settings write it: #RRGGBB
+    pure callback color-hex(color) -> string;
 }
 
 // The knob (and its button) being edited.
@@ -180,9 +182,88 @@ component Hint inherits Text {
     wrap: word-wrap;
 }
 
+// A hue wheel: hue around the circle (red at the top), white toward the middle for less saturation, darker for less
+// brightness. Click or drag on it to pick.
+component ColorWheel inherits Rectangle {
+    // 0..360
+    in-out property <float> hue;
+    // 0..100 (100 at the rim)
+    in-out property <float> saturation;
+    // 0..100, how bright the wheel is drawn
+    in property <float> brightness;
+    callback picked();
+    width: 136px;
+    height: 136px;
+    Rectangle {
+        border-radius: self.width / 2;
+        background: @conic-gradient(#ff0000 0deg, #ffff00 60deg, #00ff00 120deg, #00ffff 180deg, #0000ff 240deg, #ff00ff 300deg, #ff0000 360deg);
+    }
+    Rectangle {
+        border-radius: self.width / 2;
+        background: @radial-gradient(circle, #ffffff 0%, #ffffff00 100%);
+    }
+    Rectangle {
+        border-radius: self.width / 2;
+        background: #000000;
+        opacity: 1 - root.brightness / 100;
+    }
+    // the picked spot
+    Rectangle {
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        border-width: 2px;
+        border-color: #ffffff;
+        background: hsv(root.hue, root.saturation / 100, root.brightness / 100);
+        x: root.width / 2 + cos((root.hue - 90) * 1deg) * root.saturation / 100 * root.width / 2 - self.width / 2;
+        y: root.height / 2 + sin((root.hue - 90) * 1deg) * root.saturation / 100 * root.height / 2 - self.height / 2;
+    }
+    function pick(at-x: length, at-y: length) {
+        let across = (at-x - root.width / 2) / 1px;
+        let down = (at-y - root.height / 2) / 1px;
+        let radius = root.width / 2 / 1px;
+        root.hue = mod(atan2(down, across) / 1deg + 90 + 360, 360);
+        root.saturation = min(100, sqrt(across * across + down * down) / radius * 100);
+        root.picked();
+    }
+    TouchArea {
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down) {
+                root.pick(self.mouse-x, self.mouse-y);
+            }
+        }
+        moved => {
+            if (self.pressed) {
+                root.pick(self.mouse-x, self.mouse-y);
+            }
+        }
+    }
+}
+
 component ColorPicker inherits VerticalLayout {
     in property <string> label;
     in-out property <string> value;
+    // the colour wheel, opened by clicking the colour square
+    property <bool> wheel-open;
+    property <float> hue;
+    property <float> saturation;
+    property <float> brightness: 100;
+    function take-value() {
+        let parts = Lists.parse-color(root.value).to-hsv();
+        root.hue = parts.hue;
+        root.saturation = parts.saturation * 100;
+        root.brightness = parts.value * 100;
+    }
+    function give-value() {
+        root.value = Lists.color-hex(hsv(root.hue, root.saturation / 100, root.brightness / 100));
+    }
+    // typed in the box or picked from a swatch: the wheel follows (unless the wheel itself just set it)
+    changed value => {
+        if (Lists.color-hex(hsv(root.hue, root.saturation / 100, root.brightness / 100)) != root.value) {
+            root.take-value();
+        }
+    }
+    init => { root.take-value(); }
     spacing: 6px;
     HorizontalLayout {
         spacing: 8px;
@@ -191,9 +272,16 @@ component ColorPicker inherits VerticalLayout {
             width: 28px;
             height: 28px;
             border-radius: 6px;
-            border-width: 1px;
-            border-color: Palette.edge;
+            border-width: root.wheel-open ? 2px : 1px;
+            border-color: root.wheel-open ? Palette.text-strong : Palette.edge;
             background: Lists.parse-color(root.value);
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.take-value();
+                    root.wheel-open = !root.wheel-open;
+                }
+            }
         }
         LineEdit {
             text <=> root.value;
@@ -213,6 +301,36 @@ component ColorPicker inherits VerticalLayout {
             border-color: Palette.text-strong;
             TouchArea {
                 clicked => { root.value = Lists.swatch-hex[i]; }
+            }
+        }
+    }
+    if root.wheel-open: HorizontalLayout {
+        padding-left: 118px;
+        spacing: 16px;
+        alignment: start;
+        ColorWheel {
+            hue <=> root.hue;
+            saturation <=> root.saturation;
+            brightness: root.brightness;
+            picked => { root.give-value(); }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            width: 200px;
+            Label { text: "Saturation"; }
+            Slider {
+                minimum: 0;
+                maximum: 100;
+                value <=> root.saturation;
+                changed => { root.give-value(); }
+            }
+            Label { text: "Brightness"; }
+            Slider {
+                minimum: 0;
+                maximum: 100;
+                value <=> root.brightness;
+                changed => { root.give-value(); }
             }
         }
     }
