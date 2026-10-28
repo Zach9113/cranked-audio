@@ -24,7 +24,8 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
 - **Keeps apps in line:** apps that reset their own volume (Spotify does on every song) are put back at once.
   Only playback is touched; microphones and screen sharing never are.
 - **Knob lights:** each knob fills with its own two colours, follows the level smoothly, dims when nothing is playing
-  and goes dark when the screen locks. Built-in calibration keeps dimmed colours true on your LEDs.
+  and goes dark when the screen locks. Built-in calibration keeps dimmed colours true on your LEDs: a guided test
+  shows two versions side by side on the mixer and you pick the better one, or set it by hand.
 - **Your look:** dials, sliders or mixing-desk faders; themes (Cranked, Midnight, Graphite, Light, or your desktop's
   colours); size from tiny to large; choose which text shows, hide knobs, put the buttons inside the dials.
 - **Atoll Dynamic Island integration:** Works natively with the [Atoll](https://github.com/Zach9113/atoll) dynamic island (`zach-patches` branch). Atoll shows volume feedback popups when knobs turn, and includes an embedded **Mixer** card in its expanded view to display, scroll, and drag your Cranked Audio knobs directly inside the island.

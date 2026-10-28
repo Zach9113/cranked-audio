@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### All platforms
+- Guided LED calibration: the mixer shows two corrections side by side (knobs 1–2 and 4–5) and you pick the side
+  that stays the same white as it dims, about 15 times; it finds the setting for red, green and blue. The manual
+  sliders stay.
 - The tray menu has more in it: Settings…, Play/Pause, Next and Previous track, and Switch output, next to Open,
   your profiles, Edit settings file… and Quit.
 
