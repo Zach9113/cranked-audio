@@ -4,7 +4,6 @@
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
 mod editor;
-mod eye_test;
 mod themes;
 
 use std::cell::RefCell;
@@ -12,7 +11,6 @@ use std::f64::consts::PI;
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -20,8 +18,6 @@ use cranked_ipc::settings::{Channel, Config, Device, PopupStyle};
 use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot, UnixStream};
 use cranked_protocol::convert::{round_u8, saturate_i32, saturate_u8, to_f32};
 use slint::{Color, ComponentHandle as _, Model as _, ModelRc, SharedString, VecModel};
-
-use crate::eye_test::{Answer, EyeTest};
 
 /// The Slint-generated UI types. Generated code isn't ours to tidy, so the lints stay off here.
 mod ui {
@@ -970,60 +966,6 @@ fn show_devices(window: &MainWindow, link: &Link) {
 }
 
 /// Settings > Devices: adding and removing keyboard knobs, MIDI controls and deej boxes.
-/// The guided LED calibration: shows two corrections side by side on the mixer and narrows them down from the
-/// answers (see `eye_test`); at the end the sliders hold the result and the mixer shows it, ready to Save.
-fn eye_test_page(window: &MainWindow, link: &Arc<Mutex<Link>>) {
-    let general = window.global::<General>();
-    let test: Rc<RefCell<Option<EyeTest>>> = Rc::default();
-    let show_round = |general: &General, link: &mut Link, test: &EyeTest| {
-        let (left, right) = test.candidates();
-        general.set_eye_test_progress(test.progress().into());
-        link.send(&format!(
-            "calibrate-compare {} {} {} {} {} {}",
-            left[0], left[1], left[2], right[0], right[1], right[2]
-        ));
-    };
-    {
-        let (link, weak, test) = (Arc::clone(link), window.as_weak(), Rc::clone(&test));
-        general.on_eye_test_start(move || {
-            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
-            let general = w.global::<General>();
-            let current = [general.get_gamma_red(), general.get_gamma_green(), general.get_gamma_blue()].map(f64::from);
-            let started = EyeTest::new(current);
-            show_round(&general, &mut link, &started);
-            *test.borrow_mut() = Some(started);
-            general.set_eye_test_finished(false);
-            general.set_eye_test_running(true);
-        });
-    }
-    {
-        let (link, weak, test) = (Arc::clone(link), window.as_weak(), Rc::clone(&test));
-        general.on_eye_test_answer(move |answer| {
-            let (Ok(mut link), Some(w)) = (link.lock(), weak.upgrade()) else { return };
-            let general = w.global::<General>();
-            let mut test = test.borrow_mut();
-            let Some(running) = test.as_mut() else { return };
-            running.answer(match answer {
-                0 => Answer::Left,
-                2 => Answer::Right,
-                _ => Answer::Same,
-            });
-            if !running.is_done() {
-                show_round(&general, &mut link, running);
-                return;
-            }
-            let found = running.result();
-            general.set_gamma_red(to_f32(found[0]));
-            general.set_gamma_green(to_f32(found[1]));
-            general.set_gamma_blue(to_f32(found[2]));
-            link.send(&format!("calibrate {} {} {}", found[0], found[1], found[2]));
-            general.set_eye_test_running(false);
-            general.set_eye_test_finished(true);
-            *test = None;
-        });
-    }
-}
-
 fn devices_page(window: &MainWindow, link: &Arc<Mutex<Link>>) {
     use cranked_ipc::settings::{Device, MidiControl};
     let page = window.global::<Devices>();
@@ -1516,13 +1458,10 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             general.set_gamma_red(to_f32(gamma[0]));
             general.set_gamma_green(to_f32(gamma[1]));
             general.set_gamma_blue(to_f32(gamma[2]));
-            general.set_eye_test_running(false);
-            general.set_eye_test_finished(false);
             link.send(&format!("calibrate {} {} {}", gamma[0], gamma[1], gamma[2]));
             w.set_page(4);
         });
     }
-    eye_test_page(window, link);
     {
         let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_gamma_changed(move || {
@@ -1550,8 +1489,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                 show(&w, &link.snapshot);
             }
             if w.get_page() == 4 {
-                // leave the pattern (and any eye test); nothing saved
-                w.global::<General>().set_eye_test_running(false);
+                // leave the pattern; nothing saved
                 link.send("calibrate off");
                 if load_general(&w, &link) {
                     w.set_page(3);

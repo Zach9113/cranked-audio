@@ -13,7 +13,7 @@ use crate::config::{parse_color, Action, AutoLower, Channel, Config, State};
 use crate::desktop::{Command as Desktop, MediaKey};
 use crate::duck::Ducker;
 use crate::home_assistant::{Command as HomeAssistant, EntityState};
-use crate::leds::{calibration, colors, comparison, KnobLook};
+use crate::leds::{calibration, colors, KnobLook};
 use crate::matching::{channel_for, Stream};
 use crate::Event;
 
@@ -87,15 +87,6 @@ struct StartupSync {
     seen: [bool; KNOBS],
 }
 
-/// What the mixer shows while its LEDs are being calibrated.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum CalibrationPattern {
-    /// Each knob's own colour with one correction (the manual sliders).
-    Single([f64; 3]),
-    /// White with one correction on the left knobs and another on the right (the guided eye test).
-    Compare([f64; 3], [f64; 3]),
-}
-
 /// A correction kept within what calibration allows.
 fn clamp_gamma(gamma: [f64; 3]) -> [f64; 3] {
     let (low, high) = cranked_ipc::settings::GAMMA_RANGE;
@@ -145,7 +136,7 @@ pub struct Core {
     screen_off: bool,
     touched_at: Option<Instant>,
     /// LED calibration in progress: when it last changed, and the correction being tried.
-    calibrating: Option<(Instant, CalibrationPattern)>,
+    calibrating: Option<(Instant, [f64; 3])>,
     /// Lights ignore the mixer's knobs until then (see `LIGHTS_SETTLE`).
     lights_settle_until: Option<Instant>,
     /// The time of the current tick.
@@ -539,13 +530,7 @@ impl Core {
 
     /// Start or adjust (`Some`) or end (`None`) the LED calibration pattern, trying this per-channel correction.
     pub fn calibrate(&mut self, gamma: Option<[f64; 3]>, now: Instant) {
-        self.calibrating = gamma.map(|g| (now, CalibrationPattern::Single(clamp_gamma(g))));
-        self.last_frame = None;
-    }
-
-    /// Show two corrections side by side for the guided calibration (`first` left, `second` right).
-    pub fn compare_calibrations(&mut self, first: [f64; 3], second: [f64; 3], now: Instant) {
-        self.calibrating = Some((now, CalibrationPattern::Compare(clamp_gamma(first), clamp_gamma(second))));
+        self.calibrating = gamma.map(|g| (now, clamp_gamma(g)));
         self.last_frame = None;
     }
 
@@ -887,12 +872,9 @@ impl Core {
         });
         let leds = &self.config.leds;
         let frame = match self.calibrating {
-            Some((_, CalibrationPattern::Single(gamma))) => {
+            Some((_, gamma)) => {
                 let colours = std::array::from_fn(|k| looks[k].color);
                 led_frame(&calibration(&colours, leds.brightness, gamma))
-            }
-            Some((_, CalibrationPattern::Compare(first, second))) => {
-                led_frame(&comparison(first, second, leds.brightness))
             }
             None => led_frame(&colors(&looks, leds.brightness, leds.dim_idle, leds.gamma)),
         };
@@ -1686,20 +1668,6 @@ mod tests {
         assert!(core.calibrating.is_some());
         core.tick(at + CALIBRATION_TIMEOUT);
         assert!(core.calibrating.is_none(), "ends by itself");
-    }
-
-    #[test]
-    fn the_guided_calibration_shows_both_corrections_on_the_mixer() {
-        let start = Instant::now();
-        let mut core = synced(start);
-        let at = start + Duration::from_secs(1);
-        let (first, second) = ([1.0, 1.0, 1.0], [2.0, 1.0, 1.0]);
-        core.compare_calibrations(first, second, at);
-        let shown = core.tick(at).into_iter().find_map(|o| match o {
-            Out::Leds(frame) => Some(frame),
-            _ => None,
-        });
-        assert_eq!(shown, Some(led_frame(&comparison(first, second, core.config.leds.brightness))));
     }
 
     #[test]

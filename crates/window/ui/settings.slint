@@ -138,13 +138,6 @@ export global General {
     in-out property <float> gamma-blue: 1.0;
     callback gamma-changed();
     callback open-calibration();
-    // the guided calibration (eye test): running, where it is, and whether it just finished
-    in-out property <bool> eye-test-running;
-    in-out property <bool> eye-test-finished;
-    in property <string> eye-test-progress;
-    callback eye-test-start();
-    // 0 = left side looks better, 1 = about the same, 2 = right side
-    callback eye-test-answer(int);
     in-out property <bool> auto-enabled;
     in-out property <[bool]> lower;
     in-out property <[bool]> triggers;
@@ -853,33 +846,6 @@ component GammaSlider inherits HorizontalLayout {
 export component CalibrationPage inherits VerticalLayout {
     spacing: 14px;
     alignment: start;
-    GroupBox {
-        title: "Guided: let the mixer ask you";
-        VerticalLayout {
-            spacing: 10px;
-            if !General.eye-test-running && !General.eye-test-finished: Hint {
-                text: "Not sure which slider to move? The mixer shows two versions side by side and you pick the better one, about 15 times. It finds the right setting for you.";
-            }
-            if !General.eye-test-running: HorizontalLayout {
-                alignment: start;
-                Button { text: General.eye-test-finished ? "Run it again" : "Start guided test"; clicked => { General.eye-test-start(); } }
-            }
-            if General.eye-test-running: Hint {
-                text: "Look at the mixer. The two knobs on the left and the two on the right each show white, from bright to dim (the middle knob stays dark). Which side stays the same white as it dims, without turning a tint?";
-            }
-            if General.eye-test-running: Text { text: General.eye-test-progress; font-weight: 600; color: Palette.text-strong; }
-            if General.eye-test-running: HorizontalLayout {
-                alignment: start;
-                spacing: 8px;
-                Button { text: "Left side"; clicked => { General.eye-test-answer(0); } }
-                Button { text: "About the same"; clicked => { General.eye-test-answer(1); } }
-                Button { text: "Right side"; clicked => { General.eye-test-answer(2); } }
-            }
-            if General.eye-test-finished: Hint {
-                text: "Done. The sliders below now hold what you picked and the mixer shows it on every knob. Press Save to keep it, or fine-tune first.";
-            }
-        }
-    }
     GroupBox {
         title: "Make dimmed LEDs keep their colour";
         VerticalLayout {

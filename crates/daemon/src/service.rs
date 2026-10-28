@@ -258,13 +258,6 @@ impl Service {
                 let gamma = <[f64; 3]>::try_from(values).ok();
                 self.core.calibrate(gamma, Instant::now());
             }
-            // `calibrate-compare R G B R G B` shows two corrections side by side (the guided calibration)
-            "calibrate-compare" => {
-                let values: Vec<f64> = rest.split_whitespace().filter_map(|v| v.parse().ok()).collect();
-                if let [r1, g1, b1, r2, g2, b2] = values[..] {
-                    self.core.compare_calibrations([r1, g1, b1], [r2, g2, b2], Instant::now());
-                }
-            }
             "check-update" => self.updater.check(self.events.clone()),
             "apply-update" => {
                 if !self.updater.can_install() {

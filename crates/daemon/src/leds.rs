@@ -132,16 +132,6 @@ pub fn calibration(colours: &[Rgb; KNOBS], brightness: u8, gamma: [f64; 3]) -> [
     std::array::from_fn(|k| CALIBRATION_STEPS.map(|step| dim(colours[k], full * step, gamma)))
 }
 
-/// The guided calibration's side by side: white at full, dimmer and dimmest, with correction `first` on the two left
-/// knobs and `second` on the two right ones. The middle knob stays dark to keep the sides apart.
-pub fn comparison(first: [f64; 3], second: [f64; 3], brightness: u8) -> [[Rgb; LEDS_PER_KNOB]; KNOBS] {
-    const WHITE: Rgb = (255, 255, 255);
-    const DARK: [Rgb; LEDS_PER_KNOB] = [(0, 0, 0); LEDS_PER_KNOB];
-    let full = f64::from(brightness.min(100)) / 100.0;
-    let steps = |gamma| CALIBRATION_STEPS.map(|step| dim(WHITE, full * step, gamma));
-    [steps(first), steps(first), DARK, steps(second), steps(second)]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,15 +226,5 @@ mod tests {
         let mut muted = look(60);
         muted.muted = true;
         assert_eq!(knob_colors(&muted, 100, true, PLAIN), [(40, 0, 0); 3]);
-    }
-
-    #[test]
-    fn comparison_shows_two_corrections_apart() {
-        let pattern = comparison(PLAIN, [2.0, 1.0, 1.0], 100);
-        assert_eq!(pattern[0], pattern[1], "the two left knobs show the first correction");
-        assert_eq!(pattern[3], pattern[4], "the two right knobs show the second");
-        assert_eq!(pattern[2], [(0, 0, 0); LEDS_PER_KNOB], "the middle knob is dark");
-        assert_eq!(pattern[0][0], (255, 255, 255), "both start from full white");
-        assert!(pattern[3][2].0 > pattern[0][2].0, "more red correction keeps red brighter when dimmed");
     }
 }

@@ -3,9 +3,6 @@
 ## Unreleased
 
 ### All platforms
-- Guided LED calibration: the mixer shows two corrections side by side (knobs 1–2 and 4–5) and you pick the side
-  that stays the same white as it dims, about 15 times; it finds the setting for red, green and blue. The manual
-  sliders stay.
 - Knob lights look smoother: brightness now follows how eyes see light (the CIE lightness curve), and the LED the
   level is passing through mixes its two colours in OKLab, so the fill glides instead of each LED seeming to snap on.
   This replaces the four LED fill modes (the setting is gone; old settings files still load). On the 5-knob mixer
