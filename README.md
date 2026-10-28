@@ -107,7 +107,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 ## Using it
 
-Open **Cranked Audio** from the app menu or click the tray icon. Drag or scroll a knob to turn it; right-click a knob
+Open **Cranked Audio** from the app menu or click the tray icon. Right-click the tray icon for Settings, Play/Pause,
+Next and Previous track, Switch output, your profiles and Quit. Drag or scroll a knob to turn it; right-click a knob
 to choose its apps, colours and range, and right-click a button to choose what a press and a hold do.
 **Settings** covers the look, knobs, profiles, Auto-lower, popups, keyboard shortcuts, Home Assistant and
 **Devices** (keyboard knobs, MIDI controllers and deej boxes). Mixer light settings (brightness, fill, calibration)
@@ -143,7 +144,9 @@ The Home Assistant token is kept in its own file, readable only by you.
 Cranked Audio answers on the session bus as `io.github.zach9113.CrankedAudio` (object
 `/io/github/zach9113/CrankedAudio`, interface `io.github.zach9113.CrankedAudio1`):
 `GetState`, `SetKnob(knob, percent)`, `StepKnob(knob, delta)`, `Press(button)`, `Hold(button)`, `SetProfile(name)`,
-`OpenWindow`, `OpenSettings`, and a `StateChanged(json)` signal. Knobs and buttons count from 0. For example, to set the second knob
+`OpenWindow`, `OpenSettings`, a `StateChanged(json)` signal, and a `State` property with the same JSON (it announces
+every change through the standard `PropertiesChanged` signal; the panel widget follows the knobs that way). Knobs and
+buttons count from 0. For example, to set the second knob
 to 40%:
 
 ```bash

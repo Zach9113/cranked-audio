@@ -31,6 +31,7 @@ print(s['profile'], k['name'], k['level'], 'muted' if k['muted'] else 'unmuted')
 fails=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1 ($2)"; else echo "FAIL $1: got '$2', want '$3'"; fails=$((fails + 1)); fi; }
 timeout 5 dbus-monitor --session "type='signal',interface='io.github.zach9113.CrankedAudio1'" > "$work/signals" 2>&1 &
+timeout 5 dbus-monitor --session "type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='/io/github/zach9113/CrankedAudio'" > "$work/property-signals" 2>&1 &
 sleep 0.3
 check "state before anything" "$(state)" "One Test None unmuted"
 call SetKnob uu 0 40 > /dev/null; sleep 0.3
@@ -43,5 +44,11 @@ call SetProfile s Two > /dev/null; sleep 0.3
 check "SetProfile" "$(state)" "Two Other 35 unmuted"
 sleep 4
 check "StateChanged signals sent" "$([ "$(grep -c 'member=StateChanged' "$work/signals")" -ge 3 ] && echo yes || echo no)" "yes"
+# the panel widget follows the State property, which announces every change with PropertiesChanged
+property_level=$(busctl --user --json=short get-property -- "$CRANKED_DBUS_NAME" /io/github/zach9113/CrankedAudio \
+  io.github.zach9113.CrankedAudio1 State | python3 -c "import json, sys; print(json.loads(json.load(sys.stdin)['data'])['knobs'][0]['level'])")
+check "the State property matches GetState" "$property_level" "35"
+check "State changes are announced (PropertiesChanged)" \
+  "$([ "$(grep -c 'member=PropertiesChanged' "$work/property-signals")" -ge 3 ] && echo yes || echo no)" "yes"
 kill $daemon 2>/dev/null; wait 2>/dev/null; rm -rf "$work"
 echo "failures: $fails"; exit $fails
