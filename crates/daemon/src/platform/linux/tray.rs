@@ -3,6 +3,7 @@
 use ksni::blocking::{Handle, TrayMethods as _};
 use ksni::menu::{MenuItem, RadioGroup, RadioItem, StandardItem};
 
+use crate::config::Action as ControlAction;
 use crate::tray::{Action, Tray, ICONS};
 
 impl ksni::Tray for Tray {
@@ -41,12 +42,24 @@ impl ksni::Tray for Tray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
-        let mut items: Vec<MenuItem<Self>> = vec![StandardItem {
-            label: "Open Cranked Audio".into(),
-            activate: Box::new(|tray: &mut Self| tray.send(Action::OpenWindow)),
-            ..Default::default()
-        }
-        .into()];
+        let item = |label: &str, icon: &str, action: Action| -> MenuItem<Self> {
+            StandardItem {
+                label: label.into(),
+                icon_name: icon.into(),
+                activate: Box::new(move |tray: &mut Self| tray.send(action.clone())),
+                ..Default::default()
+            }
+            .into()
+        };
+        let mut items: Vec<MenuItem<Self>> = vec![
+            item("Open Cranked Audio", "", Action::OpenWindow),
+            item("Settings…", "configure", Action::OpenSettings),
+            MenuItem::Separator,
+            item("Play/Pause", "media-playback-start", Action::Run(ControlAction::PlayPause)),
+            item("Next track", "media-skip-forward", Action::Run(ControlAction::Next)),
+            item("Previous track", "media-skip-backward", Action::Run(ControlAction::Previous)),
+            item("Switch output", "audio-card", Action::Run(ControlAction::SwitchOutput)),
+        ];
         if self.profiles.len() > 1 {
             items.push(MenuItem::Separator);
             items.push(
@@ -67,24 +80,8 @@ impl ksni::Tray for Tray {
             );
         }
         items.push(MenuItem::Separator);
-        items.push(
-            StandardItem {
-                label: "Edit settings file…".into(),
-                icon_name: "document-edit".into(),
-                activate: Box::new(|tray: &mut Self| tray.send(Action::EditSettings)),
-                ..Default::default()
-            }
-            .into(),
-        );
-        items.push(
-            StandardItem {
-                label: "Quit".into(),
-                icon_name: "application-exit".into(),
-                activate: Box::new(|tray: &mut Self| tray.send(Action::Quit)),
-                ..Default::default()
-            }
-            .into(),
-        );
+        items.push(item("Edit settings file…", "document-edit", Action::EditSettings));
+        items.push(item("Quit", "application-exit", Action::Quit));
         items
     }
 }

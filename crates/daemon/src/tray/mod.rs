@@ -16,7 +16,11 @@ pub trait TrayIcon {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     OpenWindow,
+    /// The window, on its Settings page.
+    OpenSettings,
     Profile(String),
+    /// Something that doesn't belong to a knob: play/pause, next, previous or switch output.
+    Run(crate::config::Action),
     EditSettings,
     Quit,
 }

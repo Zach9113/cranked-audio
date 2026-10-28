@@ -623,8 +623,23 @@ impl Core {
             eprintln!("button {channel}: {gesture:?} -> {action:?}");
         }
         match action {
-            Action::None => {}
             Action::Mute => self.toggle_mute(channel, out),
+            Action::HomeAssistantToggle(entity) => self.home_assistant_button("toggle", entity, now, out),
+            Action::HomeAssistantOff(entity) => self.home_assistant_button("turn_off", entity, now, out),
+            Action::None
+            | Action::PlayPause
+            | Action::Next
+            | Action::Previous
+            | Action::SwitchOutput
+            | Action::NextProfile => {
+                self.general_action(&action, out);
+            }
+        }
+    }
+
+    /// The actions that don't belong to a knob (media keys, switching output, next profile), for buttons and the tray.
+    pub fn general_action(&mut self, action: &Action, out: &mut Vec<Out>) {
+        match action {
             Action::PlayPause => out.push(Out::Desktop(Desktop::Media(MediaKey::PlayPause))),
             Action::Next => out.push(Out::Desktop(Desktop::Media(MediaKey::Next))),
             Action::Previous => out.push(Out::Desktop(Desktop::Media(MediaKey::Previous))),
@@ -633,8 +648,7 @@ impl Core {
                 disabled: self.config.disabled_outputs.clone(),
             })),
             Action::NextProfile => self.next_profile(out),
-            Action::HomeAssistantToggle(entity) => self.home_assistant_button("toggle", entity, now, out),
-            Action::HomeAssistantOff(entity) => self.home_assistant_button("turn_off", entity, now, out),
+            Action::None | Action::Mute | Action::HomeAssistantToggle(_) | Action::HomeAssistantOff(_) => {}
         }
     }
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### All platforms
+- The tray menu has more in it: Settings…, Play/Pause, Next and Previous track, and Switch output, next to Open,
+  your profiles, Edit settings file… and Quit.
+
 ### Linux
 - The Plasma widget follows the knobs live: the service now offers its state as a D-Bus property (`State`, with
   `PropertiesChanged`), and the widget listens instead of asking every 5 seconds while it sat in the panel.

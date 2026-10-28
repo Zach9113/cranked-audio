@@ -281,7 +281,13 @@ impl Service {
     fn tray_action(&mut self, action: tray::Action, requests: &mut Requests) {
         match action {
             tray::Action::OpenWindow => self.open_window(),
+            tray::Action::OpenSettings => self.open_settings(),
             tray::Action::Profile(name) => requests.switch_to = Some(name),
+            tray::Action::Run(action) => {
+                let mut out = Vec::new();
+                self.core.general_action(&action, &mut out);
+                let _ = self.dispatch(out);
+            }
             tray::Action::EditSettings => {
                 if !self.config_path.exists() {
                     let _ = self.core.config().save(&self.config_path);
@@ -319,11 +325,7 @@ impl Service {
                 None
             }
             dbus::Request::OpenSettings => {
-                if self.clients.is_empty() {
-                    spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
-                } else {
-                    self.clients.send(&ServerMessage::OpenPage("settings".into()));
-                }
+                self.open_settings();
                 None
             }
         }
@@ -354,6 +356,15 @@ impl Service {
             spawn_detached(&sibling("cranked-audio"), &[]);
         } else {
             self.clients.send(&ServerMessage::OpenPage(String::new()));
+        }
+    }
+
+    /// Opens the window on its Settings page (or turns an open one there).
+    fn open_settings(&mut self) {
+        if self.clients.is_empty() {
+            spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
+        } else {
+            self.clients.send(&ServerMessage::OpenPage("settings".into()));
         }
     }
 
@@ -815,5 +826,18 @@ mod tests {
         // the sound system reports the app at 90% (it raised itself)
         events.send(Event::Stream(app(5, "chat", 90.0))).unwrap();
         assert!(recording.saw(sets(5, 30)), "it's put back to the knob's 30%: {:?}", recording.seen);
+    }
+
+    #[test]
+    fn the_tray_menu_plays_and_switches_output() {
+        let (events, mut recording) = start_service("tray-menu", "[[channel]]\nname = \"Music\"\n");
+        events.send(Event::Tray(tray::Action::Run(crate::config::Action::PlayPause))).unwrap();
+        events.send(Event::Tray(tray::Action::Run(crate::config::Action::SwitchOutput))).unwrap();
+        let played =
+            |r: &Recorded| matches!(r, Recorded::Desktop(desktop::Command::Media(desktop::MediaKey::PlayPause)));
+        let switched =
+            |r: &Recorded| matches!(r, Recorded::Audio(audio::Command::SwitchOutput { enabled: _, disabled: _ }));
+        assert!(recording.saw(played), "Play/Pause reaches the media player: {:?}", recording.seen);
+        assert!(recording.saw(switched), "Switch output asks the sound system: {:?}", recording.seen);
     }
 }

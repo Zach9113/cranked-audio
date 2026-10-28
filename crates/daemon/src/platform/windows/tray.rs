@@ -14,6 +14,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetMessageW, PostThreadMessageW, TranslateMessage, MSG, WM_APP,
 };
 
+use crate::config::Action as ControlAction;
 use crate::tray::{Action, Tray, ICONS};
 
 /// Posted to the tray thread when what the tray shows changed.
@@ -60,9 +61,18 @@ impl Handle {
 fn menu(tray: &Tray) -> (Menu, HashMap<MenuId, Action>) {
     let menu = Menu::new();
     let mut actions = HashMap::new();
-    let open = MenuItem::new("Open Cranked Audio", true, None);
-    actions.insert(open.id().clone(), Action::OpenWindow);
-    let _ = menu.append(&open);
+    let mut add = |label: &str, action: Action| {
+        let item = MenuItem::new(label, true, None);
+        actions.insert(item.id().clone(), action);
+        let _ = menu.append(&item);
+    };
+    add("Open Cranked Audio", Action::OpenWindow);
+    add("Settings…", Action::OpenSettings);
+    let _ = menu.append(&PredefinedMenuItem::separator());
+    add("Play/Pause", Action::Run(ControlAction::PlayPause));
+    add("Next track", Action::Run(ControlAction::Next));
+    add("Previous track", Action::Run(ControlAction::Previous));
+    add("Switch output", Action::Run(ControlAction::SwitchOutput));
     if tray.profiles.len() > 1 {
         let _ = menu.append(&PredefinedMenuItem::separator());
         for profile in &tray.profiles {
