@@ -15,6 +15,7 @@ use crate::desktop::Desktop;
 use crate::devices::InputHardware;
 use crate::shortcuts::GlobalShortcuts;
 use crate::tray::TrayIcon;
+use crate::updater::Updater;
 
 /// This platform's adapters, one per port.
 pub struct Platform {
@@ -24,6 +25,7 @@ pub struct Platform {
     pub shortcuts: Box<dyn GlobalShortcuts>,
     pub remote_api: Box<dyn RemoteApi>,
     pub input_hardware: Box<dyn InputHardware>,
+    pub updater: Box<dyn Updater>,
 }
 
 /// The adapters for the operating system this daemon was built for.
@@ -36,6 +38,7 @@ pub fn native() -> Platform {
         shortcuts: Box::new(linux::shortcuts::KGlobalAccel::default()),
         remote_api: Box::new(linux::remote_api::SessionBus::default()),
         input_hardware: Box::new(linux::input_hardware::Evdev),
+        updater: Box::new(linux::updater::InstallScript),
     };
     #[cfg(windows)]
     let platform = Platform {
@@ -45,6 +48,7 @@ pub fn native() -> Platform {
         shortcuts: Box::new(windows::shortcuts::HotKeys::default()),
         remote_api: Box::new(windows::remote_api::NotOffered),
         input_hardware: Box::new(windows::input_hardware::RawInput),
+        updater: Box::new(windows::updater::ExeSwap),
     };
     platform
 }

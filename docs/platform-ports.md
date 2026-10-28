@@ -54,11 +54,15 @@ contract explicit and swappable; they don't redesign it.
    state and socket, no mixer) and check the commands and popups that come out. They run on Linux and Windows in
    milliseconds, with no `PipeWire`, desktop session or VM.
 
+9. **Updater** *(follow-up, draft PR)*. `Updater` port (`check`, `can_install`, `install`, `restarts_service`,
+   `after_restart`); adapters `linux::updater::InstallScript` (install.sh, not for copies in /usr) and
+   `windows::updater::ExeSwap` (swap the .exe files, restart, wait for the old process). `updater.rs` keeps what both
+   share. With its Windows half moved, every module outside `platform` is marked `#[forbid(unsafe_code)]` in
+   `main.rs`: all the COM and Win32 FFI is confined to the adapters, and the compiler enforces it.
+
 ## Still OS-specific outside `platform/` (candidates for later ports)
 
 - `serial.rs`, the mixer link: Windows needs a read timeout, DTR on open and LED frames written from the reader
-  thread.
-- `updater.rs`: Linux runs the release's `install.sh`, Windows swaps the two `.exe` files. Its Windows half
-  (waiting for the old process with `OpenProcess`) is the last `unsafe` outside `platform/`; once it moves, the
-  rest of the daemon can `forbid(unsafe_code)` without a separate crate.
-- `main.rs`: one Windows block that waits for the old process after an update.
+  thread. Safe Rust (the `serialport` crate), so it doesn't stand in the way of the `forbid` above.
+- `service.rs`: "Edit settings file…" opens the file with `explorer` or `xdg-open` (`cfg!(windows)`); a natural fit
+  for the `Desktop` port.

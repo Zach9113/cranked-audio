@@ -13,6 +13,7 @@ use crate::desktop::{self, Desktop};
 use crate::devices::{InputHardware, InputSource};
 use crate::shortcuts::GlobalShortcuts;
 use crate::tray::{Tray, TrayIcon};
+use crate::updater::{ReleaseInfo, Updater};
 use crate::Event;
 
 /// What the service asked a fake adapter to do.
@@ -33,6 +34,7 @@ pub fn platform() -> (Platform, Receiver<Recorded>) {
         shortcuts: Box::new(NoShortcuts),
         remote_api: Box::new(NoRemoteApi),
         input_hardware: Box::new(NoInputHardware),
+        updater: Box::new(NoUpdates),
     };
     (platform, recorded)
 }
@@ -125,4 +127,24 @@ struct NoInput;
 
 impl InputSource for NoInput {
     fn run(&self, _events: &Sender<Event>, _current: &dyn Fn() -> bool) {}
+}
+
+struct NoUpdates;
+
+impl Updater for NoUpdates {
+    fn check(&self, events: Sender<Event>) {
+        let _ = events.send(Event::UpdateCheckResult(Ok(None)));
+    }
+
+    fn can_install(&self) -> bool {
+        false
+    }
+
+    fn install(&self, _release: ReleaseInfo, _events: Sender<Event>) {}
+
+    fn restarts_service(&self) -> bool {
+        false
+    }
+
+    fn after_restart(&self, _old_pid: Option<u32>) {}
 }

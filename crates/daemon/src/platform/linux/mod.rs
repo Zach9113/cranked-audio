@@ -6,3 +6,4 @@ pub mod input_hardware;
 pub mod remote_api;
 pub mod shortcuts;
 pub mod tray;
+pub mod updater;

@@ -2,23 +2,42 @@
 // Windows: no console window (its log still goes wherever stderr is redirected)
 #![cfg_attr(all(windows, not(test)), windows_subsystem = "windows")]
 
+// Every module but `platform` is safe Rust, and the compiler holds it to that: all the FFI (COM, Win32) lives in
+// the platform adapters. `forbid` can't be loosened further down, so it sits on each module, not on the crate.
+#[forbid(unsafe_code)]
 mod audio;
+#[forbid(unsafe_code)]
 mod buttons;
+#[forbid(unsafe_code)]
 mod config;
+#[forbid(unsafe_code)]
 mod core;
+#[forbid(unsafe_code)]
 mod dbus;
+#[forbid(unsafe_code)]
 mod desktop;
+#[forbid(unsafe_code)]
 mod devices;
+#[forbid(unsafe_code)]
 mod duck;
+#[forbid(unsafe_code)]
 mod home_assistant;
+#[forbid(unsafe_code)]
 mod leds;
+#[forbid(unsafe_code)]
 mod matching;
 mod platform;
+#[forbid(unsafe_code)]
 mod serial;
+#[forbid(unsafe_code)]
 mod server;
+#[forbid(unsafe_code)]
 mod service;
+#[forbid(unsafe_code)]
 mod shortcuts;
+#[forbid(unsafe_code)]
 mod tray;
+#[forbid(unsafe_code)]
 mod updater;
 
 use std::path::PathBuf;
@@ -146,19 +165,14 @@ fn main() {
     if options.print_config {
         return print!("{}", toml::to_string(&config).unwrap_or_default());
     }
-    // after an update, the old service may still hold the socket and the mixer's port for a moment
-    #[cfg(windows)]
-    {
-        if let Some(pid) = options.wait_pid {
-            updater::wait_for_exit(pid, std::time::Duration::from_secs(15));
-        }
-        updater::remove_leftovers();
-    }
+    let platform = platform::native();
+    // after an update: wait for the old service to free the socket and the mixer's port
+    platform.updater.after_restart(options.wait_pid);
     let Some(listener) = server::listen() else {
         return eprintln!("Cranked Audio is already running");
     };
     let (events, inbox) = mpsc::channel();
-    Service::start(platform::native(), &options, config, listener, events).run(&inbox);
+    Service::start(platform, &options, config, listener, events).run(&inbox);
 }
 
 #[cfg(test)]

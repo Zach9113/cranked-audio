@@ -54,6 +54,8 @@ pub struct Service {
     /// This platform's keyboard knobs and serial ports; the configured devices run as `devices::InputSource`s.
     input_hardware: Box<dyn devices::InputHardware>,
     device_generation: Arc<AtomicU64>,
+    /// This platform's way of installing updates.
+    updater: Box<dyn updater::Updater>,
     latest_release: Option<updater::ReleaseInfo>,
     config_path: PathBuf,
     config_modified: Option<SystemTime>,
@@ -121,6 +123,7 @@ impl Service {
             home_assistant_generation: Arc::new(AtomicU64::new(0)),
             input_hardware,
             device_generation,
+            updater: platform.updater,
             latest_release: None,
             config_modified: modified(&config_path),
             config_path,
@@ -255,21 +258,13 @@ impl Service {
                 let gamma = <[f64; 3]>::try_from(values).ok();
                 self.core.calibrate(gamma, Instant::now());
             }
-            "check-update" => {
-                let events = self.events.clone();
-                spawn("updater-check", move || {
-                    let _ = events.send(Event::UpdateCheckResult(updater::check_for_update()));
-                });
-            }
+            "check-update" => self.updater.check(self.events.clone()),
             "apply-update" => {
-                if !updater::can_install() {
+                if !self.updater.can_install() {
                     let status = "This copy came from a package manager; update it there.".into();
                     self.update_status(status, None, false);
                 } else if let Some(info) = self.latest_release.clone() {
-                    let events = self.events.clone();
-                    spawn("updater-apply", move || {
-                        let _ = events.send(Event::UpdateApplyResult(updater::apply_update(&info)));
-                    });
+                    self.updater.install(info, self.events.clone());
                 } else {
                     self.update_status("No update found to install. Check for updates first.".into(), None, false);
                 }
@@ -367,7 +362,7 @@ impl Service {
             Ok(Some(info)) => {
                 let version = info.version.clone();
                 self.latest_release = Some(info);
-                if updater::can_install() {
+                if self.updater.can_install() {
                     self.update_status(format!("Update available: {version}"), Some(version), true);
                 } else {
                     let status = format!("Update available: {version}. Update it with your package manager.");
@@ -390,7 +385,7 @@ impl Service {
         };
         self.update_status(status, None, false);
         // Linux: install.sh restarts the service. Windows: this one starts the new one and leaves.
-        if cfg!(windows) && installed {
+        if installed && self.updater.restarts_service() {
             self.restart_into_update();
         }
     }

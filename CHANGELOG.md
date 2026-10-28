@@ -14,7 +14,9 @@
   adapter on Windows. Controllers are the sixth: each configured device runs as a `Box<dyn InputSource>`, keyboard
   knobs come from an `InputHardware` port (evdev, Raw Input), and a unit test runs a fake one without hardware. Every adapter now lives under `platform/linux/` or
   `platform/windows/`, and `platform/mod.rs` is the one place that picks the OS. A
-  fake platform records what the service asks of each port, and the first service tests run on it.
+  fake platform records what the service asks of each port, and the first service tests run on it. Updates are a
+  port too (`Updater`: install.sh on Linux, the .exe swap on Windows), which moved the last `unsafe` code into the
+  adapters: every other module of the service is now `#[forbid(unsafe_code)]`.
 - AUR package `cranked-audio-bin` (repackages the release tarball): `packaging/aur/cranked-audio-bin`, and
   `scripts/update-aur.sh vX.Y.Z` points it at a new release.
 - The workspace lint set (clippy pedantic plus most of restriction) is now switched on for every crate and clean.
