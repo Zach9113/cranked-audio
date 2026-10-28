@@ -16,7 +16,8 @@
   `platform/windows/`, and `platform/mod.rs` is the one place that picks the OS. A
   fake platform records what the service asks of each port, and the first service tests run on it. Updates are a
   port too (`Updater`: install.sh on Linux, the .exe swap on Windows), which moved the last `unsafe` code into the
-  adapters: every other module of the service is now `#[forbid(unsafe_code)]`.
+  adapters: every other module of the service is now `#[forbid(unsafe_code)]`. A new live suite, `tests/live_update.sh`, updates a test copy
+  from a fake release on localhost, including one whose download doesn't match its checksum.
 - AUR package `cranked-audio-bin` (repackages the release tarball): `packaging/aur/cranked-audio-bin`, and
   `scripts/update-aur.sh vX.Y.Z` points it at a new release.
 - The workspace lint set (clippy pedantic plus most of restriction) is now switched on for every crate and clean.
