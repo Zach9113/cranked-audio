@@ -3,7 +3,7 @@
 # New release: scripts/update-aur.sh vX.Y.Z (sets pkgver, the checksums and .SRCINFO).
 
 pkgname=cranked-audio-bin
-pkgver=2.2.0
+pkgver=2.3.0
 pkgrel=1
 pkgdesc='Per-app volume knobs on a USB mixer or on screen, with Home Assistant and a Plasma widget'
 arch=('x86_64')
@@ -21,7 +21,7 @@ options=('!strip' '!debug')
 install=cranked-audio.install
 source=("$url/releases/download/v$pkgver/cranked-audio-v$pkgver-x86_64.tar.gz"
         "LICENSE-$pkgver::https://raw.githubusercontent.com/Zach9113/cranked-audio/v$pkgver/LICENSE")
-sha256sums=('f55776c9b38a37b926194f085f1fea86c21e3626bd6cfa131bcb371184bc978a'
+sha256sums=('fdc15c307d2c57d1a23e421cd3c65a3fdbf6f8c8cec502515ed09372585d70bd'
             'fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0')
 
 package() {

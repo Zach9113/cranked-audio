@@ -1,6 +1,6 @@
 pkgbase = cranked-audio-bin
 	pkgdesc = Per-app volume knobs on a USB mixer or on screen, with Home Assistant and a Plasma widget
-	pkgver = 2.2.0
+	pkgver = 2.3.0
 	pkgrel = 1
 	url = https://github.com/Zach9113/cranked-audio
 	install = cranked-audio.install
@@ -25,9 +25,9 @@ pkgbase = cranked-audio-bin
 	conflicts = cranked-audio
 	options = !strip
 	options = !debug
-	source = https://github.com/Zach9113/cranked-audio/releases/download/v2.2.0/cranked-audio-v2.2.0-x86_64.tar.gz
-	source = LICENSE-2.2.0::https://raw.githubusercontent.com/Zach9113/cranked-audio/v2.2.0/LICENSE
-	sha256sums = f55776c9b38a37b926194f085f1fea86c21e3626bd6cfa131bcb371184bc978a
+	source = https://github.com/Zach9113/cranked-audio/releases/download/v2.3.0/cranked-audio-v2.3.0-x86_64.tar.gz
+	source = LICENSE-2.3.0::https://raw.githubusercontent.com/Zach9113/cranked-audio/v2.3.0/LICENSE
+	sha256sums = fdc15c307d2c57d1a23e421cd3c65a3fdbf6f8c8cec502515ed09372585d70bd
 	sha256sums = fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0
 
 pkgname = cranked-audio-bin
