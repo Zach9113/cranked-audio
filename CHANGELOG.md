@@ -17,6 +17,7 @@
   your profiles, Edit settings file… and Quit.
 
 ### Linux
+- Windows opened from the tray or the widget no longer linger as zombie processes after they close.
 - The installer says when there's no tray to show the icon in (and, on GNOME, which extension adds one); the AUR
   package lists that extension as optional.
 - The mixer's lights go dark on lock on more desktops: besides KDE's screensaver, the service now also watches

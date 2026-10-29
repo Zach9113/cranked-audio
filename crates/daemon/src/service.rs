@@ -605,12 +605,15 @@ fn sibling(name: &str) -> PathBuf {
     std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join(&name))).unwrap_or_else(|| name.into())
 }
 
+/// Starts a program on its own (a window, the file opener). A thread waits for it, so when it closes it's gone for
+/// good instead of lingering as a zombie process until the service exits.
 fn spawn_detached(program: &Path, args: &[&std::ffi::OsStr]) {
     use std::process::{Command, Stdio};
-    if let Err(e) =
-        Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn()
-    {
-        eprintln!("can't start {}: {e}", program.display());
+    match Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
+        Ok(mut child) => spawn("child-wait", move || {
+            let _ = child.wait();
+        }),
+        Err(e) => eprintln!("can't start {}: {e}", program.display()),
     }
 }
 
@@ -859,5 +862,30 @@ mod tests {
             |r: &Recorded| matches!(r, Recorded::Audio(audio::Command::SwitchOutput { enabled: _, disabled: _ }));
         assert!(recording.saw(played), "Play/Pause reaches the media player: {:?}", recording.seen);
         assert!(recording.saw(switched), "Switch output asks the sound system: {:?}", recording.seen);
+    }
+
+    /// The processes this test program started that have exited but were never waited for (zombies).
+    #[cfg(target_os = "linux")]
+    fn zombie_children() -> usize {
+        let me = std::process::id().to_string();
+        std::fs::read_dir("/proc")
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| std::fs::read_to_string(entry.path().join("stat")).ok())
+            .filter(|stat| {
+                // "pid (name) state ppid ...": the fields after the name's closing parenthesis
+                let fields: Vec<&str> = stat.rsplit_once(')').map_or("", |(_, rest)| rest).split_whitespace().collect();
+                fields.first() == Some(&"Z") && fields.get(1) == Some(&me.as_str())
+            })
+            .count()
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_started_program_leaves_no_zombie_when_it_exits() {
+        spawn_detached(Path::new("true"), &[]);
+        std::thread::sleep(Duration::from_millis(500));
+        assert_eq!(zombie_children(), 0, "the exited program was waited for");
     }
 }
