@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### All platforms
+- Shortcuts on any desktop: `cranked-audio --knob 2 +5`, `--knob 2 40`, `--press 1`, `--hold 1`, `--next-profile`
+  and `--open-settings` send that to the running service without opening a window, for binding keys in GNOME,
+  Hyprland, Sway, XFCE or on Windows (README, "Keyboard shortcuts on any desktop").
 - Colour wheel: click a knob's colour square to open a hue wheel with Saturation and Brightness sliders, next to
   the swatches and the hex box (they all stay in sync).
 - Knob lights look smoother: brightness now follows how eyes see light (the CIE lightness curve), and the LED the

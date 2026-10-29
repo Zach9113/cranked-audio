@@ -154,6 +154,24 @@ Once running, click Atoll to expand it and toggle **Mixer**: you get 270° dial 
 Everything is saved in `~/.config/cranked-audio/config.toml` (editing it by hand works too; changes apply at once).
 The Home Assistant token is kept in its own file, readable only by you.
 
+## Keyboard shortcuts on any desktop
+
+On KDE Plasma the shortcuts are in System Settings, Shortcuts, Cranked Audio. On any other desktop (and on Windows),
+bind keys to these commands in your desktop's keyboard settings or your compositor's config. Knobs and buttons count
+from 1:
+
+```bash
+cranked-audio --knob 2 +5      # turn knob 2 up 5 points (-5 turns it down)
+cranked-audio --knob 2 40      # set knob 2 to 40%
+cranked-audio --press 1        # knob 1's button: its press action
+cranked-audio --hold 1         # knob 1's button: its hold action
+cranked-audio --next-profile
+cranked-audio --open-settings
+```
+
+For example in Hyprland, `bind = SUPER, F2, exec, cranked-audio --knob 2 +5`; in Sway,
+`bindsym $mod+F2 exec cranked-audio --knob 2 +5`; on GNOME, Settings, Keyboard, Custom Shortcuts.
+
 ## Scripting
 
 Cranked Audio answers on the session bus as `io.github.zach9113.CrankedAudio` (object

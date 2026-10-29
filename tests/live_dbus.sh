@@ -42,12 +42,18 @@ call Hold u 0 > /dev/null; sleep 0.9
 check "Hold runs the hold action (mute)" "$(state)" "One Test 35 muted"
 call SetProfile s Two > /dev/null; sleep 0.3
 check "SetProfile" "$(state)" "Two Other 35 unmuted"
+# the command line form people bind keys to on any desktop (knobs count from 1 there)
+window_bin="$(dirname "$bin")/cranked-audio"
+"$window_bin" --knob 1 20; sleep 0.3
+check "cranked-audio --knob 1 20" "$(state)" "Two Other 20 unmuted"
+"$window_bin" --knob 1 +5; sleep 0.3
+check "cranked-audio --knob 1 +5" "$(state)" "Two Other 25 unmuted"
 sleep 4
 check "StateChanged signals sent" "$([ "$(grep -c 'member=StateChanged' "$work/signals")" -ge 3 ] && echo yes || echo no)" "yes"
 # the panel widget follows the State property, which announces every change with PropertiesChanged
 property_level=$(busctl --user --json=short get-property -- "$CRANKED_DBUS_NAME" /io/github/zach9113/CrankedAudio \
   io.github.zach9113.CrankedAudio1 State | python3 -c "import json, sys; print(json.loads(json.load(sys.stdin)['data'])['knobs'][0]['level'])")
-check "the State property matches GetState" "$property_level" "35"
+check "the State property matches GetState" "$property_level" "25"
 check "State changes are announced (PropertiesChanged)" \
   "$([ "$(grep -c 'member=PropertiesChanged' "$work/property-signals")" -ge 3 ] && echo yes || echo no)" "yes"
 kill $daemon 2>/dev/null; wait 2>/dev/null; rm -rf "$work"

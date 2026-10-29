@@ -259,6 +259,25 @@ impl Service {
                 let gamma = <[f64; 3]>::try_from(values).ok();
                 self.core.calibrate(gamma, Instant::now());
             }
+            // `remote knob 2 +5`, `remote press 1`, ...: what `cranked-audio --knob 2 +5` sends (see dbus::remote_request)
+            "remote" => match dbus::remote_request(rest) {
+                Some(dbus::RemoteLine::Request(request)) => {
+                    let _ = self.events.send(Event::Remote(request));
+                }
+                Some(dbus::RemoteLine::Press(button)) => {
+                    let _ = self.events.send(Event::Remote(dbus::Request::Button { button, down: true }));
+                    let _ = self.events.send(Event::Remote(dbus::Request::Button { button, down: false }));
+                }
+                Some(dbus::RemoteLine::Hold(button)) => {
+                    let events = self.events.clone();
+                    let _ = events.send(Event::Remote(dbus::Request::Button { button, down: true }));
+                    spawn("remote-hold", move || {
+                        std::thread::sleep(crate::buttons::HOLD_AFTER + Duration::from_millis(100));
+                        let _ = events.send(Event::Remote(dbus::Request::Button { button, down: false }));
+                    });
+                }
+                None => eprintln!("window: ? remote {rest}"),
+            },
             "check-update" => self.updater.check(self.events.clone()),
             "apply-update" => {
                 if !self.updater.can_install() {

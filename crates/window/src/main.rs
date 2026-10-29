@@ -1763,7 +1763,33 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
 /// Matches the app-menu entry and icon names, so the desktop shows the right icon for the window.
 const APP_ID: &str = "io.github.zach9113.CrankedAudio";
 
+/// `--knob 2 +5`, `--knob 2 40`, `--press 1`, `--hold 1`, `--next-profile`, `--open-settings`: the line the service
+/// takes for it (`remote ...`), for binding keys to Cranked Audio on any desktop. None when the arguments aren't one.
+fn remote_line(args: &[String]) -> Option<String> {
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    let line = match words.as_slice() {
+        ["--knob", knob, change] => format!("knob {knob} {change}"),
+        ["--press", button] => format!("press {button}"),
+        ["--hold", button] => format!("hold {button}"),
+        ["--next-profile"] => "next-profile".into(),
+        ["--open-settings"] => "open-settings".into(),
+        _ => return None,
+    };
+    Some(format!("remote {line}"))
+}
+
+/// Sends a `remote ...` line to the running service, without opening a window.
+fn send_remote(line: &str) -> Result<(), slint::PlatformError> {
+    UnixStream::connect(cranked_ipc::socket_path())
+        .and_then(|mut stream| writeln!(stream, "{line}"))
+        .map_err(|error| slint::PlatformError::Other(format!("Cranked Audio isn't running ({error})")))
+}
+
 fn main() -> Result<(), slint::PlatformError> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(line) = remote_line(&args) {
+        return send_remote(&line);
+    }
     let window = MainWindow::new()?;
     // needs the platform the window just started, and must come before the window is shown
     slint::set_xdg_app_id(APP_ID)?;
@@ -1880,6 +1906,17 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn command_line_shortcuts_become_remote_lines() {
+        let line = |args: &[&str]| remote_line(&args.iter().map(ToString::to_string).collect::<Vec<_>>());
+        assert_eq!(line(&["--knob", "2", "+5"]).as_deref(), Some("remote knob 2 +5"));
+        assert_eq!(line(&["--knob", "1", "-5"]).as_deref(), Some("remote knob 1 -5"));
+        assert_eq!(line(&["--press", "3"]).as_deref(), Some("remote press 3"));
+        assert_eq!(line(&["--next-profile"]).as_deref(), Some("remote next-profile"));
+        assert_eq!(line(&["--page", "settings"]), None, "opens the window as before");
+        assert_eq!(line(&[]), None);
+    }
 
     #[test]
     fn colours_round_trip_through_their_hex_text() {
