@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.0
 
 ### All platforms
 - Shortcuts on any desktop: `cranked-audio --knob 2 +5`, `--knob 2 40`, `--press 1`, `--hold 1`, `--next-profile`
@@ -22,6 +22,9 @@
   "Set shortcuts…" opens GNOME's shortcut dialog or its Apps > Cranked Audio > Global Shortcuts page; on Hyprland,
   they appear in `hyprctl globalshortcuts`). The portal sends no key repeats, so holding a turn key turns the knob
   one step.
+- "Set shortcuts…" goes where each desktop keeps its shortcuts: System Settings on KDE, GNOME's dialog or settings
+  page on GNOME, and on Hyprland, Sway and others the commands to bind in their config (it used to open key boxes
+  only Windows reads).
 - Windows opened from the tray or the widget no longer linger as zombie processes after they close.
 - The installer says when there's no tray to show the icon in (and, on GNOME, which extension adds one); the AUR
   package lists that extension as optional.

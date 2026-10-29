@@ -7,7 +7,7 @@
         "Authors": [ { "Name": "Zach9113" } ],
         "Category": "Multimedia",
         "License": "GPL-3.0-or-later",
-        "Version": "2.2.0",
+        "Version": "2.3.0",
         "Website": "https://github.com/Zach9113/cranked-audio"
     },
     "KPackageStructure": "Plasma/Applet",
