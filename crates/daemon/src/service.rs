@@ -102,6 +102,7 @@ impl Service {
         devices::start(devices::sources(&core.config().devices, &*input_hardware), &events, &device_generation);
         let mut shortcuts = platform.shortcuts;
         shortcuts.start(events.clone(), most_knobs(core.config()), &core.config().shortcuts);
+        core.shortcut_editor = shortcuts.editor();
         let mut tray = platform.tray;
         tray.start(tray::Tray { events: events.clone(), profile: String::new(), profiles: Vec::new(), mixer: false });
         let mut remote_api = platform.remote_api;

@@ -92,6 +92,10 @@ pub struct HotKeys {
 }
 
 impl crate::shortcuts::GlobalShortcuts for HotKeys {
+    fn editor(&self) -> cranked_ipc::ShortcutEditor {
+        cranked_ipc::ShortcutEditor::Inline
+    }
+
     fn start(&mut self, events: Sender<Event>, _knobs: usize, bindings: &BTreeMap<String, String>) {
         self.running = Shortcuts::start(events, bindings);
     }

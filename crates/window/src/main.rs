@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use cranked_ipc::settings::{Channel, Config, Device, PopupStyle};
-use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, Snapshot, UnixStream};
+use cranked_ipc::{DeviceChoices, Entity, Knob, LearnedControl, ServerMessage, ShortcutEditor, Snapshot, UnixStream};
 use cranked_protocol::convert::{round_u8, saturate_i32, saturate_u8, to_f32};
 use slint::{Color, ComponentHandle as _, Model as _, ModelRc, SharedString, VecModel};
 
@@ -1420,33 +1420,20 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             }
         });
     }
-    // System Settings' shortcuts page on KDE Plasma, GNOME's shortcut dialog / settings on GNOME, or inline on Windows / other desktops
+    // The desktop's shortcut settings (the service opens them), key boxes here (Windows), or the commands to bind
     {
-        window.global::<General>().set_inline_shortcuts(cfg!(windows));
         let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_open_shortcuts(move || {
-            let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_uppercase();
-            let is_kde = !cfg!(windows) && desktop.split(':').any(|part| part == "KDE");
-            let is_gnome = !cfg!(windows) && desktop.split(':').any(|part| part == "GNOME");
-            let launched_kde = is_kde
-                && Command::new("kcmshell6")
-                    .arg("kcm_keys")
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .is_ok();
-            if is_gnome {
-                if let Ok(mut link) = link.lock() {
-                    link.send("open-shortcuts");
-                }
+            let Ok(mut link) = link.lock() else { return };
+            let editor = link.snapshot.shortcut_editor;
+            if editor == ShortcutEditor::Desktop {
+                link.send("open-shortcuts");
                 return;
             }
-            if !launched_kde {
-                if let Some(w) = weak.upgrade() {
-                    let g = w.global::<General>();
-                    g.set_shortcuts_open(!g.get_shortcuts_open());
-                }
+            if let Some(w) = weak.upgrade() {
+                let g = w.global::<General>();
+                g.set_inline_shortcuts(editor == ShortcutEditor::Inline);
+                g.set_shortcuts_open(!g.get_shortcuts_open());
             }
         });
     }

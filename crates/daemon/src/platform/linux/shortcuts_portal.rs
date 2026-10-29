@@ -6,6 +6,7 @@
 //! for the press action and holds for the hold action.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
@@ -30,6 +31,8 @@ pub struct Portal {
     events: Option<Sender<Event>>,
     registered: usize,
     session: Arc<Mutex<Option<Session>>>,
+    /// A bind is under way (the desktop's dialog may be open): another click on "Set shortcuts…" waits for it.
+    binding: Arc<AtomicBool>,
 }
 
 impl crate::shortcuts::GlobalShortcuts for Portal {
@@ -64,7 +67,20 @@ impl crate::shortcuts::GlobalShortcuts for Portal {
         }
     }
 
+    /// GNOME has a dialog and a settings page for portal shortcuts; elsewhere (Hyprland) they're bound in the
+    /// compositor's config, next to the `cranked-audio --knob ...` commands.
+    fn editor(&self) -> cranked_ipc::ShortcutEditor {
+        if is_gnome() {
+            cranked_ipc::ShortcutEditor::Desktop
+        } else {
+            cranked_ipc::ShortcutEditor::Commands
+        }
+    }
+
     fn configure(&mut self) {
+        if self.binding.load(Ordering::SeqCst) {
+            return;
+        }
         let already_bound = self.session.lock().is_ok_and(|open| open.is_some());
         if already_bound && is_gnome() {
             crate::service::spawn_detached(
@@ -84,9 +100,11 @@ impl crate::shortcuts::GlobalShortcuts for Portal {
 impl Portal {
     /// Binds the shortcuts and listens for them on a thread of its own: the desktop's dialog can take a while.
     fn open(&self, events: Sender<Event>, prompt: bool) {
-        let (knobs, slot) = (self.registered, Arc::clone(&self.session));
+        let (knobs, slot, binding) = (self.registered, Arc::clone(&self.session), Arc::clone(&self.binding));
+        binding.store(true, Ordering::SeqCst);
         crate::platform::spawn_thread("shortcuts", move || {
-            if let Err(e) = bind_and_listen(&events, knobs, &slot, prompt) {
+            if let Err(e) = bind_and_listen(&events, knobs, &slot, prompt, &binding) {
+                binding.store(false, Ordering::SeqCst);
                 eprintln!("shortcuts: the desktop's shortcut portal isn't available ({e})");
             }
         });
@@ -112,6 +130,7 @@ fn bind_and_listen(
     knobs: usize,
     slot: &Mutex<Option<Session>>,
     prompt: bool,
+    binding: &AtomicBool,
 ) -> zbus::Result<()> {
     let connection = Connection::session()?;
     // name ourselves first, so the desktop's dialog and settings say "Cranked Audio" (an older portal lacks this)
@@ -142,6 +161,7 @@ fn bind_and_listen(
             "Close",
             &(),
         );
+        binding.store(false, Ordering::SeqCst);
         return Ok(());
     }
 
@@ -154,6 +174,7 @@ fn bind_and_listen(
     if let Ok(mut open) = slot.lock() {
         *open = Some((connection.clone(), session.clone()));
     }
+    binding.store(false, Ordering::SeqCst);
     listen(&connection, &session, events)
 }
 

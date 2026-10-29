@@ -144,6 +144,8 @@ pub struct Core {
     /// The time of the current tick.
     now: Option<Instant>,
     pub verbose: bool,
+    /// Where "Set shortcuts…" takes the user (from the shortcuts adapter), passed on in snapshots.
+    pub shortcut_editor: cranked_ipc::ShortcutEditor,
 }
 
 impl Core {
@@ -196,6 +198,7 @@ impl Core {
             lights_settle_until: None,
             now: None,
             verbose: false,
+            shortcut_editor: cranked_ipc::ShortcutEditor::default(),
         };
         core.update_holds();
         core
@@ -350,6 +353,7 @@ impl Core {
             home_assistant: self.home_assistant_enabled,
             knobs,
             version: format!("v{}", env!("CARGO_PKG_VERSION")),
+            shortcut_editor: self.shortcut_editor,
         }
     }
 

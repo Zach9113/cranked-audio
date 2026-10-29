@@ -49,6 +49,15 @@ pub struct KGlobalAccel {
 }
 
 impl crate::shortcuts::GlobalShortcuts for KGlobalAccel {
+    fn editor(&self) -> cranked_ipc::ShortcutEditor {
+        cranked_ipc::ShortcutEditor::Desktop
+    }
+
+    /// System Settings' shortcuts page.
+    fn configure(&mut self) {
+        crate::service::spawn_detached(std::path::Path::new("kcmshell6"), &["kcm_keys".as_ref()]);
+    }
+
     fn start(&mut self, events: Sender<Event>, knobs: usize, _bindings: &BTreeMap<String, String>) {
         self.running = Shortcuts::start(events, knobs);
     }

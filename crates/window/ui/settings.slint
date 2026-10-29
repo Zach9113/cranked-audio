@@ -756,10 +756,10 @@ export component GeneralPage inherits ScrollView {
                 }
                 if General.shortcuts-open && !General.inline-shortcuts: VerticalLayout {
                     spacing: 6px;
-                    Hint { text: "Bind keys to these commands in your desktop's keyboard settings or compositor config (knobs and buttons count from 1):"; }
-                    LineEdit { read-only: true; text: "cranked-audio --knob 1 +5    # turn knob 1 up 5% (-5 turns it down)"; }
-                    LineEdit { read-only: true; text: "cranked-audio --press 1      # knob 1's button (--hold 1 for hold)"; }
-                    LineEdit { read-only: true; text: "cranked-audio --next-profile # switch to the next profile"; }
+                    Hint { text: "Bind keys to these commands in your desktop's keyboard settings or compositor config. Knobs and buttons count from 1: the first turns knob 1 up 5 points (-5 turns it down), the second is knob 1's button press (--hold 1 for its hold), the third switches to the next profile."; }
+                    LineEdit { read-only: true; text: "cranked-audio --knob 1 +5"; }
+                    LineEdit { read-only: true; text: "cranked-audio --press 1"; }
+                    LineEdit { read-only: true; text: "cranked-audio --next-profile"; }
                 }
             }
         }

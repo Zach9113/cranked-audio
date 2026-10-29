@@ -15,7 +15,11 @@ pub trait GlobalShortcuts {
     fn start(&mut self, events: Sender<Event>, knobs: usize, bindings: &BTreeMap<String, String>);
     /// Catches up with new settings: shortcuts for more knobs, or changed keys.
     fn ensure(&mut self, knobs: usize, bindings: &BTreeMap<String, String>);
-    /// Opens the desktop's shortcut dialog or settings when the user clicks "Set shortcuts…".
+    /// Where "Set shortcuts…" takes the user.
+    fn editor(&self) -> cranked_ipc::ShortcutEditor {
+        cranked_ipc::ShortcutEditor::Commands
+    }
+    /// Opens the desktop's shortcut dialog or settings when the user clicks "Set shortcuts…" (for `Desktop` editors).
     fn configure(&mut self) {}
 }
 

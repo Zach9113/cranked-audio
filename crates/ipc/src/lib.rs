@@ -107,6 +107,18 @@ pub struct AccessProblem {
     pub fix: String,
 }
 
+/// Where "Set shortcuts…" takes the user: the service knows, from the shortcuts adapter it picked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShortcutEditor {
+    /// The desktop's own shortcut settings (KDE's System Settings, GNOME's dialog); the service opens them.
+    Desktop,
+    /// Key boxes in the window, saved in the settings file (Windows).
+    Inline,
+    /// The `cranked-audio --knob ...` commands, for binding in the desktop's or compositor's config.
+    #[default]
+    Commands,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// The USB mixer is connected.
@@ -129,6 +141,8 @@ pub struct Snapshot {
     pub knobs: Vec<Knob>,
     #[serde(default)]
     pub version: String,
+    #[serde(default)]
+    pub shortcut_editor: ShortcutEditor,
 }
 
 fn hundred() -> u8 {
