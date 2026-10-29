@@ -18,14 +18,16 @@
 
 ### Linux
 - Global shortcuts on desktops without KDE's shortcut service: where the desktop offers the shortcuts portal
-  (Hyprland, and others as they add it), it asks once which keys to use for each knob. The portal sends no key
-  repeats, so holding a turn key turns the knob one step.
+  (GNOME and Hyprland), the actions are registered through `org.freedesktop.portal.GlobalShortcuts` (on GNOME,
+  "Set shortcuts…" opens GNOME's shortcut dialog or its Apps > Cranked Audio > Global Shortcuts page; on Hyprland,
+  they appear in `hyprctl globalshortcuts`). The portal sends no key repeats, so holding a turn key turns the knob
+  one step.
 - Windows opened from the tray or the widget no longer linger as zombie processes after they close.
 - The installer says when there's no tray to show the icon in (and, on GNOME, which extension adds one); the AUR
   package lists that extension as optional.
 - The mixer's lights go dark on lock on more desktops: besides KDE's screensaver, the service now also watches
-  GNOME's and the lock flag the login manager keeps (logind's LockedHint, set by GNOME, KDE and many Wayland
-  lock screens).
+  GNOME's, the lock flag the login manager keeps (logind's LockedHint), and standalone Wayland/X11 lockers
+  (`swaylock`, `hyprlock`, `gtklock`, `waylock`, `i3lock`).
 - When the mixer is plugged in but not allowed to open (it belongs to a group like `uucp` or `dialout`), or some
   keyboards can't be read (the `input` group), the window says so and shows the one command that fixes it, instead
   of quietly acting as if there were no mixer or keyboard knob.

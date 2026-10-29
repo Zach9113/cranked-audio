@@ -253,6 +253,7 @@ impl Service {
                 let events = self.events.clone();
                 std::thread::spawn(move || devices::learn_midi(&events, Duration::from_secs(15)));
             }
+            "open-shortcuts" => self.shortcuts.configure(),
             // `calibrate R G B` shows the LED calibration pattern with that correction; `calibrate off` ends it
             "calibrate" => {
                 let values: Vec<f64> = rest.split_whitespace().filter_map(|v| v.parse().ok()).collect();
@@ -607,7 +608,7 @@ fn sibling(name: &str) -> PathBuf {
 
 /// Starts a program on its own (a window, the file opener). A thread waits for it, so when it closes it's gone for
 /// good instead of lingering as a zombie process until the service exits.
-fn spawn_detached(program: &Path, args: &[&std::ffi::OsStr]) {
+pub(crate) fn spawn_detached(program: &Path, args: &[&std::ffi::OsStr]) {
     use std::process::{Command, Stdio};
     match Command::new(program).args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
         Ok(mut child) => spawn("child-wait", move || {

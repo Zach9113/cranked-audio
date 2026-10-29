@@ -127,6 +127,7 @@ export global General {
     callback open-devices();
     callback open-shortcuts();
     in-out property <bool> shortcuts-open: false;
+    in-out property <bool> inline-shortcuts: false;
     in-out property <[string]> shortcut-labels;
     in-out property <[string]> shortcut-keys;
     callback set-shortcut(int, string);
@@ -739,7 +740,7 @@ export component GeneralPage inherits ScrollView {
                     alignment: start;
                     Button { text: General.shortcuts-open ? "▴ Hide shortcuts" : "Set shortcuts…"; clicked => { General.open-shortcuts(); } }
                 }
-                if General.shortcuts-open: VerticalLayout {
+                if General.shortcuts-open && General.inline-shortcuts: VerticalLayout {
                     spacing: 6px;
                     Hint { text: "Type a key combination such as Ctrl+Alt+Up, Ctrl+Shift+M, Alt+F1 or F13 (leave blank for none), then click Save."; }
                     for label[i] in General.shortcut-labels: HorizontalLayout {
@@ -752,6 +753,13 @@ export component GeneralPage inherits ScrollView {
                             edited(val) => { General.set-shortcut(i, val); }
                         }
                     }
+                }
+                if General.shortcuts-open && !General.inline-shortcuts: VerticalLayout {
+                    spacing: 6px;
+                    Hint { text: "Bind keys to these commands in your desktop's keyboard settings or compositor config (knobs and buttons count from 1):"; }
+                    LineEdit { read-only: true; text: "cranked-audio --knob 1 +5    # turn knob 1 up 5% (-5 turns it down)"; }
+                    LineEdit { read-only: true; text: "cranked-audio --press 1      # knob 1's button (--hold 1 for hold)"; }
+                    LineEdit { read-only: true; text: "cranked-audio --next-profile # switch to the next profile"; }
                 }
             }
         }

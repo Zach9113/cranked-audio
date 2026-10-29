@@ -1420,11 +1420,15 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             }
         });
     }
-    // System Settings' shortcuts page on KDE Plasma, or the inline shortcut editor on Windows / other desktops
+    // System Settings' shortcuts page on KDE Plasma, GNOME's shortcut dialog / settings on GNOME, or inline on Windows / other desktops
     {
-        let weak = window.as_weak();
+        window.global::<General>().set_inline_shortcuts(cfg!(windows));
+        let (link, weak) = (Arc::clone(link), window.as_weak());
         general.on_open_shortcuts(move || {
-            let launched_kde = !cfg!(windows)
+            let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_ascii_uppercase();
+            let is_kde = !cfg!(windows) && desktop.split(':').any(|part| part == "KDE");
+            let is_gnome = !cfg!(windows) && desktop.split(':').any(|part| part == "GNOME");
+            let launched_kde = is_kde
                 && Command::new("kcmshell6")
                     .arg("kcm_keys")
                     .stdin(Stdio::null())
@@ -1432,6 +1436,12 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                     .stderr(Stdio::null())
                     .spawn()
                     .is_ok();
+            if is_gnome {
+                if let Ok(mut link) = link.lock() {
+                    link.send("open-shortcuts");
+                }
+                return;
+            }
             if !launched_kde {
                 if let Some(w) = weak.upgrade() {
                     let g = w.global::<General>();

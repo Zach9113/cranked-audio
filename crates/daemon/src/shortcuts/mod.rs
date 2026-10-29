@@ -15,6 +15,8 @@ pub trait GlobalShortcuts {
     fn start(&mut self, events: Sender<Event>, knobs: usize, bindings: &BTreeMap<String, String>);
     /// Catches up with new settings: shortcuts for more knobs, or changed keys.
     fn ensure(&mut self, knobs: usize, bindings: &BTreeMap<String, String>);
+    /// Opens the desktop's shortcut dialog or settings when the user clicks "Set shortcuts…".
+    fn configure(&mut self) {}
 }
 
 /// Points one turn shortcut (or one key repeat) moves a knob.

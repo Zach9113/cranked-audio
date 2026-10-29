@@ -232,11 +232,41 @@ fn read_connectors() -> Vec<(String, String)> {
         .collect()
 }
 
-/// A screensaver's `GetActive` (true while the screen is locked), when this desktop offers that screensaver.
+/// A screensaver's `GetActive` (true while the screen is locked), when this desktop is running that screensaver.
+/// Checks for a bus owner first so an installed-but-inactive `org.gnome.ScreenSaver` service isn't D-Bus-activated
+/// every 2 s on Hyprland, Sway or KDE.
 fn screensaver_active(bus: &Connection, service: &str) -> Option<bool> {
+    let running = has_owner(bus, service) || (service == "org.gnome.ScreenSaver" && has_owner(bus, "org.gnome.Shell"));
+    if !running {
+        return None;
+    }
     let path = format!("/{}", service.replace('.', "/"));
     let reply = bus.call_method(Some(service), path.as_str(), Some(service), "GetActive", &()).ok()?;
     reply.body().deserialize().ok()
+}
+
+/// Whether `name` is a standalone lock-screen program (swaylock, hyprlock, gtklock, waylock, i3lock) that only runs
+/// while the screen is locked and exits on unlock.
+fn is_locker_name(name: &str) -> bool {
+    matches!(name.trim(), "swaylock" | "hyprlock" | "gtklock" | "waylock" | "i3lock")
+}
+
+/// Standalone Wayland/X11 lockers (`swaylock`, `hyprlock`, ...) lock via `ext-session-lock-v1` without setting
+/// logind's `LockedHint`; they only exist as processes while the screen is locked.
+fn locker_running() -> Option<bool> {
+    use std::os::unix::fs::MetadataExt as _;
+    let uid = std::fs::metadata("/proc/self").ok()?.uid();
+    let entries = std::fs::read_dir("/proc").ok()?;
+    let found = entries.filter_map(Result::ok).any(|entry| {
+        if !entry.file_name().as_encoded_bytes().first().is_some_and(u8::is_ascii_digit) {
+            return false;
+        }
+        if entry.metadata().ok().map(|m| m.uid()) != Some(uid) {
+            return false;
+        }
+        std::fs::read_to_string(entry.path().join("comm")).is_ok_and(|comm| is_locker_name(&comm))
+    });
+    Some(found)
 }
 
 /// A D-Bus property read with `org.freedesktop.DBus.Properties.Get`.
@@ -265,18 +295,19 @@ fn logind_locked(system: &Connection) -> Option<bool> {
 }
 
 /// Locked by any source this desktop has: its screensaver (KDE and others offer the freedesktop one, GNOME its
-/// own) or logind's lock flag. Sources a desktop doesn't have just don't count.
+/// own), logind's lock flag, or a running standalone locker (`swaylock`, `hyprlock`, ...).
 fn screen_locked(session: Option<&Connection>, system: Option<&Connection>) -> bool {
     let screensaver = |service| screensaver_active(session?, service);
     any_locked([
         screensaver("org.freedesktop.ScreenSaver"),
         screensaver("org.gnome.ScreenSaver"),
         system.and_then(logind_locked),
+        locker_running(),
     ])
 }
 
 /// Locked when any source that answered says so.
-fn any_locked(sources: [Option<bool>; 3]) -> bool {
+fn any_locked(sources: [Option<bool>; 4]) -> bool {
     sources.into_iter().any(|locked| locked == Some(true))
 }
 
@@ -321,10 +352,15 @@ mod tests {
 
     #[test]
     fn locked_when_any_source_says_so() {
-        assert!(!any_locked([None, None, None]), "no source: not locked");
-        assert!(!any_locked([Some(false), None, Some(false)]));
-        assert!(any_locked([None, None, Some(true)]), "logind alone is enough (Hyprland, Sway)");
-        assert!(any_locked([Some(false), Some(true), None]), "GNOME's screensaver");
+        assert!(!any_locked([None, None, None, None]), "no source: not locked");
+        assert!(!any_locked([Some(false), None, Some(false), Some(false)]));
+        assert!(any_locked([None, None, Some(true), Some(false)]), "logind alone is enough");
+        assert!(any_locked([Some(false), Some(true), None, Some(false)]), "GNOME's screensaver");
+        assert!(any_locked([None, None, Some(false), Some(true)]), "standalone locker (swaylock, hyprlock)");
+        assert!(is_locker_name("swaylock\n"));
+        assert!(is_locker_name("hyprlock"));
+        assert!(!is_locker_name("swayidle"));
+        assert!(!is_locker_name("hypridle"));
     }
 
     /// Needs a real logind session (a desktop login): `cargo test -- --ignored`.

@@ -36,7 +36,7 @@ impl crate::shortcuts::GlobalShortcuts for Portal {
     fn start(&mut self, events: Sender<Event>, knobs: usize, _bindings: &BTreeMap<String, String>) {
         self.registered = knobs;
         self.events = Some(events.clone());
-        self.open(events);
+        self.open(events, false);
     }
 
     /// More knobs need their shortcuts too: a fresh session binds the whole set (the desktop asks again).
@@ -46,7 +46,8 @@ impl crate::shortcuts::GlobalShortcuts for Portal {
             return;
         }
         self.registered = knobs;
-        if let Some((connection, session)) = self.session.lock().ok().and_then(|mut open| open.take()) {
+        let had_session = if let Some((connection, session)) = self.session.lock().ok().and_then(|mut open| open.take())
+        {
             let _ = connection.call_method(
                 Some(PORTAL),
                 session.as_str(),
@@ -54,24 +55,64 @@ impl crate::shortcuts::GlobalShortcuts for Portal {
                 "Close",
                 &(),
             );
+            true
+        } else {
+            false
+        };
+        if had_session || !is_gnome() {
+            self.open(events, false);
         }
-        self.open(events);
+    }
+
+    fn configure(&mut self) {
+        let already_bound = self.session.lock().is_ok_and(|open| open.is_some());
+        if already_bound && is_gnome() {
+            crate::service::spawn_detached(
+                std::path::Path::new("gnome-control-center"),
+                &["applications".as_ref(), APP_ID.as_ref()],
+            );
+            return;
+        }
+        if !already_bound {
+            if let Some(events) = self.events.clone() {
+                self.open(events, true);
+            }
+        }
     }
 }
 
 impl Portal {
     /// Binds the shortcuts and listens for them on a thread of its own: the desktop's dialog can take a while.
-    fn open(&self, events: Sender<Event>) {
+    fn open(&self, events: Sender<Event>, prompt: bool) {
         let (knobs, slot) = (self.registered, Arc::clone(&self.session));
         crate::platform::spawn_thread("shortcuts", move || {
-            if let Err(e) = bind_and_listen(&events, knobs, &slot) {
+            if let Err(e) = bind_and_listen(&events, knobs, &slot, prompt) {
                 eprintln!("shortcuts: the desktop's shortcut portal isn't available ({e})");
             }
         });
     }
 }
 
-fn bind_and_listen(events: &Sender<Event>, knobs: usize, slot: &Mutex<Option<Session>>) -> zbus::Result<()> {
+fn is_gnome() -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP")
+        .is_ok_and(|desktop| desktop.to_ascii_uppercase().split(':').any(|part| part == "GNOME"))
+}
+
+fn has_bound_shortcuts(connection: &Connection, session: &OwnedObjectPath) -> bool {
+    let options = HashMap::from([("handle_token", Value::from("cranked_list"))]);
+    let Ok(listed) = request(connection, "cranked_list", "ListShortcuts", &(session, options)) else {
+        return false;
+    };
+    take::<Vec<(String, HashMap<String, OwnedValue>)>>(&listed, "shortcuts")
+        .is_ok_and(|shortcuts| !shortcuts.is_empty())
+}
+
+fn bind_and_listen(
+    events: &Sender<Event>,
+    knobs: usize,
+    slot: &Mutex<Option<Session>>,
+    prompt: bool,
+) -> zbus::Result<()> {
     let connection = Connection::session()?;
     // name ourselves first, so the desktop's dialog and settings say "Cranked Audio" (an older portal lacks this)
     let no_options: HashMap<&str, Value<'_>> = HashMap::new();
@@ -90,6 +131,19 @@ fn bind_and_listen(events: &Sender<Event>, knobs: usize, slot: &Mutex<Option<Ses
     let created = request(&connection, "cranked_create", "CreateSession", &(options,))?;
     let session_handle: String = take(&created, "session_handle")?;
     let session = OwnedObjectPath::try_from(session_handle).map_err(zbus::Error::from)?;
+
+    // On GNOME, BindShortcuts pops up a modal dialog when no shortcuts are saved yet; wait until the user clicks
+    // "Set shortcuts…" before prompting for the first time.
+    if !prompt && is_gnome() && !has_bound_shortcuts(&connection, &session) {
+        let _ = connection.call_method(
+            Some(PORTAL),
+            session.as_str(),
+            Some("org.freedesktop.portal.Session"),
+            "Close",
+            &(),
+        );
+        return Ok(());
+    }
 
     let shortcuts: Vec<(String, HashMap<&str, Value<'_>>)> = all(knobs)
         .into_iter()
