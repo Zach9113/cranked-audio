@@ -340,6 +340,11 @@ impl crate::devices::InputHardware for RawInput {
     fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn crate::devices::InputSource> {
         Box::new(RawInputKnob { name, knob, step, grab })
     }
+
+    fn keyboard_access(&self) -> Option<cranked_ipc::AccessProblem> {
+        // Raw Input reads every keyboard without extra permissions
+        None
+    }
 }
 
 /// A keyboard knob read through Raw Input (with `grab`, the hook keeps its volume keys from Windows).

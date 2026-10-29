@@ -14,6 +14,9 @@
   your profiles, Edit settings file… and Quit.
 
 ### Linux
+- When the mixer is plugged in but not allowed to open (it belongs to a group like `uucp` or `dialout`), or some
+  keyboards can't be read (the `input` group), the window says so and shows the one command that fixes it, instead
+  of quietly acting as if there were no mixer or keyboard knob.
 - Starts at login on more desktops: an autostart entry covers XFCE, Cinnamon, MATE, LXQt and others that don't
   start systemd's graphical session, and on Hyprland and Sway the installer prints the one line to add to their
   config (README, "Starting at login on other desktops").

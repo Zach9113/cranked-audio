@@ -1,6 +1,6 @@
 import { Button, Slider } from "std-widgets.slint";
 
-import { Palette, Look, KnobPage, ButtonPage, GeneralPage, CalibrationPage, DevicesPage, Devices, Lists, KnobSettings, General } from "settings.slint";
+import { Palette, Look, KnobPage, ButtonPage, GeneralPage, CalibrationPage, DevicesPage, Devices, Lists, KnobSettings, General, AccessNotice } from "settings.slint";
 export { Lists, KnobSettings, General, Palette, Look, Devices }
 export { Palette as StdPalette } from "std-widgets.slint";
 
@@ -484,6 +484,9 @@ export component MainWindow inherits Window {
     in property <[KnobData]> knobs;
     in property <string> status;
     in property <bool> ok;
+    // the mixer is plugged in but can't be opened: what's wrong and the fix (empty when all is well)
+    in property <string> mixer-access-message;
+    in property <string> mixer-access-fix;
     in property <string> profile;
     // 0 = knobs, 1 = knob settings, 2 = button settings, 3 = settings, 4 = LED calibration
     in-out property <int> page;
@@ -567,6 +570,11 @@ export component MainWindow inherits Window {
                 primary: true;
                 clicked => { root.save(); }
             }
+        }
+
+        if root.page == 0 && root.mixer-access-message != "": AccessNotice {
+            message: root.mixer-access-message;
+            fix: root.mixer-access-fix;
         }
 
         if root.page == 0 && root.show-welcome: Rectangle {

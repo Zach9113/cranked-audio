@@ -917,6 +917,9 @@ fn fill_keyboards(window: &MainWindow) {
 fn show_device_choices(window: &MainWindow, choices: &DeviceChoices) {
     let devices = window.global::<Devices>();
     devices.set_serial_ports(strings(choices.serial.iter().map(String::as_str)));
+    let (message, fix) = choices.keyboard_access.as_ref().map_or(("", ""), |p| (p.message.as_str(), p.fix.as_str()));
+    devices.set_keyboard_access_message(message.into());
+    devices.set_keyboard_access_fix(fix.into());
     let clamp = |index: i32, len: usize| index.clamp(0, saturate_i32(len.saturating_sub(1)));
     devices.set_deej_port(clamp(devices.get_deej_port(), choices.serial.len()));
     if !devices.get_learning() && !devices.get_learned() {
@@ -1121,6 +1124,9 @@ fn show(window: &MainWindow, snapshot: &Snapshot) {
     window.set_ok(true);
     let status = if snapshot.mixer { "Mixer connected" } else { "On-screen controls" };
     window.set_status(SharedString::from(status));
+    let (message, fix) = snapshot.mixer_access.as_ref().map_or(("", ""), |p| (p.message.as_str(), p.fix.as_str()));
+    window.set_mixer_access_message(message.into());
+    window.set_mixer_access_fix(fix.into());
 }
 
 fn set_status(window: &slint::Weak<MainWindow>, text: &'static str) {

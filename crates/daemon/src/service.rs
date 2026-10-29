@@ -246,6 +246,7 @@ impl Service {
                     midi: devices::midi_controllers(),
                     serial: self.input_hardware.serial_ports(),
                     outputs: self.audio_system.outputs(),
+                    keyboard_access: self.input_hardware.keyboard_access(),
                 }));
             }
             "learn-midi" => {

@@ -79,6 +79,9 @@ pub struct DeviceChoices {
     /// active audio output devices (for picking which ones Switch output cycles through).
     #[serde(default)]
     pub outputs: Vec<AudioOutput>,
+    /// Some input devices can't be read (permissions), so keyboard knobs may be missing, and how to fix that.
+    #[serde(default)]
+    pub keyboard_access: Option<AccessProblem>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +98,15 @@ pub struct Entity {
     pub name: String,
 }
 
+/// Something keeping a device from working that the user can fix, with the command that fixes it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccessProblem {
+    /// What's wrong, in a sentence.
+    pub message: String,
+    /// The command that fixes it; it takes effect after logging out and back in.
+    pub fix: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Snapshot {
     /// The USB mixer is connected.
@@ -102,6 +114,9 @@ pub struct Snapshot {
     /// A mixer has been connected at some point: its settings (lights) are worth showing.
     #[serde(default)]
     pub mixer_seen: bool,
+    /// The mixer is plugged in but can't be opened (permissions), and how to fix that.
+    #[serde(default)]
+    pub mixer_access: Option<AccessProblem>,
     pub profile: String,
     pub profiles: Vec<String>,
     /// Apps playing sound right now (for picking a knob's apps).

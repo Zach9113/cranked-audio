@@ -136,6 +136,8 @@ pub struct Core {
     screen_off: bool,
     touched_at: Option<Instant>,
     /// LED calibration in progress: when it last changed, and the correction being tried.
+    /// The mixer is plugged in but can't be opened, and how to fix that.
+    mixer_access: Option<cranked_ipc::AccessProblem>,
     calibrating: Option<(Instant, [f64; 3])>,
     /// Lights ignore the mixer's knobs until then (see `LIGHTS_SETTLE`).
     lights_settle_until: Option<Instant>,
@@ -189,6 +191,7 @@ impl Core {
             moved_at: None,
             screen_off: false,
             touched_at: None,
+            mixer_access: None,
             calibrating: None,
             lights_settle_until: None,
             now: None,
@@ -339,6 +342,7 @@ impl Core {
         cranked_ipc::Snapshot {
             mixer: self.mixer_connected,
             mixer_seen: self.mixer_seen,
+            mixer_access: self.mixer_access.clone(),
             profile: self.config.profiles[self.profile].name.clone(),
             profiles: self.config.profiles.iter().map(|p| p.name.clone()).collect(),
             playing,
@@ -380,6 +384,7 @@ impl Core {
         let mut out = Vec::new();
         match event {
             Event::MixerConnected => {
+                self.mixer_access = None;
                 self.restored = true;
                 self.mixer = Decoder::new();
                 self.mixer_connected = true;
@@ -395,6 +400,7 @@ impl Core {
                 self.mixer_connected = false;
                 self.sync = None;
             }
+            Event::MixerAccess(problem) => self.mixer_access = problem,
             Event::ScreenOff(off) => {
                 self.screen_off = off;
                 if self.verbose {
@@ -1486,6 +1492,20 @@ mod tests {
         core.handle(Event::Stream(stream(2, "Firefox", 50.0)), start);
         core.handle(Event::Loud(2), start);
         assert!(!core.ducking);
+    }
+
+    #[test]
+    fn a_blocked_mixer_shows_its_fix_until_it_connects() {
+        let start = Instant::now();
+        let mut core = synced(start);
+        let problem = cranked_ipc::AccessProblem {
+            message: "The mixer can't be opened.".into(),
+            fix: "sudo usermod -aG uucp $USER".into(),
+        };
+        core.handle(Event::MixerAccess(Some(problem.clone())), start);
+        assert_eq!(core.snapshot().mixer_access, Some(problem));
+        core.handle(Event::MixerConnected, start);
+        assert_eq!(core.snapshot().mixer_access, None, "connected: nothing to fix");
     }
 
     #[test]

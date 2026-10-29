@@ -39,6 +39,33 @@ pub trait InputSource: Send {
     fn run(&self, events: &Sender<Event>, current: &dyn Fn() -> bool);
 }
 
+/// How to get access to a device owned by `group`: join that group (it takes effect after logging in again).
+#[cfg(unix)]
+pub fn join_group(message: &str, group: &str) -> cranked_ipc::AccessProblem {
+    cranked_ipc::AccessProblem { message: message.into(), fix: format!("sudo usermod -aG {group} $USER") }
+}
+
+/// The name of group `gid` in an `/etc/group` file's `contents`.
+#[cfg(unix)]
+pub fn group_named(contents: &str, gid: u32) -> Option<String> {
+    contents.lines().find_map(|line| {
+        let mut fields = line.split(':');
+        let name = fields.next()?;
+        let id = fields.nth(1)?.parse::<u32>().ok()?;
+        (id == gid && !name.is_empty()).then(|| name.to_string())
+    })
+}
+
+/// The group that owns `path` (following links), by name; `fallback` when it can't be told.
+#[cfg(unix)]
+pub fn owning_group(path: &std::path::Path, fallback: &str) -> String {
+    use std::os::unix::fs::MetadataExt as _;
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| group_named(&std::fs::read_to_string("/etc/group").ok()?, meta.gid()))
+        .unwrap_or_else(|| fallback.to_string())
+}
+
 /// The port to this platform's input hardware: keyboard knobs read through the OS, and the serial ports to offer.
 /// Each platform has one adapter (`linux::Evdev`, `windows::RawInput`), chosen in `platform::native()`.
 pub trait InputHardware {
@@ -48,6 +75,8 @@ pub trait InputHardware {
     fn serial_ports(&self) -> Vec<String>;
     /// A configured keyboard knob as an input source.
     fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn InputSource>;
+    /// Input devices this user can't read (so keyboard knobs may be missing from the list), and how to fix that.
+    fn keyboard_access(&self) -> Option<cranked_ipc::AccessProblem>;
 }
 
 /// The configured devices as input sources: keyboard knobs from this platform's hardware, MIDI controllers and deej
@@ -346,6 +375,21 @@ mod tests {
         fn keyboard_knob(&self, _name: String, knob: usize, _step: u8, _grab: bool) -> Box<dyn InputSource> {
             Box::new(FakeKnob { knob })
         }
+
+        fn keyboard_access(&self) -> Option<cranked_ipc::AccessProblem> {
+            None
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_device_group_is_found_by_its_id() {
+        let groups = "root:x:0:\nuucp:x:14:zach\ndialout:x:20:\ninput:x:994:zach\n";
+        assert_eq!(group_named(groups, 14).as_deref(), Some("uucp"));
+        assert_eq!(group_named(groups, 994).as_deref(), Some("input"));
+        assert_eq!(group_named(groups, 5), None);
+        let problem = join_group("The mixer can't be opened.", "dialout");
+        assert_eq!(problem.fix, "sudo usermod -aG dialout $USER");
     }
 
     #[test]

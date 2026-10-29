@@ -997,6 +997,9 @@ export global Devices {
     // what can be added (from the service)
     in property <[string]> keyboards;
     in property <[string]> serial-ports;
+    // some input devices can't be read: what's wrong and the fix (empty when all is well)
+    in property <string> keyboard-access-message;
+    in property <string> keyboard-access-fix;
     // MIDI learn: what the user should do, or what was heard
     in property <string> learn-status;
     in property <bool> learned;
@@ -1018,6 +1021,23 @@ export global Devices {
     callback add-midi();
     callback add-deej();
     callback refresh();
+}
+
+// A device that needs permission: what's wrong, and the command that fixes it (selectable, to copy).
+export component AccessNotice inherits Rectangle {
+    in property <string> message;
+    in property <string> fix;
+    background: Palette.card;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Palette.held-edge;
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+        Text { text: root.message; color: Palette.text-strong; wrap: word-wrap; font-size: 13px; }
+        Text { text: "To fix it, run this in a terminal, then log out and back in:"; color: Palette.text-dim; wrap: word-wrap; font-size: 12px; }
+        LineEdit { text: root.fix; read-only: true; }
+    }
 }
 
 export component DevicesPage inherits ScrollView {
@@ -1075,6 +1095,7 @@ export component DevicesPage inherits ScrollView {
             VerticalLayout {
                 spacing: 8px;
                 Hint { text: "A volume knob or wheel on a keyboard, or a USB rotary controller: turning it turns a knob, pressing it is that knob's button."; }
+                if Devices.keyboard-access-message != "": AccessNotice { message: Devices.keyboard-access-message; fix: Devices.keyboard-access-fix; }
                 HorizontalLayout {
                     spacing: 8px;
                     Label { text: "Device"; width: 110px; }

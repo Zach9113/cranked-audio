@@ -55,6 +55,13 @@ pub fn find_port() -> Option<PathBuf> {
     None
 }
 
+/// The mixer's port is owned by a group this user isn't in (`uucp` on Arch, `dialout` on Debian, Ubuntu and Fedora).
+#[cfg(unix)]
+fn blocked_mixer(path: &Path) -> cranked_ipc::AccessProblem {
+    let group = crate::devices::owning_group(path, "dialout");
+    crate::devices::join_group("The mixer is plugged in, but Cranked Audio isn't allowed to open it.", &group)
+}
+
 /// How long a read waits for the mixer. On Windows the reader thread also sends the LED frames between reads, so
 /// this is how late a frame can be.
 #[cfg(windows)]
@@ -136,11 +143,16 @@ impl Writer {
 /// Runs forever on its own thread: waits for the mixer, forwards its bytes, starts over when it goes away.
 pub fn run(events: &Sender<Event>, writer: &Writer) {
     let mut announced_missing = false;
+    let mut blocked = false;
     loop {
         let Some(path) = find_port() else {
             if !announced_missing {
                 eprintln!("mixer: not connected, waiting");
                 announced_missing = true;
+            }
+            if blocked {
+                blocked = false;
+                let _ = events.send(Event::MixerAccess(None));
             }
             std::thread::sleep(Duration::from_secs(2));
             continue;
@@ -149,19 +161,26 @@ pub fn run(events: &Sender<Event>, writer: &Writer) {
         let mut port = match open(&path) {
             Ok(port) => port,
             Err(e) => {
+                // (on Windows "access denied" means another program has the port, not a permission)
+                #[cfg(unix)]
                 if matches!(e.kind(), serialport::ErrorKind::Io(ErrorKind::PermissionDenied)) {
-                    eprintln!(
-                        "mixer: permission denied on {}. Add your user to group 'uucp' (Arch) or 'dialout' (Ubuntu/Debian/Fedora)",
-                        path.display()
-                    );
-                } else {
-                    // most likely another program has it; don't keep resetting the board by retrying fast
-                    eprintln!("mixer: can't open {}: {e}; trying again in 30 s", path.display());
+                    if !blocked {
+                        blocked = true;
+                        let problem = blocked_mixer(&path);
+                        eprintln!("mixer: permission denied on {}; fix: {}", path.display(), problem.fix);
+                        let _ = events.send(Event::MixerAccess(Some(problem)));
+                    }
+                    // it opens on the next try once the user has access
+                    std::thread::sleep(Duration::from_secs(5));
+                    continue;
                 }
+                // most likely another program has it; don't keep resetting the board by retrying fast
+                eprintln!("mixer: can't open {}: {e}; trying again in 30 s", path.display());
                 std::thread::sleep(Duration::from_secs(30));
                 continue;
             }
         };
+        blocked = false;
         eprintln!("mixer: connected ({})", path.display());
         #[cfg(not(windows))]
         writer.set(port.try_clone_native().map_err(|e| eprintln!("mixer: no LED handle ({e})")).ok());

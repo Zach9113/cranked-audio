@@ -50,6 +50,8 @@ use crate::service::Service;
 
 pub enum Event {
     MixerConnected,
+    /// The mixer is plugged in but can't be opened (Some, with the fix), or that's over (None).
+    MixerAccess(Option<cranked_ipc::AccessProblem>),
     MixerLost,
     /// Raw bytes from the mixer.
     Bytes(Vec<u8>),

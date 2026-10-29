@@ -206,6 +206,22 @@ impl crate::devices::InputHardware for Evdev {
     fn keyboard_knob(&self, name: String, knob: usize, step: u8, grab: bool) -> Box<dyn crate::devices::InputSource> {
         Box::new(EvdevKnob { name, knob, step, grab })
     }
+
+    fn keyboard_access(&self) -> Option<cranked_ipc::AccessProblem> {
+        let blocked = std::fs::read_dir("/dev/input")
+            .ok()?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.file_name().is_some_and(|name| name.to_string_lossy().starts_with("event")))
+            .find(|path| {
+                std::fs::File::open(path).is_err_and(|error| error.kind() == std::io::ErrorKind::PermissionDenied)
+            })?;
+        let group = crate::devices::owning_group(&blocked, "input");
+        Some(crate::devices::join_group(
+            "Some keyboards and controllers can't be read, so a keyboard knob may be missing from this list.",
+            &group,
+        ))
+    }
 }
 
 /// A keyboard knob read through evdev (with `grab`, the system volume doesn't move too).

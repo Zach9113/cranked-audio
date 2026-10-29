@@ -121,6 +121,10 @@ impl InputHardware for NoInputHardware {
     fn keyboard_knob(&self, _name: String, _knob: usize, _step: u8, _grab: bool) -> Box<dyn InputSource> {
         Box::new(NoInput)
     }
+
+    fn keyboard_access(&self) -> Option<cranked_ipc::AccessProblem> {
+        None
+    }
 }
 
 struct NoInput;
