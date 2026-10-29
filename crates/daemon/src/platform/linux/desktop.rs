@@ -232,25 +232,60 @@ fn read_connectors() -> Vec<(String, String)> {
         .collect()
 }
 
-fn screen_locked(bus: &Connection) -> Option<bool> {
-    let reply = bus
-        .call_method(
-            Some("org.freedesktop.ScreenSaver"),
-            "/org/freedesktop/ScreenSaver",
-            Some("org.freedesktop.ScreenSaver"),
-            "GetActive",
-            &(),
-        )
-        .ok()?;
+/// A screensaver's `GetActive` (true while the screen is locked), when this desktop offers that screensaver.
+fn screensaver_active(bus: &Connection, service: &str) -> Option<bool> {
+    let path = format!("/{}", service.replace('.', "/"));
+    let reply = bus.call_method(Some(service), path.as_str(), Some(service), "GetActive", &()).ok()?;
     reply.body().deserialize().ok()
+}
+
+/// A D-Bus property read with `org.freedesktop.DBus.Properties.Get`.
+fn property<T>(bus: &Connection, service: &str, path: &str, interface: &str, name: &str) -> Option<T>
+where
+    T: TryFrom<zbus::zvariant::OwnedValue>,
+{
+    let reply = bus
+        .call_method(Some(service), path, Some("org.freedesktop.DBus.Properties"), "Get", &(interface, name))
+        .ok()?;
+    let value: zbus::zvariant::OwnedValue = reply.body().deserialize().ok()?;
+    T::try_from(value).ok()
+}
+
+/// The lock flag the login manager keeps for this user's graphical session (logind's `LockedHint`, which GNOME, KDE
+/// and many Wayland lock screens set). The service runs outside any session, so the session is found through the
+/// user: `user/self` is resolved by user id.
+fn logind_locked(system: &Connection) -> Option<bool> {
+    const LOGIN: &str = "org.freedesktop.login1";
+    let (_, session): (String, zbus::zvariant::OwnedObjectPath) =
+        property(system, LOGIN, "/org/freedesktop/login1/user/self", "org.freedesktop.login1.User", "Display")?;
+    if session.as_str() == "/" {
+        return None;
+    }
+    property(system, LOGIN, session.as_str(), "org.freedesktop.login1.Session", "LockedHint")
+}
+
+/// Locked by any source this desktop has: its screensaver (KDE and others offer the freedesktop one, GNOME its
+/// own) or logind's lock flag. Sources a desktop doesn't have just don't count.
+fn screen_locked(session: Option<&Connection>, system: Option<&Connection>) -> bool {
+    let screensaver = |service| screensaver_active(session?, service);
+    any_locked([
+        screensaver("org.freedesktop.ScreenSaver"),
+        screensaver("org.gnome.ScreenSaver"),
+        system.and_then(logind_locked),
+    ])
+}
+
+/// Locked when any source that answered says so.
+fn any_locked(sources: [Option<bool>; 3]) -> bool {
+    sources.into_iter().any(|locked| locked == Some(true))
 }
 
 /// Reports `Event::ScreenOff(true)` while the screen is locked or all monitors sleep, `false` when it's back.
 fn watch_screen(events: &Sender<crate::Event>) {
-    let bus = Connection::session().ok();
+    let (session, system) = (Connection::session().ok(), Connection::system().ok());
     let mut last = None;
     loop {
-        let locked = bus.as_ref().and_then(screen_locked).unwrap_or(false);
+        let locked = screen_locked(session.as_ref(), system.as_ref());
         let off = locked || monitors_asleep(&read_connectors());
         if last != Some(off) {
             last = Some(off);
@@ -282,6 +317,22 @@ mod tests {
         let status = |n: &str| Some(if n.ends_with("spotify") { "Playing" } else { "Paused" }.to_string());
         assert_eq!(pick_player(&all, status).as_deref(), Some("org.mpris.MediaPlayer2.spotify"));
         assert_eq!(pick_player(&names(&["org.kde.kwin"]), |_| None), None);
+    }
+
+    #[test]
+    fn locked_when_any_source_says_so() {
+        assert!(!any_locked([None, None, None]), "no source: not locked");
+        assert!(!any_locked([Some(false), None, Some(false)]));
+        assert!(any_locked([None, None, Some(true)]), "logind alone is enough (Hyprland, Sway)");
+        assert!(any_locked([Some(false), Some(true), None]), "GNOME's screensaver");
+    }
+
+    /// Needs a real logind session (a desktop login): `cargo test -- --ignored`.
+    #[test]
+    #[ignore = "reads this machine's login session"]
+    fn reads_the_lock_flag_of_this_users_session() {
+        let system = Connection::system().expect("system bus");
+        assert!(logind_locked(&system).is_some(), "logind answered for the graphical session");
     }
 
     #[test]

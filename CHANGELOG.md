@@ -14,6 +14,9 @@
   your profiles, Edit settings file… and Quit.
 
 ### Linux
+- The mixer's lights go dark on lock on more desktops: besides KDE's screensaver, the service now also watches
+  GNOME's and the lock flag the login manager keeps (logind's LockedHint, set by GNOME, KDE and many Wayland
+  lock screens).
 - When the mixer is plugged in but not allowed to open (it belongs to a group like `uucp` or `dialout`), or some
   keyboards can't be read (the `input` group), the window says so and shows the one command that fixes it, instead
   of quietly acting as if there were no mixer or keyboard knob.

@@ -67,7 +67,8 @@ Numbers marked (measured) come from probing the real mixer or the live system in
   and colour are worked out as eyes see them and turned into LED power last: dimming follows the CIE 1931 lightness
   curve (looking half as bright = about 18% power), and the LED the level is in mixes background to level colour in
   OKLab (the middle looks halfway, no grey or dark dip). The shown level glides to a new value (~70 ms time constant) instead of stepping. Muted channel = muted colour. Global brightness. Dim to look half as bright
-  when the channel has no playing streams (optional). All off while the screen is locked or the displays are asleep;
+  when the channel has no playing streams (optional). All off while the screen is locked (the desktop's screensaver, GNOME's, or logind's LockedHint) or the
+  displays are asleep;
   back on with the screen or any knob/button input.
 
 ## 6. Auto-lower (ducking)
