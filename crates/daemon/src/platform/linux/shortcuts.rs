@@ -17,6 +17,31 @@ const FRIENDLY: &str = "Cranked Audio";
 /// kglobalaccel's "this action exists now" flag: loads the keys the user saved for it.
 const SET_PRESENT: u32 = 2;
 
+/// This desktop's shortcut service: KDE's kglobalaccel when it runs, else the XDG `GlobalShortcuts` portal (Hyprland and
+/// others). `CRANKED_SHORTCUTS=portal` (or `kde`) picks one, for testing.
+pub fn native() -> Box<dyn crate::shortcuts::GlobalShortcuts> {
+    let kde_running = || {
+        zbus::blocking::Connection::session()
+            .and_then(|bus| {
+                bus.call_method(
+                    Some("org.freedesktop.DBus"),
+                    "/org/freedesktop/DBus",
+                    Some("org.freedesktop.DBus"),
+                    "NameHasOwner",
+                    &("org.kde.kglobalaccel",),
+                )
+            })
+            .and_then(|reply| reply.body().deserialize::<bool>())
+            .unwrap_or(false)
+    };
+    match std::env::var("CRANKED_SHORTCUTS").as_deref() {
+        Ok("portal") => Box::new(super::shortcuts_portal::Portal::default()),
+        Ok("kde") => Box::new(KGlobalAccel::default()),
+        _ if kde_running() => Box::new(KGlobalAccel::default()),
+        _ => Box::new(super::shortcuts_portal::Portal::default()),
+    }
+}
+
 /// The Linux shortcuts adapter: KDE's kglobalaccel (the keys are picked in System Settings, not in our settings).
 #[derive(Default)]
 pub struct KGlobalAccel {

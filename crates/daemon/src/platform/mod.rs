@@ -35,7 +35,7 @@ pub fn native() -> Platform {
         audio: Box::new(linux::audio::PipeWire),
         desktop: Box::new(linux::desktop::Plasma),
         tray: Box::new(linux::tray::StatusNotifier::default()),
-        shortcuts: Box::new(linux::shortcuts::KGlobalAccel::default()),
+        shortcuts: linux::shortcuts::native(),
         remote_api: Box::new(linux::remote_api::SessionBus::default()),
         input_hardware: Box::new(linux::input_hardware::Evdev),
         updater: Box::new(linux::updater::InstallScript),

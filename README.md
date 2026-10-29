@@ -157,8 +157,9 @@ The Home Assistant token is kept in its own file, readable only by you.
 
 ## Keyboard shortcuts on any desktop
 
-On KDE Plasma the shortcuts are in System Settings, Shortcuts, Cranked Audio. On any other desktop (and on Windows),
-bind keys to these commands in your desktop's keyboard settings or your compositor's config. Knobs and buttons count
+On KDE Plasma the shortcuts are in System Settings, Shortcuts, Cranked Audio. Desktops with the shortcuts portal
+(Hyprland, for one) ask once which keys to use; the portal sends no key repeats, so a held turn key turns the knob one
+step. On any other desktop (and on Windows), or for keys that repeat, bind keys to these commands in your desktop's keyboard settings or your compositor's config. Knobs and buttons count
 from 1:
 
 ```bash

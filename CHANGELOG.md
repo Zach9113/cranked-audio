@@ -17,6 +17,9 @@
   your profiles, Edit settings file… and Quit.
 
 ### Linux
+- Global shortcuts on desktops without KDE's shortcut service: where the desktop offers the shortcuts portal
+  (Hyprland, and others as they add it), it asks once which keys to use for each knob. The portal sends no key
+  repeats, so holding a turn key turns the knob one step.
 - Windows opened from the tray or the widget no longer linger as zombie processes after they close.
 - The installer says when there's no tray to show the icon in (and, on GNOME, which extension adds one); the AUR
   package lists that extension as optional.
