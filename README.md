@@ -47,6 +47,7 @@ Volume knobs for Linux: give each group of apps its own knob, on a USB mixer or 
   [below](#windows-experimental-preview))
 - systemd user services (for starting at login; see [other desktops](#starting-at-login-on-other-desktops))
 - KDE Plasma is recommended (popups, tray); other desktops get standard notifications and a tray icon where supported
+  (on GNOME with the "AppIndicator and KStatusNotifierItem Support" extension)
 - Optional: the USB mixer; Home Assistant
 - The mixer and keyboard knobs need your user in the group that owns them (`uucp` or `dialout` for the mixer, `input`
   for keyboard knobs); if one is missing, the app shows the command that adds it

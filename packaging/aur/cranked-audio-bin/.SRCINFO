@@ -19,6 +19,7 @@ pkgbase = cranked-audio-bin
 	depends = libxkbcommon-x11
 	depends = wayland
 	optdepends = pipewire-pulse: PipeWire audio (PulseAudio works too)
+	optdepends = gnome-shell-extension-appindicator: the tray icon on GNOME
 	optdepends = plasma-workspace: the Plasma panel widget
 	provides = cranked-audio
 	conflicts = cranked-audio

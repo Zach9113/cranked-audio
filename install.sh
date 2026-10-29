@@ -93,3 +93,11 @@ if ! systemctl --user is-active --quiet graphical-session.target; then
     echo "  exec $start_line"
   fi
 fi
+# the tray icon needs a StatusNotifier host (Plasma, waybar's tray, GNOME's AppIndicator extension, ...)
+if [ -n "${XDG_CURRENT_DESKTOP:-}" ] && command -v busctl >/dev/null &&
+  ! busctl --user status org.kde.StatusNotifierWatcher >/dev/null 2>&1; then
+  echo "No tray on this desktop, so there's no tray icon. Open Cranked Audio from the app menu instead."
+  case "${XDG_CURRENT_DESKTOP}" in
+  *GNOME*) echo "On GNOME, the 'AppIndicator and KStatusNotifierItem Support' extension adds the tray icon." ;;
+  esac
+fi

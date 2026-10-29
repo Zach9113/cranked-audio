@@ -17,6 +17,8 @@
   your profiles, Edit settings file… and Quit.
 
 ### Linux
+- The installer says when there's no tray to show the icon in (and, on GNOME, which extension adds one); the AUR
+  package lists that extension as optional.
 - The mixer's lights go dark on lock on more desktops: besides KDE's screensaver, the service now also watches
   GNOME's and the lock flag the login manager keeps (logind's LockedHint, set by GNOME, KDE and many Wayland
   lock screens).
