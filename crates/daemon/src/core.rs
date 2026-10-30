@@ -38,9 +38,12 @@ const SAVE_AFTER: Duration = Duration::from_secs(2);
 const CALIBRATION_TIMEOUT: Duration = Duration::from_secs(180);
 /// How many seen app names to remember.
 const SEEN_APPS: usize = 200;
+/// While Auto-lower holds a knob down, its LEDs dim by this share of the volume drop (lowered 30%, they look 15%
+/// dimmer): a hint that it's lowered, without stacking with the idle dimming into nearly dark.
+const DUCKED_LED_SHARE: f64 = 0.5;
+/// How bright lowered knobs' LEDs look at least while Auto-lower holds them down.
+const DUCKED_LED_FLOOR: f64 = 0.7;
 /// While the screen is off, touching a knob or button lights the LEDs for this long.
-/// How bright lowered knobs' LEDs look at least while Auto-lower holds them down (they dim with the volume).
-const DUCKED_LED_FLOOR: f64 = 0.35;
 const WAKE_FOR: Duration = Duration::from_secs(30);
 /// After the mixer connects, knob readings don't move lights for this long (it sends warm-up readings).
 const LIGHTS_SETTLE: Duration = Duration::from_secs(4);
@@ -62,6 +65,11 @@ pub enum Out {
 
 /// The light's new brightness when its knob moves from `previous` to `knob`. If the light was changed elsewhere,
 /// the knob catches up proportionally instead of jumping: the ends still mean off and full.
+/// How bright a lowered knob's LEDs look at Auto-lower's volume `factor` (1 = not lowered).
+fn ducked_led_scale(factor: f64) -> f64 {
+    (1.0 - (1.0 - factor) * DUCKED_LED_SHARE).max(DUCKED_LED_FLOOR)
+}
+
 pub fn catch_up(light: u8, previous: u8, knob: u8) -> u8 {
     let (light, previous, knob) = (i32::from(light.min(100)), i32::from(previous.min(100)), i32::from(knob.min(100)));
     if knob == previous {
@@ -874,7 +882,7 @@ impl Core {
                 muted: self.muted[channel],
                 idle: config.controls_audio() && !playing,
                 scale: if self.auto_lower().dim_leds && self.auto_lower().lowers(channel) {
-                    self.ducker.factor().max(DUCKED_LED_FLOOR)
+                    ducked_led_scale(self.ducker.factor())
                 } else {
                     1.0
                 },
@@ -1446,6 +1454,13 @@ mod tests {
         // a profile without Auto-lower stops all meters
         let out = press(&mut core, 1, start + Duration::from_secs(1));
         assert_eq!(meters(&out), [(4, false)]);
+    }
+
+    #[test]
+    fn lowered_knobs_dim_gently() {
+        assert!((ducked_led_scale(1.0) - 1.0).abs() < 1e-9, "not lowered: full brightness");
+        assert!((ducked_led_scale(0.7) - 0.85).abs() < 1e-9, "lowered 30%: 15% dimmer");
+        assert!((ducked_led_scale(0.0) - DUCKED_LED_FLOOR).abs() < 1e-9, "never darker than the floor");
     }
 
     #[test]
