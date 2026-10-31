@@ -13,6 +13,8 @@
   where it used to start from 0 and drop the knob's apps to 5% on the first step up.
 
 ### Linux
+- Waybar: `cranked-audio --waybar 1` is a panel module for knob 1 (scroll turns it, click presses its button,
+  right-click opens the window), and `--waybar` alone shows every knob; example config and style in `data/waybar/`.
 - Popups on GNOME and other desktops that show them as notifications replace each other: turning a knob updates one
   popup instead of queueing one per step, which showed old values for a while.
 - The tray icon shows up after login on GNOME (and with panels like Waybar that start late): the service now waits
