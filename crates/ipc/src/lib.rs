@@ -99,6 +99,10 @@ pub struct Entity {
 }
 
 /// Something keeping a device from working that the user can fix, with the command that fixes it.
+/// Where a knob with no level yet (no mixer, nothing played) is turned from: apps play at full volume until something
+/// turns them down, so the first step down gives 95% instead of the first step up giving 5%.
+pub const UNKNOWN_LEVEL_STEPS_FROM: u8 = 100;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AccessProblem {
     /// What's wrong, in a sentence.

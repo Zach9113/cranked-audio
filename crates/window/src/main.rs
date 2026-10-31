@@ -300,7 +300,7 @@ impl Link {
     fn current(&self, index: usize) -> u8 {
         match self.sent.get(index).copied().flatten() {
             Some((percent, at)) if at.elapsed() < Duration::from_millis(600) => percent,
-            _ => self.snapshot.knobs.get(index).and_then(|k| k.level).unwrap_or(0),
+            _ => self.snapshot.knobs.get(index).and_then(|k| k.level).unwrap_or(cranked_ipc::UNKNOWN_LEVEL_STEPS_FROM),
         }
     }
 }

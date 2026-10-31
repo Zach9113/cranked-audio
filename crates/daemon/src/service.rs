@@ -366,9 +366,9 @@ impl Service {
         }
     }
 
-    /// Turns `knob` by `delta` percent from where it is now (0 when it has no position yet).
+    /// Turns `knob` by `delta` percent from where it is now (full volume when it has no position yet).
     fn step_knob(&self, knob: usize, delta: i32) -> Option<Event> {
-        let current = i32::from(self.core.knob(knob).unwrap_or(0));
+        let current = i32::from(self.core.knob(knob).unwrap_or(cranked_ipc::UNKNOWN_LEVEL_STEPS_FROM));
         set_knob(knob, saturate_u8((current + delta).clamp(0, 100)))
     }
 
@@ -796,6 +796,16 @@ mod tests {
         assert!(recording.saw(sets(4, 40)), "a fader sets the game to 40%: {:?}", recording.seen);
         events.send(Event::Device(devices::Input::Step { knob: 0, delta: -5 })).unwrap();
         assert!(recording.saw(sets(4, 35)), "a knob turn steps it to 35%: {:?}", recording.seen);
+    }
+
+    #[test]
+    fn a_knob_with_no_level_turns_from_full_volume() {
+        // no mixer and nothing played yet: the first turn mustn't drop the apps to 5%
+        let (events, mut recording) = start_service("unknown", "[[channel]]\nname = \"Game\"\napps = [\"game\"]\n");
+        events.send(Event::AudioReady).unwrap();
+        events.send(Event::Device(devices::Input::Step { knob: 0, delta: -5 })).unwrap();
+        events.send(Event::Stream(app(4, "game", 100.0))).unwrap();
+        assert!(recording.saw(sets(4, 95)), "the game starts at 95%: {:?}", recording.seen);
     }
 
     #[test]
