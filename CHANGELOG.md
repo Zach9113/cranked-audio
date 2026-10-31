@@ -5,6 +5,14 @@
 ### All platforms
 - While Auto-lower holds knobs down, their lights dim half as much as the volume (and never below 70%), instead of
   stacking with the idle dimming until they looked almost off.
+- Without a mixer, the first turn of a knob that has no level yet starts from full volume: one step down gives 95%,
+  where it used to start from 0 and drop the knob's apps to 5% on the first step up.
+
+### Linux
+- Popups on GNOME and other desktops that show them as notifications replace each other: turning a knob updates one
+  popup instead of queueing one per step, which showed old values for a while.
+- The tray icon shows up after login on GNOME (and with panels like Waybar that start late): the service now waits
+  for the tray instead of giving up when it starts first.
 
 ## 2.3.0
 
