@@ -1792,10 +1792,18 @@ fn print_state(watch: bool) -> Result<(), slint::PlatformError> {
     Ok(())
 }
 
-/// Sends a `remote ...` line to the running service, without opening a window.
+/// Sends a `remote ...` line to the running service, without opening a window. It then says it's done and reads
+/// until the service hangs up: on Windows, closing with the service's greeting still unread resets the connection
+/// and the line is lost with it.
 fn send_remote(line: &str) -> Result<(), slint::PlatformError> {
     UnixStream::connect(cranked_ipc::socket_path())
-        .and_then(|mut stream| writeln!(stream, "{line}"))
+        .and_then(|mut stream| {
+            writeln!(stream, "{line}")?;
+            stream.shutdown(std::net::Shutdown::Write)?;
+            stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+            let _ = std::io::copy(&mut stream, &mut std::io::sink());
+            Ok(())
+        })
         .map_err(|error| slint::PlatformError::Other(format!("Cranked Audio isn't running ({error})")))
 }
 
