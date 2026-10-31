@@ -5,6 +5,10 @@
 ### All platforms
 - While Auto-lower holds knobs down, their lights dim half as much as the volume (and never below 70%), instead of
   stacking with the idle dimming until they looked almost off.
+- Scripting on every platform, Windows included: `cranked-audio --state` prints the state as JSON (the same as the
+  D-Bus `GetState`), `--watch` prints it on every change, and `--profile NAME` switches profiles (README, "Scripting").
+- "Open the window" from a shortcut, the tray or a script no longer goes astray when a script happens to be connected
+  to the service: only real windows count as open windows.
 - Without a mixer, the first turn of a knob that has no level yet starts from full volume: one step down gives 95%,
   where it used to start from 0 and drop the knob's apps to 5% on the first step up.
 

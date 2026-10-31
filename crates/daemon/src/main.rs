@@ -68,10 +68,11 @@ pub enum Event {
     HomeAssistantEntities(Vec<cranked_ipc::Entity>),
     /// A watched stream is playing above the Auto-lower threshold.
     Loud(u32),
-    /// A window connected, disconnected or sent a line.
+    /// A client (a window, or a script through `cranked-audio --state` and friends) connected, disconnected or sent
+    /// a line.
     ClientConnected(u64, cranked_ipc::UnixStream),
     ClientDisconnected(u64),
-    ClientLine(String),
+    ClientLine(u64, String),
     Tray(tray::Action),
     /// A request over the D-Bus API.
     Remote(dbus::Request),

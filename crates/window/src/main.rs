@@ -1769,10 +1769,27 @@ fn remote_line(args: &[String]) -> Option<String> {
         ["--press", button] => format!("press {button}"),
         ["--hold", button] => format!("hold {button}"),
         ["--next-profile"] => "next-profile".into(),
+        ["--profile", name] => format!("profile {name}"),
         ["--open-settings"] => "open-settings".into(),
         _ => return None,
     };
     Some(format!("remote {line}"))
+}
+
+/// Prints the service's state as JSON (the same as the D-Bus `State`): once with `--state`, and again on every
+/// change with `--watch`, one line each, until the service stops. For scripts on any platform.
+fn print_state(watch: bool) -> Result<(), slint::PlatformError> {
+    let stream = UnixStream::connect(cranked_ipc::socket_path())
+        .map_err(|error| slint::PlatformError::Other(format!("Cranked Audio isn't running ({error})")))?;
+    let mut out = std::io::stdout().lock();
+    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+        let Ok(ServerMessage::Snapshot(snapshot)) = serde_json::from_str(&line) else { continue };
+        let printed = serde_json::to_string(&snapshot).map_or(Ok(()), |json| writeln!(out, "{json}"));
+        if printed.and_then(|()| out.flush()).is_err() || !watch {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Sends a `remote ...` line to the running service, without opening a window.
@@ -1786,6 +1803,11 @@ fn main() -> Result<(), slint::PlatformError> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(line) = remote_line(&args) {
         return send_remote(&line);
+    }
+    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["--state"] => return print_state(false),
+        ["--watch"] => return print_state(true),
+        _ => {}
     }
     let window = MainWindow::new()?;
     // needs the platform the window just started, and must come before the window is shown
@@ -1911,6 +1933,7 @@ mod tests {
         assert_eq!(line(&["--knob", "1", "-5"]).as_deref(), Some("remote knob 1 -5"));
         assert_eq!(line(&["--press", "3"]).as_deref(), Some("remote press 3"));
         assert_eq!(line(&["--next-profile"]).as_deref(), Some("remote next-profile"));
+        assert_eq!(line(&["--profile", "Night shift"]).as_deref(), Some("remote profile Night shift"));
         assert_eq!(line(&["--page", "settings"]), None, "opens the window as before");
         assert_eq!(line(&[]), None);
     }

@@ -191,6 +191,17 @@ to 40%:
 busctl --user call io.github.zach9113.CrankedAudio /io/github/zach9113/CrankedAudio io.github.zach9113.CrankedAudio1 SetKnob uu 1 40
 ```
 
+On any platform (Windows too), the `cranked-audio` command does the same through the running service, for scripts,
+AutoHotkey, Stream Deck or Rainmeter. Knobs and buttons count from 1 here:
+
+```bash
+cranked-audio --state           # the state as one line of JSON (the same as GetState)
+cranked-audio --watch           # that line again on every change, until the service stops
+cranked-audio --knob 2 40       # also --knob 2 +5, --press 1, --hold 1 (see "Keyboard shortcuts on any desktop")
+cranked-audio --profile Night   # switch to a profile by name (--next-profile cycles them)
+cranked-audio --open-settings
+```
+
 ## Development
 
 If Nix is not installed, run the [official multi-user installer](https://nixos.org/download/):

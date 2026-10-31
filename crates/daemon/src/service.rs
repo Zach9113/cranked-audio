@@ -171,7 +171,8 @@ impl Service {
                 self.clients.remove(id);
                 None
             }
-            Event::ClientLine(line) => {
+            Event::ClientLine(id, line) => {
+                self.clients.heard(id, &line);
                 self.client_line(&line, requests);
                 None
             }
@@ -374,19 +375,19 @@ impl Service {
 
     /// Brings an open window to the front, or starts one.
     fn open_window(&mut self) {
-        if self.clients.is_empty() {
-            spawn_detached(&sibling("cranked-audio"), &[]);
-        } else {
+        if self.clients.has_window() {
             self.clients.send(&ServerMessage::OpenPage(String::new()));
+        } else {
+            spawn_detached(&sibling("cranked-audio"), &[]);
         }
     }
 
     /// Opens the window on its Settings page (or turns an open one there).
     fn open_settings(&mut self) {
-        if self.clients.is_empty() {
-            spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
-        } else {
+        if self.clients.has_window() {
             self.clients.send(&ServerMessage::OpenPage("settings".into()));
+        } else {
+            spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
         }
     }
 
@@ -440,7 +441,7 @@ impl Service {
         let pid = std::process::id().to_string();
         let mut args: Vec<&std::ffi::OsStr> = kept.iter().map(std::ffi::OsString::as_os_str).collect();
         args.extend([std::ffi::OsStr::new("--wait-pid"), std::ffi::OsStr::new(&pid)]);
-        if !self.clients.is_empty() {
+        if self.clients.has_window() {
             args.push("--open-window".as_ref());
         }
         spawn_detached(&sibling("cranked-audiod"), &args);

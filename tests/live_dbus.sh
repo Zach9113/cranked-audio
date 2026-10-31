@@ -56,5 +56,17 @@ property_level=$(busctl --user --json=short get-property -- "$CRANKED_DBUS_NAME"
 check "the State property matches GetState" "$property_level" "25"
 check "State changes are announced (PropertiesChanged)" \
   "$([ "$(grep -c 'member=PropertiesChanged' "$work/property-signals")" -ge 3 ] && echo yes || echo no)" "yes"
+# scripting without D-Bus (Windows, or any shell): --state, --watch and --profile over the service's socket
+cli_state() { "$window_bin" --state | python3 -c "
+import json, sys
+s = json.load(sys.stdin); print(s['profile'], s['knobs'][0]['level'])"; }
+check "cranked-audio --state" "$(cli_state)" "Two 25"
+timeout 3 "$window_bin" --watch > "$work/watched" &
+sleep 0.5
+"$window_bin" --knob 1 -10; sleep 0.3
+"$window_bin" --profile One; sleep 0.3
+check "cranked-audio --profile One" "$(cli_state)" "One 15"
+wait %?watch 2>/dev/null
+check "cranked-audio --watch prints every change" "$([ "$(wc -l < "$work/watched")" -ge 3 ] && echo yes || echo no)" "yes"
 kill $daemon 2>/dev/null; wait 2>/dev/null; rm -rf "$work"
 echo "failures: $fails"; exit $fails
