@@ -106,8 +106,10 @@ impl crate::tray::TrayIcon for StatusNotifier {
     }
 }
 
+/// Waits for a tray to appear instead of giving up: at login the service often starts before the panel (GNOME's
+/// `AppIndicator` extension, Waybar), and the icon shows up as soon as one does.
 fn start(tray: Tray) -> Option<Handle<Tray>> {
-    match tray.spawn() {
+    match tray.assume_sni_available(true).spawn() {
         Ok(handle) => Some(handle),
         Err(e) => {
             eprintln!("tray: not available ({e})");
