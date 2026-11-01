@@ -77,7 +77,7 @@ jobs:
           sudo usermod -aG input "$USER"
 
       - name: Build
-        run: cargo build --release --workspace --examples
+        run: cargo build --release --workspace --bins --examples
 
       - name: Live suites
         run: |
