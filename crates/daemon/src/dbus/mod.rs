@@ -41,6 +41,7 @@ pub fn remote_request(line: &str) -> Option<RemoteLine> {
         ["press", button] => return Some(RemoteLine::Press(number(button)?)),
         ["hold", button] => return Some(RemoteLine::Hold(number(button)?)),
         ["next-profile"] => Request::NextProfile,
+        ["profile", name @ ..] if !name.is_empty() => Request::Profile(name.join(" ")),
         ["open-window"] => Request::OpenWindow,
         ["open-settings"] => Request::OpenSettings,
         _ => return None,
@@ -83,6 +84,8 @@ mod tests {
         assert_eq!(request("press 1"), Some(RemoteLine::Press(0)));
         assert_eq!(request("hold 4"), Some(RemoteLine::Hold(3)));
         assert_eq!(request("next-profile"), Some(RemoteLine::Request(Request::NextProfile)));
+        assert_eq!(request("profile Night shift"), Some(RemoteLine::Request(Request::Profile("Night shift".into()))));
+        assert_eq!(request("profile"), None, "a profile needs a name");
         assert_eq!(request("knob 0 +5"), None, "there is no knob 0");
         assert_eq!(request("dance"), None);
     }

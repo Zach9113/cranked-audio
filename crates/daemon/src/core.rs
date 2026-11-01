@@ -511,7 +511,7 @@ impl Core {
             }
             Event::ClientConnected(..)
             | Event::ClientDisconnected(_)
-            | Event::ClientLine(_)
+            | Event::ClientLine(..)
             | Event::Tray(_)
             | Event::HomeAssistantEntities(_)
             | Event::UpdateCheckResult(_)

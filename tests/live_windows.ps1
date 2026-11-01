@@ -71,6 +71,18 @@ try {
     Check 'B was never muted' ([Mixer]::Muted($b)) 'false '
     Check 'the output volume was left alone' ([Mixer]::OutputVolume()) $outputBefore
 
+    # scripting through the window program (the same JSON as the Linux D-Bus State), knobs counted from 1
+    $cli = Join-Path (Split-Path $Bin) 'cranked-audio.exe'
+    $state = (& $cli --state | Out-String | ConvertFrom-Json)
+    Check 'cranked-audio --state' "$($state.knobs[0].name) $($state.knobs[0].level)" 'A 60'
+    $watch = Start-Process $cli -ArgumentList '--watch' -RedirectStandardOutput "$work\watched" -PassThru -WindowStyle Hidden
+    Start-Sleep -Milliseconds 700
+    & $cli --knob 1 40 | Out-Null; Start-Sleep -Milliseconds 700
+    Check 'cranked-audio --knob 1 40' ([Mixer]::Volume($a)) '40 '
+    & $cli --knob 1 +5 | Out-Null; Start-Sleep -Milliseconds 700
+    Stop-Process -Id $watch.Id -ErrorAction SilentlyContinue
+    Check 'cranked-audio --watch prints every change' ((Get-Content "$work\watched").Count -ge 3) 'True'
+
     Start-Sleep 2
     $service = Get-Process cranked-audiod | Where-Object { $_.Path -eq $Bin } | Select-Object -First 1
     $cpu0 = $service.TotalProcessorTime; Start-Sleep 2; $service.Refresh()

@@ -128,6 +128,8 @@ export global General {
     callback open-shortcuts();
     in-out property <bool> shortcuts-open: false;
     in-out property <bool> inline-shortcuts: false;
+    /// The desktop's own shortcut settings were opened in a window of their own (KDE, GNOME).
+    in-out property <bool> shortcuts-elsewhere: false;
     in-out property <[string]> shortcut-labels;
     in-out property <[string]> shortcut-keys;
     callback set-shortcut(int, string);
@@ -720,7 +722,9 @@ export component GeneralPage inherits ScrollView {
                 spacing: 8px;
                 Hint {
                     text: "This profile has " + Lists.knob-names.length + " knob" + (Lists.knob-names.length == 1 ? "" : "s")
-                        + ". A mixer drives the first five; the rest work from this window, the panel widget and scripts.";
+                        + (General.has-mixer
+                            ? ". A mixer drives the first five; the rest work from this window, the panel widget and scripts."
+                            : ". They work from this window, the panel widget, keyboard shortcuts and scripts.");
                 }
                 HorizontalLayout {
                     alignment: start;
@@ -753,6 +757,9 @@ export component GeneralPage inherits ScrollView {
                             edited(val) => { General.set-shortcut(i, val); }
                         }
                     }
+                }
+                if General.shortcuts-elsewhere: Hint {
+                    text: "Your desktop's shortcut settings opened in a window of their own. Don't see it? It may be behind this one: look in the overview or the task bar.";
                 }
                 if General.shortcuts-open && !General.inline-shortcuts: VerticalLayout {
                     spacing: 6px;

@@ -129,8 +129,16 @@ where
     Ok(())
 }
 
-/// Fallback for non-KDE environments (GNOME, Sway, Hyprland, XFCE): standard freedesktop notifications.
-fn notify(bus: &Connection, icon: &str, summary: &str, body: &str, value: Option<i32>) -> zbus::Result<()> {
+/// Fallback for non-KDE environments (GNOME, Sway, Hyprland, XFCE): standard freedesktop notifications. Each one
+/// replaces the last (`shown` keeps its id), so turning a knob updates one popup instead of queueing one per step.
+fn notify(
+    bus: &Connection,
+    shown: &mut u32,
+    icon: &str,
+    summary: &str,
+    body: &str,
+    value: Option<i32>,
+) -> zbus::Result<()> {
     let mut hints = HashMap::<&str, Value>::new();
     hints.insert("transient", Value::from(true));
     if let Some(val) = value {
@@ -138,17 +146,25 @@ fn notify(bus: &Connection, icon: &str, summary: &str, body: &str, value: Option
         hints.insert("x-canonical-private-synchronous", Value::from("volume"));
     }
     let actions: &[&str] = &[];
-    bus.call_method(
+    let reply = bus.call_method(
         Some("org.freedesktop.Notifications"),
         "/org/freedesktop/Notifications",
         Some("org.freedesktop.Notifications"),
         "Notify",
-        &("Cranked Audio", 0_u32, icon, summary, body, actions, hints, 1000_i32),
+        &("Cranked Audio", *shown, icon, summary, body, actions, hints, 1000_i32),
     )?;
+    *shown = reply.body().deserialize()?;
     Ok(())
 }
 
-fn popup(bus: &Connection, style: PopupStyle, volume: Option<u8>, icon: &str, text: &str) -> zbus::Result<()> {
+fn popup(
+    bus: &Connection,
+    shown: &mut u32,
+    style: PopupStyle,
+    volume: Option<u8>,
+    icon: &str,
+    text: &str,
+) -> zbus::Result<()> {
     let island_running = matches!(style, PopupStyle::Auto | PopupStyle::Island) && has_owner(bus, ATOLL);
     let mut last = Ok(());
     for target in route(style, island_running) {
@@ -157,8 +173,8 @@ fn popup(bus: &Connection, style: PopupStyle, volume: Option<u8>, icon: &str, te
             (PopupStyle::Island, None) => island(bus, "showText", &(icon, text)),
             (PopupStyle::Kde, Some(percent)) => osd(bus, "mediaPlayerVolumeChanged", &(i32::from(percent), text, icon)),
             (PopupStyle::Kde, None) => osd(bus, "showText", &(icon, text)),
-            (_, Some(percent)) => notify(bus, icon, &format!("{text} {percent}%"), "", Some(i32::from(percent))),
-            (_, None) => notify(bus, icon, text, "", None),
+            (_, Some(percent)) => notify(bus, shown, icon, &format!("{text} {percent}%"), "", Some(i32::from(percent))),
+            (_, None) => notify(bus, shown, icon, text, "", None),
         };
         if last.is_ok() {
             break;
@@ -167,11 +183,14 @@ fn popup(bus: &Connection, style: PopupStyle, volume: Option<u8>, icon: &str, te
     last
 }
 
-fn run_one(bus: &Connection, command: Command) -> zbus::Result<()> {
+/// `shown`: the notification popup on screen (0 for none), which the next one replaces.
+fn run_one(bus: &Connection, shown: &mut u32, command: Command) -> zbus::Result<()> {
     match command {
         Command::Media(key) => media(bus, key),
-        Command::Volume { percent, name, style } => popup(bus, style, Some(percent), volume_icon(percent), &name),
-        Command::Text { icon, text, style } => popup(bus, style, None, &icon, &text),
+        Command::Volume { percent, name, style } => {
+            popup(bus, shown, style, Some(percent), volume_icon(percent), &name)
+        }
+        Command::Text { icon, text, style } => popup(bus, shown, style, None, &icon, &text),
     }
 }
 
@@ -192,13 +211,14 @@ impl crate::desktop::Desktop for Plasma {
 fn run(commands: Receiver<Command>) {
     let mut bus: Option<Connection> = None;
     let mut warned_popup = false;
+    let mut shown_notification = 0;
     for command in commands {
         if bus.is_none() {
             bus = Connection::session().map_err(|e| eprintln!("desktop: no session bus ({e})")).ok();
         }
         let Some(connection) = &bus else { continue };
         let is_popup = !matches!(command, Command::Media(_));
-        if let Err(e) = run_one(connection, command) {
+        if let Err(e) = run_one(connection, &mut shown_notification, command) {
             if !is_popup {
                 eprintln!("media: {e}");
             } else if !warned_popup {

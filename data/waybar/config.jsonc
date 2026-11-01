@@ -1,0 +1,23 @@
+// Cranked Audio in Waybar: one module per knob. Add "custom/cranked-1" (and -2, -3, ...) to a modules list, and
+// copy each block below into your Waybar config, changing the knob number. Waybar may not have ~/.local/bin on its
+// PATH; if the module stays empty, write the full path (/home/you/.local/bin/cranked-audio).
+{
+    "custom/cranked-1": {
+        "exec": "cranked-audio --waybar 1",
+        "return-type": "json",
+        "format": "{}",
+        "on-scroll-up": "cranked-audio --knob 1 +2",
+        "on-scroll-down": "cranked-audio --knob 1 -2",
+        "on-click": "cranked-audio --press 1",
+        "on-click-right": "cranked-audio",
+        "tooltip": true
+    },
+    // or all knobs in one module (click opens the window)
+    "custom/cranked": {
+        "exec": "cranked-audio --waybar",
+        "return-type": "json",
+        "format": "{}",
+        "on-click": "cranked-audio",
+        "tooltip": true
+    }
+}

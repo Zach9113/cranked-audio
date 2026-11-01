@@ -139,8 +139,13 @@ pub fn midi_input(controls: &[MidiControl], message: &[u8]) -> Option<Input> {
     Some(Input::Set { knob, percent: saturate_u8((u32::from(value) * 100 + 63) / 127) })
 }
 
+/// A MIDI client, when the system can do MIDI.
+fn midi_client(client: &str) -> Option<midir::MidiInput> {
+    crate::platform::midi_available().then(|| midir::MidiInput::new(client).ok()).flatten()
+}
+
 pub fn midi_ports() -> Vec<String> {
-    let Ok(input) = midir::MidiInput::new("Cranked Audio") else { return Vec::new() };
+    let Some(input) = midi_client("Cranked Audio") else { return Vec::new() };
     input.ports().iter().filter_map(|p| input.port_name(p).ok()).filter(|n| !n.contains("Cranked Audio")).collect()
 }
 
@@ -179,7 +184,7 @@ impl InputSource for MidiController {
 fn midi(name: &str, controls: &[MidiControl], events: &Sender<Event>, current: &dyn Fn() -> bool) {
     let mut reported = false;
     while current() {
-        let Ok(input) = midir::MidiInput::new("Cranked Audio") else {
+        let Some(input) = midi_client("Cranked Audio") else {
             std::thread::sleep(RETRY);
             continue;
         };
@@ -220,12 +225,12 @@ fn midi(name: &str, controls: &[MidiControl], events: &Sender<Event>, current: &
 
 /// Listens on every MIDI port for up to `wait` and reports the first knob, fader, button or pad that moves.
 pub fn learn_midi(events: &Sender<Event>, wait: Duration) {
-    let Ok(probe) = midir::MidiInput::new("Cranked Audio") else { return };
+    let Some(probe) = midi_client("Cranked Audio") else { return };
     let ports = probe.ports();
     let (found, heard) = std::sync::mpsc::channel::<Learned>();
     let mut connections = Vec::new();
     for port in ports {
-        let Ok(input) = midir::MidiInput::new("Cranked Audio learn") else { continue };
+        let Some(input) = midi_client("Cranked Audio learn") else { continue };
         let port_name = input.port_name(&port).unwrap_or_default();
         if port_name.contains("Cranked Audio") || port_name.starts_with("Midi Through") {
             continue;

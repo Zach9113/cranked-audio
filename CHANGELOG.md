@@ -2,9 +2,32 @@
 
 ## Unreleased
 
+### Linux
+- No more ALSA errors in the log on systems without MIDI support (no `/dev/snd/seq`): the service doesn't look for
+  MIDI ports there.
+- After "Set shortcuts…" opens the desktop's own shortcut settings, the window says so, since GNOME often opens them
+  behind it.
+- Settings no longer talks about a mixer to people who don't have one.
+
+## 2.4.0
+
 ### All platforms
 - While Auto-lower holds knobs down, their lights dim half as much as the volume (and never below 70%), instead of
   stacking with the idle dimming until they looked almost off.
+- Scripting on every platform, Windows included: `cranked-audio --state` prints the state as JSON (the same as the
+  D-Bus `GetState`), `--watch` prints it on every change, and `--profile NAME` switches profiles (README, "Scripting").
+- "Open the window" from a shortcut, the tray or a script no longer goes astray when a script happens to be connected
+  to the service: only real windows count as open windows.
+- Without a mixer, the first turn of a knob that has no level yet starts from full volume: one step down gives 95%,
+  where it used to start from 0 and drop the knob's apps to 5% on the first step up.
+
+### Linux
+- Waybar: `cranked-audio --waybar 1` is a panel module for knob 1 (scroll turns it, click presses its button,
+  right-click opens the window), and `--waybar` alone shows every knob; example config and style in `data/waybar/`.
+- Popups on GNOME and other desktops that show them as notifications replace each other: turning a knob updates one
+  popup instead of queueing one per step, which showed old values for a while.
+- The tray icon shows up after login on GNOME (and with panels like Waybar that start late): the service now waits
+  for the tray instead of giving up when it starts first.
 
 ## 2.3.0
 

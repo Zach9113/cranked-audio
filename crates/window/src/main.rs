@@ -5,6 +5,7 @@
 
 mod editor;
 mod themes;
+mod waybar;
 
 use std::cell::RefCell;
 use std::f64::consts::PI;
@@ -300,7 +301,7 @@ impl Link {
     fn current(&self, index: usize) -> u8 {
         match self.sent.get(index).copied().flatten() {
             Some((percent, at)) if at.elapsed() < Duration::from_millis(600) => percent,
-            _ => self.snapshot.knobs.get(index).and_then(|k| k.level).unwrap_or(0),
+            _ => self.snapshot.knobs.get(index).and_then(|k| k.level).unwrap_or(cranked_ipc::UNKNOWN_LEVEL_STEPS_FROM),
         }
     }
 }
@@ -1428,6 +1429,10 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             let editor = link.snapshot.shortcut_editor;
             if editor == ShortcutEditor::Desktop {
                 link.send("open-shortcuts");
+                // desktops often open it behind this window (focus-stealing prevention), so say where it went
+                if let Some(w) = weak.upgrade() {
+                    w.global::<General>().set_shortcuts_elsewhere(true);
+                }
                 return;
             }
             if let Some(w) = weak.upgrade() {
@@ -1769,16 +1774,77 @@ fn remote_line(args: &[String]) -> Option<String> {
         ["--press", button] => format!("press {button}"),
         ["--hold", button] => format!("hold {button}"),
         ["--next-profile"] => "next-profile".into(),
+        ["--profile", name] => format!("profile {name}"),
         ["--open-settings"] => "open-settings".into(),
         _ => return None,
     };
     Some(format!("remote {line}"))
 }
 
-/// Sends a `remote ...` line to the running service, without opening a window.
+/// What the state commands print.
+#[derive(Clone, Copy)]
+enum StateOutput {
+    /// The state as JSON (the same as the D-Bus `State`): `--state` once, `--watch` on every change.
+    Json { watch: bool },
+    /// A Waybar custom module (one knob, from 0, or all), on every change.
+    Waybar(Option<usize>),
+}
+
+/// Prints the service's state, one line each: once, or on every change until the service stops. For scripts and
+/// panels on any platform.
+fn print_state(output: StateOutput) -> Result<(), slint::PlatformError> {
+    let stream = UnixStream::connect(cranked_ipc::socket_path())
+        .map_err(|error| slint::PlatformError::Other(format!("Cranked Audio isn't running ({error})")))?;
+    let _ = print_states(stream, output);
+    Ok(())
+}
+
+/// Writes a line per state the service sends; an error means stdout is gone (the panel or the pipe closed).
+fn print_states(stream: UnixStream, output: StateOutput) -> std::io::Result<()> {
+    let mut out = std::io::stdout().lock();
+    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+        let Ok(ServerMessage::Snapshot(snapshot)) = serde_json::from_str(&line) else { continue };
+        let json = match output {
+            StateOutput::Json { watch: _ } => serde_json::to_string(&snapshot),
+            StateOutput::Waybar(knob) => serde_json::to_string(&waybar::module(&snapshot, knob)),
+        };
+        writeln!(out, "{}", json.unwrap_or_default())?;
+        out.flush()?;
+        if matches!(output, StateOutput::Json { watch: false }) {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// `--waybar [KNOB]`: keeps a Waybar module going for as long as Waybar reads it, waiting for the service while it
+/// isn't running (at login the panel often starts first) and showing nothing meanwhile.
+fn run_waybar_module(knob: Option<usize>) -> Result<(), slint::PlatformError> {
+    let not_running = serde_json::json!({ "text": "", "tooltip": "Cranked Audio isn't running" }).to_string();
+    loop {
+        let shown = match UnixStream::connect(cranked_ipc::socket_path()) {
+            Ok(stream) => print_states(stream, StateOutput::Waybar(knob)),
+            Err(_) => writeln!(std::io::stdout(), "{not_running}").and_then(|()| std::io::stdout().flush()),
+        };
+        if shown.is_err() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_secs(3));
+    }
+}
+
+/// Sends a `remote ...` line to the running service, without opening a window. It then says it's done and reads
+/// until the service hangs up: on Windows, closing with the service's greeting still unread resets the connection
+/// and the line is lost with it.
 fn send_remote(line: &str) -> Result<(), slint::PlatformError> {
     UnixStream::connect(cranked_ipc::socket_path())
-        .and_then(|mut stream| writeln!(stream, "{line}"))
+        .and_then(|mut stream| {
+            writeln!(stream, "{line}")?;
+            stream.shutdown(std::net::Shutdown::Write)?;
+            stream.set_read_timeout(Some(Duration::from_secs(2)))?;
+            let _ = std::io::copy(&mut stream, &mut std::io::sink());
+            Ok(())
+        })
         .map_err(|error| slint::PlatformError::Other(format!("Cranked Audio isn't running ({error})")))
 }
 
@@ -1786,6 +1852,19 @@ fn main() -> Result<(), slint::PlatformError> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(line) = remote_line(&args) {
         return send_remote(&line);
+    }
+    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+        ["--state"] => return print_state(StateOutput::Json { watch: false }),
+        ["--watch"] => return print_state(StateOutput::Json { watch: true }),
+        ["--waybar"] => return run_waybar_module(None),
+        ["--waybar", knob] => {
+            let knob = knob.parse::<usize>().ok().and_then(|number| number.checked_sub(1));
+            return knob.map_or_else(
+                || Err(slint::PlatformError::Other("--waybar takes a knob number, counting from 1".into())),
+                |knob| run_waybar_module(Some(knob)),
+            );
+        }
+        _ => {}
     }
     let window = MainWindow::new()?;
     // needs the platform the window just started, and must come before the window is shown
@@ -1911,6 +1990,7 @@ mod tests {
         assert_eq!(line(&["--knob", "1", "-5"]).as_deref(), Some("remote knob 1 -5"));
         assert_eq!(line(&["--press", "3"]).as_deref(), Some("remote press 3"));
         assert_eq!(line(&["--next-profile"]).as_deref(), Some("remote next-profile"));
+        assert_eq!(line(&["--profile", "Night shift"]).as_deref(), Some("remote profile Night shift"));
         assert_eq!(line(&["--page", "settings"]), None, "opens the window as before");
         assert_eq!(line(&[]), None);
     }

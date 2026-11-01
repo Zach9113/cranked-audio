@@ -171,7 +171,8 @@ impl Service {
                 self.clients.remove(id);
                 None
             }
-            Event::ClientLine(line) => {
+            Event::ClientLine(id, line) => {
+                self.clients.heard(id, &line);
                 self.client_line(&line, requests);
                 None
             }
@@ -366,27 +367,27 @@ impl Service {
         }
     }
 
-    /// Turns `knob` by `delta` percent from where it is now (0 when it has no position yet).
+    /// Turns `knob` by `delta` percent from where it is now (full volume when it has no position yet).
     fn step_knob(&self, knob: usize, delta: i32) -> Option<Event> {
-        let current = i32::from(self.core.knob(knob).unwrap_or(0));
+        let current = i32::from(self.core.knob(knob).unwrap_or(cranked_ipc::UNKNOWN_LEVEL_STEPS_FROM));
         set_knob(knob, saturate_u8((current + delta).clamp(0, 100)))
     }
 
     /// Brings an open window to the front, or starts one.
     fn open_window(&mut self) {
-        if self.clients.is_empty() {
-            spawn_detached(&sibling("cranked-audio"), &[]);
-        } else {
+        if self.clients.has_window() {
             self.clients.send(&ServerMessage::OpenPage(String::new()));
+        } else {
+            spawn_detached(&sibling("cranked-audio"), &[]);
         }
     }
 
     /// Opens the window on its Settings page (or turns an open one there).
     fn open_settings(&mut self) {
-        if self.clients.is_empty() {
-            spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
-        } else {
+        if self.clients.has_window() {
             self.clients.send(&ServerMessage::OpenPage("settings".into()));
+        } else {
+            spawn_detached(&sibling("cranked-audio"), &["--page".as_ref(), "settings".as_ref()]);
         }
     }
 
@@ -440,7 +441,7 @@ impl Service {
         let pid = std::process::id().to_string();
         let mut args: Vec<&std::ffi::OsStr> = kept.iter().map(std::ffi::OsString::as_os_str).collect();
         args.extend([std::ffi::OsStr::new("--wait-pid"), std::ffi::OsStr::new(&pid)]);
-        if !self.clients.is_empty() {
+        if self.clients.has_window() {
             args.push("--open-window".as_ref());
         }
         spawn_detached(&sibling("cranked-audiod"), &args);
@@ -796,6 +797,16 @@ mod tests {
         assert!(recording.saw(sets(4, 40)), "a fader sets the game to 40%: {:?}", recording.seen);
         events.send(Event::Device(devices::Input::Step { knob: 0, delta: -5 })).unwrap();
         assert!(recording.saw(sets(4, 35)), "a knob turn steps it to 35%: {:?}", recording.seen);
+    }
+
+    #[test]
+    fn a_knob_with_no_level_turns_from_full_volume() {
+        // no mixer and nothing played yet: the first turn mustn't drop the apps to 5%
+        let (events, mut recording) = start_service("unknown", "[[channel]]\nname = \"Game\"\napps = [\"game\"]\n");
+        events.send(Event::AudioReady).unwrap();
+        events.send(Event::Device(devices::Input::Step { knob: 0, delta: -5 })).unwrap();
+        events.send(Event::Stream(app(4, "game", 100.0))).unwrap();
+        assert!(recording.saw(sets(4, 95)), "the game starts at 95%: {:?}", recording.seen);
     }
 
     #[test]

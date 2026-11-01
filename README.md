@@ -177,6 +177,14 @@ cranked-audio --open-settings
 For example in Hyprland, `bind = SUPER, F2, exec, cranked-audio --knob 2 +5`; in Sway,
 `bindsym $mod+F2 exec cranked-audio --knob 2 +5`; on GNOME, Settings, Keyboard, Custom Shortcuts.
 
+## Waybar (Hyprland, Sway and other panels)
+
+`cranked-audio --waybar 1` keeps a Waybar custom module up to date with knob 1 (`--waybar` alone shows all knobs in
+one). Scroll turns the knob, click presses its button, right-click opens the window, and the tooltip says what's
+playing. The module waits for the service at login and shows nothing until it's running. Copy the blocks from
+[`data/waybar/config.jsonc`](data/waybar/config.jsonc) into your Waybar config and add `"custom/cranked-1"` to a
+modules list; [`data/waybar/style.css`](data/waybar/style.css) styles muted, lowered and idle knobs.
+
 ## Scripting
 
 Cranked Audio answers on the session bus as `io.github.zach9113.CrankedAudio` (object
@@ -189,6 +197,17 @@ to 40%:
 
 ```bash
 busctl --user call io.github.zach9113.CrankedAudio /io/github/zach9113/CrankedAudio io.github.zach9113.CrankedAudio1 SetKnob uu 1 40
+```
+
+On any platform (Windows too), the `cranked-audio` command does the same through the running service, for scripts,
+AutoHotkey, Stream Deck or Rainmeter. Knobs and buttons count from 1 here:
+
+```bash
+cranked-audio --state           # the state as one line of JSON (the same as GetState)
+cranked-audio --watch           # that line again on every change, until the service stops
+cranked-audio --knob 2 40       # also --knob 2 +5, --press 1, --hold 1 (see "Keyboard shortcuts on any desktop")
+cranked-audio --profile Night   # switch to a profile by name (--next-profile cycles them)
+cranked-audio --open-settings
 ```
 
 ## Development

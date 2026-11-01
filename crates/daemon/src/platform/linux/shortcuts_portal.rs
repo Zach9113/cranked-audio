@@ -105,7 +105,7 @@ impl Portal {
         crate::platform::spawn_thread("shortcuts", move || {
             if let Err(e) = bind_and_listen(&events, knobs, &slot, prompt, &binding) {
                 binding.store(false, Ordering::SeqCst);
-                eprintln!("shortcuts: the desktop's shortcut portal isn't available ({e})");
+                eprintln!("shortcuts: the desktop's shortcut portal didn't set them up ({e})");
             }
         });
     }

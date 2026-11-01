@@ -1,0 +1,15 @@
+/* Cranked Audio in Waybar: the knob modules get the classes muted, lowered (Auto-lower holds them down) and idle
+   (nothing playing on the knob). Add to your Waybar style.css and change to taste. */
+#custom-cranked-1, #custom-cranked-2, #custom-cranked-3, #custom-cranked-4, #custom-cranked-5 {
+    padding: 0 8px;
+}
+#custom-cranked-1.idle, #custom-cranked-2.idle, #custom-cranked-3.idle, #custom-cranked-4.idle, #custom-cranked-5.idle {
+    opacity: 0.6;
+}
+#custom-cranked-1.lowered, #custom-cranked-2.lowered, #custom-cranked-3.lowered, #custom-cranked-4.lowered,
+#custom-cranked-5.lowered {
+    font-style: italic;
+}
+#custom-cranked-1.muted, #custom-cranked-2.muted, #custom-cranked-3.muted, #custom-cranked-4.muted, #custom-cranked-5.muted {
+    text-decoration: line-through;
+}

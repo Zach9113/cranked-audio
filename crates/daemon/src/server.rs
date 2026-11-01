@@ -41,7 +41,7 @@ pub fn run(listener: &UnixListener, events: &Sender<Event>) {
         let events = events.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(client).lines().map_while(Result::ok) {
-                if events.send(Event::ClientLine(line)).is_err() {
+                if events.send(Event::ClientLine(id, line)).is_err() {
                     return;
                 }
             }
@@ -50,16 +50,30 @@ pub fn run(listener: &UnixListener, events: &Sender<Event>) {
     }
 }
 
-/// Connected windows; each gets every new snapshot as one JSON line.
+/// Connected clients; each gets every new snapshot as one JSON line.
 #[derive(Default)]
 pub struct Clients {
     streams: Vec<(u64, UnixStream)>,
+    /// The clients that are windows: they talk to the service (`get-config` first). Scripts only send `remote ...`
+    /// lines or just listen (`cranked-audio --watch`), so "open the window" never goes to one of them.
+    windows: Vec<u64>,
     last: Option<String>,
 }
 
 impl Clients {
     pub fn is_empty(&self) -> bool {
         self.streams.is_empty()
+    }
+
+    pub fn has_window(&self) -> bool {
+        self.streams.iter().any(|(id, _)| self.windows.contains(id))
+    }
+
+    /// Notes what `id` sent: any line but a `remote ...` one comes from a window.
+    pub fn heard(&mut self, id: u64, line: &str) {
+        if !line.starts_with("remote ") && !self.windows.contains(&id) {
+            self.windows.push(id);
+        }
     }
 
     pub fn add(&mut self, id: u64, mut stream: UnixStream, snapshot: &cranked_ipc::Snapshot) {
@@ -72,6 +86,7 @@ impl Clients {
 
     pub fn remove(&mut self, id: u64) {
         self.streams.retain(|(cid, _)| *cid != id);
+        self.windows.retain(|window| *window != id);
     }
 
     /// Sends the snapshot if it changed; drops windows that went away.
