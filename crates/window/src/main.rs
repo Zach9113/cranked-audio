@@ -1429,6 +1429,10 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
             let editor = link.snapshot.shortcut_editor;
             if editor == ShortcutEditor::Desktop {
                 link.send("open-shortcuts");
+                // desktops often open it behind this window (focus-stealing prevention), so say where it went
+                if let Some(w) = weak.upgrade() {
+                    w.global::<General>().set_shortcuts_elsewhere(true);
+                }
                 return;
             }
             if let Some(w) = weak.upgrade() {

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Linux
+- No more ALSA errors in the log on systems without MIDI support (no `/dev/snd/seq`): the service doesn't look for
+  MIDI ports there.
+- After "Set shortcuts…" opens the desktop's own shortcut settings, the window says so, since GNOME often opens them
+  behind it.
+- Settings no longer talks about a mixer to people who don't have one.
+
 ## 2.4.0
 
 ### All platforms
