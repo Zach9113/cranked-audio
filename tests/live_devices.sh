@@ -23,6 +23,14 @@ stream() {
     '.[] | select(.properties."application.name" == $app) | "\((.volume | to_entries[0].value.value) * 100 / 65536 | round)\(if .mute then " muted" else "" end)"'
 }
 system_volume() { pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -1; }
+# the streams start at full volume whatever the session manager's default for new streams is (WirePlumber 0.4
+# starts them lower)
+sleep 0.5
+for app in kb midi deej; do
+  index=$(pactl -f json list sink-inputs | jq --arg app "cranked-selftest-$app" \
+    '[.[] | select(.properties."application.name" == $app)][0].index')
+  pactl set-sink-input-volume "$index" 100%
+done
 
 # the virtual devices
 socat pty,raw,echo=0,link="$work/deej-box" pty,raw,echo=0,link="$work/deej-us" &
@@ -37,7 +45,7 @@ for line in open(sys.argv[1]):
     ui.write(e.EV_KEY, key, 0); ui.syn()
 ui.close()
 PY
-"$here/../target/release/examples/midi_virtual" < "$work/midi" &
+[ -e /dev/snd/seq ] && "$here/../target/release/examples/midi_virtual" < "$work/midi" &
 exec 3> "$work/keys" 4> "$work/midi"
 sleep 0.5
 

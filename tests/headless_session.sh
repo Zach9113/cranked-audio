@@ -19,6 +19,11 @@ for _ in $(seq 1 50); do
 done
 pactl info >/dev/null || { echo "headless session: PipeWire's Pulse server didn't start" >&2; exit 1; }
 # a sink to be the default, as a desktop always has one (the suites add their own null sinks next to it)
-pactl load-module module-null-sink sink_name=headless_default >/dev/null
+# right after start the Pulse server answers before it can load modules ("Not supported"), so try for a while
+for _ in $(seq 1 50); do
+  pactl load-module module-null-sink sink_name=headless_default >/dev/null 2>&1 && break
+  sleep 0.2
+done
+pactl list short sinks | grep -q headless_default || { echo "headless session: no default sink" >&2; exit 1; }
 pactl set-default-sink headless_default
 "$@"
