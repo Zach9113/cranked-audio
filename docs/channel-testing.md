@@ -70,12 +70,13 @@ Each step is small enough to review on its own:
 7. **VM scripts** and `docs/releasing.md` (tier 3).
 8. **Nix package**, with Thomas (see below).
 
-## Decisions needed
+## Decisions
 
-- **glibc floor (Zach and Thomas).** Build the tarball and AppImage on Ubuntu 22.04 (glibc 2.35: also runs on
-  Debian 12, Mint 21 and older Fedora) instead of the newest Ubuntu? Recommended: yes. It costs nothing at runtime
-  and widens who can run the prebuilt release.
-- **Nix (Thomas).** Add a `packages.default` to the flake so `nix build` and `nix run` work and CI can test it, or
-  leave Nix users to nixpkgs? Thomas owns the Nix side, so it's his call.
-- **Does a failing channel block the release?** Recommended: yes. The draft stays a draft until it's fixed, or
-  until someone decides to publish anyway.
+- **glibc floor: decided (Zach, 2026-11-01).** The tarball and AppImage are built on Ubuntu 22.04 (glibc 2.35), so
+  they also run on Debian 12, Mint 21 and older Fedora. The channel tests include those older systems.
+- **A failing channel blocks the release: decided (Zach, 2026-11-01).** The release stays a draft until every
+  channel passes, or until someone decides to publish it anyway.
+- **Nix: open, Thomas's call.** Add a `packages.default` to the flake so `nix build` and `nix run` work and CI can
+  test it, or leave Nix users to nixpkgs?
+- **Tools are pinned.** Everything the release build downloads is pinned to a version and checksum: the 2.4.0
+  build broke when appimagetool's "continuous" build started refusing SVG icons overnight.
