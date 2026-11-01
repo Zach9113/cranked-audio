@@ -12,14 +12,16 @@ echo "Building release binaries..."
 
 echo "Assembling AppDir at $appdir..."
 rm -rf "$appdir"
-mkdir -p "$appdir/usr/bin" "$appdir/usr/share/icons/hicolor/scalable/apps" "$appdir/usr/share/applications"
+mkdir -p "$appdir/usr/bin" "$appdir/usr/share/icons/hicolor/scalable/apps" "$appdir/usr/share/icons/hicolor/256x256/apps" \
+  "$appdir/usr/share/applications"
 
 cp "$root/target/release/cranked-audiod" "$appdir/usr/bin/"
 cp "$root/target/release/cranked-audio" "$appdir/usr/bin/"
 cp "$root/data/cranked-audio.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/io.github.zach9113.CrankedAudio.svg"
-cp "$root/data/cranked-audio.svg" "$appdir/io.github.zach9113.CrankedAudio.svg"
-ln -sf "io.github.zach9113.CrankedAudio.svg" "$appdir/.DirIcon"
-ln -sf "io.github.zach9113.CrankedAudio.svg" "$appdir/cranked-audio.svg"
+cp "$root/data/cranked-audio-256.png" "$appdir/usr/share/icons/hicolor/256x256/apps/io.github.zach9113.CrankedAudio.png"
+# the AppImage's own icon must be a PNG (appimagetool refuses an SVG .DirIcon)
+cp "$root/data/cranked-audio-256.png" "$appdir/io.github.zach9113.CrankedAudio.png"
+ln -sf "io.github.zach9113.CrankedAudio.png" "$appdir/.DirIcon"
 
 cat > "$appdir/io.github.zach9113.CrankedAudio.desktop" << 'EOF'
 [Desktop Entry]
