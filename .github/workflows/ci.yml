@@ -45,3 +45,44 @@ jobs:
 
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # The live suites (tests/live*.sh) against a real PipeWire, run headless: its own session bus and sound server, a
+  # virtual keyboard (uinput), a virtual MIDI port (ALSA sequencer) and a virtual serial cable. No sound card needed.
+  live:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpulse-dev libasound2-dev libdbus-1-dev libudev-dev libfontconfig1-dev libfreetype6-dev \
+            pipewire pipewire-pulse wireplumber pulseaudio-utils dbus dbus-user-session python3-gi python3-evdev socat jq curl \
+            "linux-modules-extra-$(uname -r)"
+
+      - name: Virtual keyboard and MIDI devices
+        run: |
+          sudo modprobe uinput && sudo chmod 666 /dev/uinput
+          sudo modprobe snd-seq && sudo chmod 666 /dev/snd/seq
+          # the keyboard knob reads /dev/input/event*, which needs the input group
+          sudo usermod -aG input "$USER"
+
+      - name: Build
+        run: cargo build --release --workspace --examples
+
+      - name: Live suites
+        run: |
+          fails=0
+          for suite in tests/live.sh tests/live_home_assistant.sh tests/live_duck.sh tests/live_dbus.sh \
+                       tests/live_devices.sh tests/live_update.sh; do
+            echo "::group::$suite"
+            # sg: a shell with the input group the usermod above added (this job's session predates it)
+            sg input -c "tests/headless_session.sh $suite" || fails=$((fails + 1))
+            echo "::endgroup::"
+          done
+          echo "suites failing: $fails"
+          exit "$fails"
