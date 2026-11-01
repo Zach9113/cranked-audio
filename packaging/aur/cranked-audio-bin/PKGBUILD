@@ -10,7 +10,7 @@ arch=('x86_64')
 url='https://github.com/Zach9113/cranked-audio'
 license=('GPL-3.0-only')
 # linked: alsa-lib, fontconfig, glibc, libgcc, libpulse; loaded by the window at runtime: wayland or the X11 libraries
-depends=('alsa-lib' 'fontconfig' 'glibc' 'libgcc' 'libpulse'
+depends=('alsa-lib' 'fontconfig' 'glibc' 'hicolor-icon-theme' 'libgcc' 'libpulse'
          'libx11' 'libxcb' 'libxcursor' 'libxi' 'libxkbcommon' 'libxkbcommon-x11' 'wayland')
 optdepends=('pipewire-pulse: PipeWire audio (PulseAudio works too)'
             'gnome-shell-extension-appindicator: the tray icon on GNOME'

@@ -4,6 +4,7 @@
 # headless session. CI runs it on every release before it's published; it works the same on your machine.
 # Usage: scripts/test-channel.sh DIR_WITH_RELEASE_FILES [IMAGE...]
 #        scripts/test-channel.sh --release v2.4.0 [IMAGE...]   (downloads that release's files first)
+# The image "aur" builds and installs the AUR package from the tarball instead (tests/channel/aur_check.sh).
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 if [ "${1:-}" = "--release" ]; then
@@ -17,7 +18,7 @@ else
 fi
 images=("$@")
 [ ${#images[@]} -gt 0 ] || images=(ubuntu:22.04 ubuntu:24.04 debian:12 debian:13 fedora:latest archlinux:latest
-  opensuse/tumbleweed:latest)
+  opensuse/tumbleweed:latest aur)
 
 # what a desktop already has, per package manager
 setup() {
@@ -33,6 +34,16 @@ setup() {
 failed=()
 for image in "${images[@]}"; do
   echo "=== $image"
+  if [ "$image" = aur ]; then
+    if docker run --rm --network host -v "$root:/repo:ro" -v "$assets:/assets:ro" archlinux:base-devel \
+      /repo/tests/channel/aur_check.sh; then
+      echo "=== aur: passed"
+    else
+      echo "=== aur: FAILED"
+      failed+=(aur)
+    fi
+    continue
+  fi
   if docker run --rm --network host -v "$root/tests:/tests:ro" -v "$assets:/assets:ro" "$image" sh -c "
       ( $(setup "$image") ) > /tmp/setup.log 2>&1 || { tail -20 /tmp/setup.log; exit 1; }
       useradd -m tester && su tester -c '/tests/headless_session.sh /tests/channel/release_check.sh /assets'"; then
