@@ -14,9 +14,9 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1 ($2)"; else echo "FAIL $1: got 
 
 module=$(pactl load-module module-null-sink sink_name=cranked_devtest sink_properties=node.description=cranked_devtest)
 for app in kb midi deej; do
-  head -c $((48000 * 2 * 40)) /dev/zero > "$work/$app.raw"
-  pw-play --raw --target cranked_devtest --rate 48000 --channels 1 --format s16 --volume 1.0 \
-    -P "{ application.name=cranked-selftest-$app media.role=phone state.restore-props=false }" "$work/$app.raw" &
+  "$here/make_wav.py" "$work/$app.wav" 40
+  pw-play --target cranked_devtest --volume 1.0 \
+    -P "{ application.name=cranked-selftest-$app media.role=phone state.restore-props=false }" "$work/$app.wav" &
 done
 stream() {
   pactl -f json list sink-inputs | jq -j --arg app "cranked-selftest-$1" \
