@@ -90,12 +90,17 @@ after=$(system_volume)
 check "the system volume didn't move (the knob is taken over)" "$after" "$before"
 [ "$after" != "$before" ] && pactl set-sink-volume @DEFAULT_SINK@ "$before"
 
-echo "b0 07 40" >&4; sleep 0.5
-check "MIDI fader sets its knob" "$(stream midi)" "50"
-echo "b0 07 7f" >&4; sleep 0.5
-check "all the way up" "$(stream midi)" "100"
-echo "b0 40 7f" >&4; sleep 0.1; echo "b0 40 00" >&4; sleep 0.5
-check "MIDI button is the knob's button (mute)" "$(stream midi)" "100 muted"
+# MIDI needs the ALSA sequencer, which some systems (a CI runner's kernel) don't have
+if [ -e /dev/snd/seq ]; then
+  echo "b0 07 40" >&4; sleep 0.5
+  check "MIDI fader sets its knob" "$(stream midi)" "50"
+  echo "b0 07 7f" >&4; sleep 0.5
+  check "all the way up" "$(stream midi)" "100"
+  echo "b0 40 7f" >&4; sleep 0.1; echo "b0 40 00" >&4; sleep 0.5
+  check "MIDI button is the knob's button (mute)" "$(stream midi)" "100 muted"
+else
+  echo "skip the MIDI checks (no ALSA sequencer, /dev/snd/seq, on this system)"
+fi
 
 for _ in 1 2 3 4 5; do printf '512\r\n' > "$work/deej-us"; sleep 0.1; done; sleep 0.4
 check "deej slider sets its knob" "$(stream deej)" "50"

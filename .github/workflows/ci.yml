@@ -61,13 +61,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libpulse-dev libasound2-dev libdbus-1-dev libudev-dev libfontconfig1-dev libfreetype6-dev \
-            pipewire pipewire-pulse wireplumber pulseaudio-utils dbus dbus-user-session python3-gi python3-evdev socat jq curl \
-            "linux-modules-extra-$(uname -r)"
+            pipewire pipewire-pulse wireplumber pulseaudio-utils dbus dbus-user-session python3-gi python3-evdev socat jq curl
 
       - name: Virtual keyboard and MIDI devices
         run: |
           sudo modprobe uinput && sudo chmod 666 /dev/uinput
-          sudo modprobe snd-seq && sudo chmod 666 /dev/snd/seq
+          # the ALSA sequencer is in the runner kernel's extra modules, which aren't always published; without it the
+          # devices suite skips its MIDI checks
+          if sudo apt-get install -y "linux-modules-extra-$(uname -r)" && sudo modprobe snd-seq; then
+            sudo chmod 666 /dev/snd/seq
+          else
+            echo "::warning::no ALSA sequencer on this runner: the MIDI checks are skipped"
+          fi
           # the keyboard knob reads /dev/input/event*, which needs the input group
           sudo usermod -aG input "$USER"
 
