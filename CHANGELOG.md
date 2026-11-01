@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.4.0
 
 ### All platforms
 - While Auto-lower holds knobs down, their lights dim half as much as the volume (and never below 70%), instead of
