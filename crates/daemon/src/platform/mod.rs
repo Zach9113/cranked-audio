@@ -53,6 +53,12 @@ pub fn native() -> Platform {
     platform
 }
 
+/// Whether this system can do MIDI at all. On Linux that needs the ALSA sequencer (`/dev/snd/seq`); without it,
+/// every look for MIDI ports would only get ALSA writing an error to the log.
+pub fn midi_available() -> bool {
+    cfg!(windows) || std::path::Path::new("/dev/snd/seq").exists()
+}
+
 /// Starts a named worker thread for an adapter (the name shows up in `top -H` and crash reports).
 pub fn spawn_thread(name: &str, work: impl FnOnce() + Send + 'static) {
     std::thread::Builder::new().name(name.into()).spawn(work).unwrap();
