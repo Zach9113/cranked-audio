@@ -48,6 +48,10 @@ check "a short ping on the trigger changes nothing" "$(volume_of cranked-selftes
 # the tone starts 2 s into the talk stream; a slow machine starts the stream late, so wait up to 3 s for the dip
 for _ in $(seq 1 30); do [ "$(volume_of cranked-selftest-music)" = 30 ] && break; sleep 0.1; done
 check "a longer sound lowers the music by half" "$(volume_of cranked-selftest-music)" "30"
+if [ "$(volume_of cranked-selftest-music)" != 30 ]; then
+  echo "--- no dip: the streams, the meter and the links"
+  pactl list short sink-inputs; pactl list short source-outputs; pw-link -l 2>&1 | grep -iA2 "cranked\|meter"
+fi
 pid=$daemon; t0=$(awk '{print $14+$15}' /proc/$pid/stat)
 sleep 0.5
 check "and holds it down through a short pause" "$(volume_of cranked-selftest-music)" "30"
