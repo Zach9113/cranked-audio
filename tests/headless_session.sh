@@ -35,5 +35,10 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 pactl list short sinks | grep -q headless_default || { echo "headless session: no default sink" >&2; exit 1; }
+# setting the default needs WirePlumber's settings, which come up after the Pulse server
+for _ in $(seq 1 50); do
+  pactl set-default-sink headless_default 2>/dev/null && break
+  sleep 0.2
+done
 pactl set-default-sink headless_default
 "$@"
