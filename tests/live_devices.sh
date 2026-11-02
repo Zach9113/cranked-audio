@@ -14,15 +14,23 @@ check() { if [ "$2" = "$3" ]; then echo "ok   $1 ($2)"; else echo "FAIL $1: got 
 
 module=$(pactl load-module module-null-sink sink_name=cranked_devtest sink_properties=node.description=cranked_devtest)
 for app in kb midi deej; do
-  head -c $((48000 * 2 * 40)) /dev/zero > "$work/$app.raw"
-  pw-play --raw --target cranked_devtest --rate 48000 --channels 1 --format s16 --volume 1.0 \
-    -P "{ application.name=cranked-selftest-$app media.role=phone state.restore-props=false }" "$work/$app.raw" &
+  "$here/make_wav.py" "$work/$app.wav" 40
+  pw-play --target cranked_devtest --volume 1.0 \
+    -P "{ application.name=cranked-selftest-$app media.role=phone state.restore-props=false }" "$work/$app.wav" &
 done
 stream() {
   pactl -f json list sink-inputs | jq -j --arg app "cranked-selftest-$1" \
     '.[] | select(.properties."application.name" == $app) | "\((.volume | to_entries[0].value.value) * 100 / 65536 | round)\(if .mute then " muted" else "" end)"'
 }
 system_volume() { pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -1; }
+# the streams start at full volume whatever the session manager's default for new streams is (WirePlumber 0.4
+# starts them lower)
+sleep 0.5
+for app in kb midi deej; do
+  index=$(pactl -f json list sink-inputs | jq --arg app "cranked-selftest-$app" \
+    '[.[] | select(.properties."application.name" == $app)][0].index')
+  pactl set-sink-input-volume "$index" 100%
+done
 
 # the virtual devices
 socat pty,raw,echo=0,link="$work/deej-box" pty,raw,echo=0,link="$work/deej-us" &
@@ -37,8 +45,9 @@ for line in open(sys.argv[1]):
     ui.write(e.EV_KEY, key, 0); ui.syn()
 ui.close()
 PY
-"$here/../target/release/examples/midi_virtual" < "$work/midi" &
-exec 3> "$work/keys" 4> "$work/midi"
+[ -e /dev/snd/seq ] && "$here/../target/release/examples/midi_virtual" < "$work/midi" &
+# read-write, so opening the MIDI pipe doesn't wait for a reader when midi_virtual isn't started
+exec 3> "$work/keys" 4<> "$work/midi"
 sleep 0.5
 
 cat > "$work/config.toml" <<TOML
@@ -90,12 +99,17 @@ after=$(system_volume)
 check "the system volume didn't move (the knob is taken over)" "$after" "$before"
 [ "$after" != "$before" ] && pactl set-sink-volume @DEFAULT_SINK@ "$before"
 
-echo "b0 07 40" >&4; sleep 0.5
-check "MIDI fader sets its knob" "$(stream midi)" "50"
-echo "b0 07 7f" >&4; sleep 0.5
-check "all the way up" "$(stream midi)" "100"
-echo "b0 40 7f" >&4; sleep 0.1; echo "b0 40 00" >&4; sleep 0.5
-check "MIDI button is the knob's button (mute)" "$(stream midi)" "100 muted"
+# MIDI needs the ALSA sequencer, which some systems (a CI runner's kernel) don't have
+if [ -e /dev/snd/seq ]; then
+  echo "b0 07 40" >&4; sleep 0.5
+  check "MIDI fader sets its knob" "$(stream midi)" "50"
+  echo "b0 07 7f" >&4; sleep 0.5
+  check "all the way up" "$(stream midi)" "100"
+  echo "b0 40 7f" >&4; sleep 0.1; echo "b0 40 00" >&4; sleep 0.5
+  check "MIDI button is the knob's button (mute)" "$(stream midi)" "100 muted"
+else
+  echo "skip the MIDI checks (no ALSA sequencer, /dev/snd/seq, on this system)"
+fi
 
 for _ in 1 2 3 4 5; do printf '512\r\n' > "$work/deej-us"; sleep 0.1; done; sleep 0.4
 check "deej slider sets its knob" "$(stream deej)" "50"

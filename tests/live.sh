@@ -21,9 +21,10 @@ min = 10
 max = 60
 TOML
 module=$(pactl load-module module-null-sink sink_name=cranked_livetest sink_properties=node.description=cranked_livetest)
+"$(dirname "$0")/make_wav.py" "$work/silence.wav" 30
 play() {
-  head -c $((48000 * 2 * 30)) /dev/zero | pw-play --raw --target cranked_livetest --rate 48000 --channels 1 --format s16 \
-    --volume 1.0 -P "{ application.name=$1 media.role=phone state.restore-props=false }" - &
+  pw-play --target cranked_livetest --volume 1.0 -P "{ application.name=$1 media.role=phone state.restore-props=false }" \
+    "$work/silence.wav" &
 }
 volume_of() {
   pactl -f json list sink-inputs | jq -j --arg app "$1" \
