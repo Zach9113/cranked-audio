@@ -8,6 +8,8 @@
 - After "Set shortcuts…" opens the desktop's own shortcut settings, the window says so, since GNOME often opens them
   behind it.
 - Settings no longer talks about a mixer to people who don't have one.
+- Auto-lower keeps reacting to an app whose sound moves to another output right as it starts: the level meter it
+  replaced used to stay behind, and the new one could hear nothing.
 
 ## 2.4.0
 
