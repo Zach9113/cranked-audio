@@ -45,7 +45,8 @@ echo "knob 0 60" >&3; echo "knob 1 80" >&3; sleep 0.3
 play cranked-selftest-talk "$work/talk.wav"
 sleep 1.4
 check "a short ping on the trigger changes nothing" "$(volume_of cranked-selftest-music)" "60"
-sleep 1.75
+# the tone starts 2 s into the talk stream; a slow machine starts the stream late, so wait up to 3 s for the dip
+for _ in $(seq 1 30); do [ "$(volume_of cranked-selftest-music)" = 30 ] && break; sleep 0.1; done
 check "a longer sound lowers the music by half" "$(volume_of cranked-selftest-music)" "30"
 pid=$daemon; t0=$(awk '{print $14+$15}' /proc/$pid/stat)
 sleep 0.5

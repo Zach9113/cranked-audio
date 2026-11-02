@@ -46,7 +46,8 @@ for line in open(sys.argv[1]):
 ui.close()
 PY
 [ -e /dev/snd/seq ] && "$here/../target/release/examples/midi_virtual" < "$work/midi" &
-exec 3> "$work/keys" 4> "$work/midi"
+# read-write, so opening the MIDI pipe doesn't wait for a reader when midi_virtual isn't started
+exec 3> "$work/keys" 4<> "$work/midi"
 sleep 0.5
 
 cat > "$work/config.toml" <<TOML

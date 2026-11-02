@@ -80,13 +80,15 @@ jobs:
         run: cargo build --release --workspace --bins --examples
 
       - name: Live suites
+        timeout-minutes: 30
         run: |
           fails=0
           for suite in tests/live.sh tests/live_home_assistant.sh tests/live_duck.sh tests/live_dbus.sh \
                        tests/live_devices.sh tests/live_update.sh; do
             echo "::group::$suite"
             # sg: a shell with the input group the usermod above added (this job's session predates it)
-            sg input -c "tests/headless_session.sh $suite" || fails=$((fails + 1))
+            # timeout: a suite that hangs fails instead of holding the job until GitHub cancels it
+            timeout 300 sg input -c "tests/headless_session.sh $suite" || fails=$((fails + 1))
             echo "::endgroup::"
           done
           echo "suites failing: $fails"

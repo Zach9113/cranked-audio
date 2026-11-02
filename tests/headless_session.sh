@@ -6,7 +6,17 @@ set -euo pipefail
 if [ -z "${CRANKED_HEADLESS_SESSION:-}" ]; then
   runtime=$(mktemp -d)
   chmod 700 "$runtime"
-  CRANKED_HEADLESS_SESSION=1 XDG_RUNTIME_DIR="$runtime" exec dbus-run-session -- "$0" "$@"
+  # a bus that starts no services on demand: on a desktop the default one would start the real portal and secret
+  # service, which outlive the session (and hold its output open)
+  cat > "$runtime/bus.conf" <<'XML'
+<busconfig>
+  <type>session</type>
+  <listen>unix:tmpdir=/tmp</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default"><allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/></policy>
+</busconfig>
+XML
+  CRANKED_HEADLESS_SESSION=1 XDG_RUNTIME_DIR="$runtime" exec dbus-run-session --config-file="$runtime/bus.conf" -- "$0" "$@"
 fi
 
 pipewire &
