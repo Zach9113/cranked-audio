@@ -18,7 +18,7 @@ use pulse::def::BufferAttr;
 use pulse::mainloop::threaded::Mainloop;
 use pulse::proplist::{properties, Proplist};
 use pulse::sample::{Format, Spec};
-use pulse::stream::{FlagSet as StreamFlags, PeekResult, Stream as PaStream};
+use pulse::stream::{FlagSet as StreamFlags, PeekResult, State as StreamState, Stream as PaStream};
 use pulse::volume::{ChannelVolumes, Volume};
 
 use crate::audio::{next_output, Command, Output, LOUD, LOUD_READINGS, METER_RATE, REPORT_EVERY};
@@ -163,9 +163,16 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
 
     let mut meters: HashMap<u32, Rc<RefCell<PaStream>>> = HashMap::new();
     let mut monitors: HashMap<u32, u32> = HashMap::new();
+    // meters stopped while the sound server was still creating them, disconnected once it has
+    let mut stopping: Vec<Rc<RefCell<PaStream>>> = Vec::new();
     let result = loop {
         if lost.load(Ordering::Relaxed) {
             break Err("sound server connection lost".to_string());
+        }
+        if !stopping.is_empty() {
+            mainloop.lock();
+            stopping = stopping.into_iter().filter_map(stop_meter).collect();
+            mainloop.unlock();
         }
         let command = match commands.recv_timeout(Duration::from_secs(1)) {
             Ok(command) => command,
@@ -179,7 +186,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
         if let Command::Meter { index, sink, on } = command {
             if let Some(meter) = meters.remove(&index) {
                 mainloop.lock();
-                stop_meter(meter);
+                stopping.extend(stop_meter(meter));
                 mainloop.unlock();
             }
             if on {
@@ -233,7 +240,7 @@ fn session(commands: &Receiver<Command>, events: &Sender<Event>) -> Result<(), S
     mainloop.lock();
     #[expect(clippy::iter_over_hash_type, reason = "stopping every meter; order doesn't matter")]
     for (_, meter) in meters.drain() {
-        stop_meter(meter);
+        let _ = stop_meter(meter);
     }
     context.set_state_callback(None);
     context.set_subscribe_callback(None);
@@ -310,12 +317,22 @@ fn start_meter(
 
 /// Stops and frees a meter stream. Call with the mainloop locked: freeing it unlocked races the mainloop thread
 /// (libpulse aborts with a `pa_queue` assertion).
-fn stop_meter(meter: Rc<RefCell<PaStream>>) {
-    if let Ok(mut stream) = meter.try_borrow_mut() {
-        stream.set_read_callback(None);
-        let _ = stream.disconnect();
-    }
-    drop(meter);
+/// A meter the sound server is still creating is handed back to stop again later: disconnecting it now does
+/// nothing, and the server would keep it, still listening to the stream.
+#[must_use]
+fn stop_meter(meter: Rc<RefCell<PaStream>>) -> Option<Rc<RefCell<PaStream>>> {
+    let still_creating = match meter.try_borrow_mut() {
+        Ok(mut stream) => {
+            stream.set_read_callback(None);
+            let creating = stream.get_state() == StreamState::Creating;
+            if !creating {
+                let _ = stream.disconnect();
+            }
+            creating
+        }
+        Err(_) => false,
+    };
+    still_creating.then_some(meter)
 }
 
 /// Ask for the current default and all outputs, wait for the answers without holding the lock, then switch.
