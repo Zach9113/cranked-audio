@@ -26,5 +26,8 @@
     <entry name="hiddenKnobs" type="String"><default></default></entry>
     <!-- which knob scrolling over the panel icon turns (from 1) -->
     <entry name="wheelKnob" type="Int"><default>1</default><min>1</min><max>16</max></entry>
+    <!-- not settings: the knobs' last size in units, kept while the service is away (0 = not seen yet) -->
+    <entry name="lastWidthUnits" type="Double"><default>0</default></entry>
+    <entry name="lastHeightUnits" type="Double"><default>0</default></entry>
   </group>
 </kcfg>

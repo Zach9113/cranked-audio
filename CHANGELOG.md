@@ -10,6 +10,9 @@
 - Settings no longer talks about a mixer to people who don't have one.
 - Auto-lower keeps reacting to an app whose sound moves to another output right as it starts: the level meter it
   replaced used to stay behind, and the new one could hear nothing.
+- Panel widget: in a floating panel with no background, every knob takes the mouse wheel and clicks again, not just
+  the first two. The widget used to shrink to its "isn't running" message while the service started (at login, for
+  one), and Plasma kept taking the mouse only where that smaller widget had been; it now keeps the knobs' last size.
 
 ## 2.4.0
 

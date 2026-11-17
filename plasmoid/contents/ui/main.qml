@@ -388,12 +388,30 @@ PlasmoidItem {
             // all knobs side by side when there's room; the Flow wraps them when there isn't
             readonly property real allColumns: root.shownKnobs.length * (root.unit * 6.4 + root.unit * 0.5) - root.unit * 0.5
             readonly property real allFaders: root.shownKnobs.length * (root.unit * 4.2 + root.unit * 0.4) - root.unit * 0.4
-            implicitWidth: placeholder.visible ? root.unit * 16
-                : root.cfg.style === "sliders" ? sliders.implicitWidth
+            readonly property real knobsWidth: root.cfg.style === "sliders" ? sliders.implicitWidth
                 : root.cfg.style === "faders" ? allFaders : allColumns
-            implicitHeight: placeholder.visible ? placeholder.implicitHeight
-                : root.cfg.style === "sliders" ? sliders.implicitHeight
+            readonly property real knobsHeight: root.cfg.style === "sliders" ? sliders.implicitHeight
                 : root.cfg.style === "faders" ? faders.implicitHeight : knobs.implicitHeight
+            // While the service is away (at login, or while it restarts) the widget keeps the knobs' last size
+            // instead of shrinking to the message. A floating panel without a background only takes the mouse
+            // where it was when its size last changed, so shrinking and growing back left most knobs dead.
+            implicitWidth: !placeholder.visible ? knobsWidth
+                : root.cfg.lastWidthUnits > 0 ? root.cfg.lastWidthUnits * root.unit : root.unit * 16
+            implicitHeight: !placeholder.visible ? knobsHeight
+                : root.cfg.lastHeightUnits > 0 ? root.cfg.lastHeightUnits * root.unit : placeholder.implicitHeight
+            // only the copy on screen counts: the closed popup's knobs wrap into a column of their own (its
+            // items still say visible, their window doesn't)
+            function rememberSize() {
+                const onScreen = visible && Window.window !== null && Window.window.visible;
+                if (!onScreen || placeholder.visible || knobsWidth <= 0 || knobsHeight <= 0) return;
+                const width = Math.round(knobsWidth / root.unit * 100) / 100;
+                const height = Math.round(knobsHeight / root.unit * 100) / 100;
+                if (width !== root.cfg.lastWidthUnits) root.cfg.lastWidthUnits = width;
+                if (height !== root.cfg.lastHeightUnits) root.cfg.lastHeightUnits = height;
+            }
+            onKnobsWidthChanged: Qt.callLater(rememberSize)
+            onKnobsHeightChanged: Qt.callLater(rememberSize)
+            onVisibleChanged: Qt.callLater(rememberSize)
 
             PlasmaExtras.PlaceholderMessage {
                 id: placeholder
