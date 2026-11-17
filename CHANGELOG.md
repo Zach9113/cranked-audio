@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.4.1
 
 ### Linux
 - No more ALSA errors in the log on systems without MIDI support (no `/dev/snd/seq`): the service doesn't look for
