@@ -156,7 +156,7 @@ unsafe extern "system" fn osd_wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lpar
             LRESULT(0)
         }
         WM_PAINT => {
-            let content = OSD_STATE.lock().map(|c| c.clone()).unwrap_or_default();
+            let content = OSD_STATE.lock().map_or_else(|_| Default::default(), |c| c.clone());
             let mut ps = PAINTSTRUCT::default();
             // SAFETY: answering WM_PAINT for our own window; `ps` outlives the matching EndPaint below
             let hdc = unsafe { BeginPaint(hwnd, &raw mut ps) };

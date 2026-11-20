@@ -303,7 +303,7 @@ impl Sessions {
         // SAFETY: a plain COM call on a live session
         let system = unsafe { control.IsSystemSoundsSession() } == S_OK;
         // SAFETY: a plain COM call on a live session; com_string frees the name
-        let display = unsafe { control.GetDisplayName() }.map(com_string).unwrap_or_default();
+        let display = unsafe { control.GetDisplayName() }.map_or_else(|_| String::new(), com_string);
         if state == AudioSessionStateExpired {
             return None;
         }

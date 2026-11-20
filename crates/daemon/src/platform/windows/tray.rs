@@ -96,7 +96,7 @@ fn tooltip(tray: &Tray) -> String {
 }
 
 fn build(tray: &Tray) -> Result<(TrayIcon, HashMap<MenuId, Action>), String> {
-    let rgba = ICONS.iter().find(|(size, _)| *size == ICON_SIZE).map(|(_, rgba)| rgba.to_vec()).unwrap_or_default();
+    let rgba = ICONS.iter().find(|(size, _)| *size == ICON_SIZE).map_or_else(Vec::new, |(_, rgba)| rgba.to_vec());
     let icon = Icon::from_rgba(rgba, ICON_SIZE as u32, ICON_SIZE as u32).map_err(|e| e.to_string())?;
     let (menu, actions) = menu(tray);
     let icon = TrayIconBuilder::new()
