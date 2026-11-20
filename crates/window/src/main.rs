@@ -1498,7 +1498,7 @@ fn setup_settings(window: &MainWindow, link: &Arc<Mutex<Link>>) {
                 // leaving Settings without saving: back to the saved theme
                 let theme = link.config.as_ref().map_or("cranked".to_string(), |c| c.theme.clone());
                 apply_theme(&w, &theme);
-                let look = link.config.as_ref().map(|c| c.look.clone()).unwrap_or_default();
+                let look = link.config.as_ref().map_or_else(Default::default, |c| c.look.clone());
                 apply_look(&w, &look);
                 show(&w, &link.snapshot);
             }

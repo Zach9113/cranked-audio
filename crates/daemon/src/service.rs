@@ -150,7 +150,7 @@ impl Service {
             let now = Instant::now();
             let mut requests = Requests::default();
             let event = event.and_then(|event| self.route(event, &mut requests));
-            let mut out = event.map(|event| self.core.handle(event, now)).unwrap_or_default();
+            let mut out = event.map_or_else(Vec::new, |event| self.core.handle(event, now));
             self.apply(requests, now, &mut out);
             out.extend(self.core.tick(now));
             self.publish();

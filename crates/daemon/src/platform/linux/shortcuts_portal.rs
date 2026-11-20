@@ -185,7 +185,7 @@ where
     B: serde::Serialize + zbus::zvariant::DynamicType,
 {
     let sender =
-        connection.unique_name().map(|name| name.trim_start_matches(':').replace('.', "_")).unwrap_or_default();
+        connection.unique_name().map_or_else(String::new, |name| name.trim_start_matches(':').replace('.', "_"));
     let path = format!("{PORTAL_PATH}/request/{sender}/{token}");
     let rule = zbus::MatchRule::builder()
         .msg_type(zbus::message::Type::Signal)

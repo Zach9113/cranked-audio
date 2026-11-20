@@ -28,7 +28,7 @@ impl Api {
 impl Api {
     /// Everything the window shows, as JSON (knobs with names, levels, colours, what's playing, button actions).
     fn get_state(&self) -> String {
-        self.state.lock().map(|s| s.clone()).unwrap_or_default()
+        self.state.lock().map_or_else(|_| String::new(), |s| s.clone())
     }
 
     /// The same JSON as a property, so listeners (the Plasma widget) get `PropertiesChanged` on every change instead

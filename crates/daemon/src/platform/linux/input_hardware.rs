@@ -60,10 +60,7 @@ pub fn is_bad_device(device: &evdev::Device) -> bool {
         }
     }
     // ALSA physical path indicates an ALSA jack detection endpoint, not a USB/BT controller
-    if device.physical_path().is_some_and(|p| p == "ALSA") {
-        return true;
-    }
-    false
+    device.physical_path().is_some_and(|p| p == "ALSA")
 }
 
 /// Whether an input device can act as a knob or audio controller.
