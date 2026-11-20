@@ -22,8 +22,8 @@ name = "Talk"
 apps = ["cranked-selftest-talk"]
 TOML
 module=$(pactl load-module module-null-sink sink_name=cranked_ducktest sink_properties=node.description=cranked_ducktest)
-play() { # app name, raw s16 mono 48 kHz file
-  pw-play --raw --target cranked_ducktest --rate 48000 --channels 1 --format s16 --volume 1.0 \
+play() { # app name, WAV file
+  pw-play --target cranked_ducktest --volume 1.0 \
     -P "{ application.name=$1 media.role=phone state.restore-props=false }" "$2" &
 }
 volume_of() {
@@ -33,26 +33,25 @@ volume_of() {
 fails=0
 check() { if [ "$2" = "$3" ]; then echo "ok   $1 ($2)"; else echo "FAIL $1: got '$2', want '$3'"; fails=$((fails + 1)); fi; }
 
-head -c $((48000 * 2 * 20)) /dev/zero > "$work/music.raw"
-# talk: 0.5 s silence, a 0.3 s ping (like a notification), 1.2 s silence, 1 s tone (440 Hz, about -12 dBFS), 6 s silence
-python3 -c "
-import math, sys
-out = sys.stdout.buffer
-tone = lambda seconds: b''.join(int(8000 * math.sin(2 * math.pi * 440 * i / 48000)).to_bytes(2, 'little', signed=True) for i in range(int(48000 * seconds)))
-silence = lambda seconds: bytes(int(48000 * seconds) * 2)
-out.write(silence(0.5) + tone(0.3) + silence(1.2) + tone(1.0) + silence(6))" > "$work/talk.raw"
-play cranked-selftest-music "$work/music.raw"
+"$(dirname "$0")/make_wav.py" "$work/music.wav" 20
+"$(dirname "$0")/make_wav.py" "$work/talk.wav" talk
+play cranked-selftest-music "$work/music.wav"
 mkfifo "$work/in"
 "$bin" --config "$work/config.toml" --no-mixer --stdin -v < "$work/in" 2> "$work/log" &
 daemon=$!
 exec 3> "$work/in"
 sleep 0.5
 echo "knob 0 60" >&3; echo "knob 1 80" >&3; sleep 0.3
-play cranked-selftest-talk "$work/talk.raw"
+play cranked-selftest-talk "$work/talk.wav"
 sleep 1.4
 check "a short ping on the trigger changes nothing" "$(volume_of cranked-selftest-music)" "60"
-sleep 1.75
+# the tone starts 2 s into the talk stream; a slow machine starts the stream late, so wait up to 3 s for the dip
+for _ in $(seq 1 30); do [ "$(volume_of cranked-selftest-music)" = 30 ] && break; sleep 0.1; done
 check "a longer sound lowers the music by half" "$(volume_of cranked-selftest-music)" "30"
+if [ "$(volume_of cranked-selftest-music)" != 30 ]; then
+  echo "--- no dip: the streams, the meter and the links"
+  pactl list short sink-inputs; pactl list short source-outputs; pw-link -l 2>&1 | grep -iA2 "cranked\|meter"
+fi
 pid=$daemon; t0=$(awk '{print $14+$15}' /proc/$pid/stat)
 sleep 0.5
 check "and holds it down through a short pause" "$(volume_of cranked-selftest-music)" "30"

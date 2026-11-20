@@ -10,8 +10,9 @@ permissions:
   contents: write
 
 jobs:
+  # Ubuntu 22.04 (glibc 2.35), so the programs also run on Debian 12, Mint 21 and other older systems
   build-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

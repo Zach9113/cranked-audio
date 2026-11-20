@@ -9,6 +9,7 @@ pkgbase = cranked-audio-bin
 	depends = alsa-lib
 	depends = fontconfig
 	depends = glibc
+	depends = hicolor-icon-theme
 	depends = libgcc
 	depends = libpulse
 	depends = libx11

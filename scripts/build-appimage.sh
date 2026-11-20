@@ -52,16 +52,19 @@ exec "$HERE/usr/bin/cranked-audio" "$@"
 EOF
 chmod +x "$appdir/AppRun"
 
-echo "Ensuring appimagetool is available..."
-APPIMAGETOOL="$(command -v appimagetool || true)"
-if [ -z "$APPIMAGETOOL" ]; then
-  mkdir -p "$cache_dir"
-  APPIMAGETOOL="$cache_dir/appimagetool"
-  if [ ! -x "$APPIMAGETOOL" ]; then
-    echo "Downloading appimagetool..."
-    curl -sSL -f -o "$APPIMAGETOOL" "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
-    chmod +x "$APPIMAGETOOL"
-  fi
+# A fixed appimagetool, checked against its checksum: the "continuous" build changed under us once (2.4.0's build
+# broke overnight when it started refusing SVG icons). To move to a newer one, change both lines.
+APPIMAGETOOL_VERSION=1.9.1
+APPIMAGETOOL_SHA256=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+echo "Ensuring appimagetool $APPIMAGETOOL_VERSION is available..."
+mkdir -p "$cache_dir"
+APPIMAGETOOL="$cache_dir/appimagetool-$APPIMAGETOOL_VERSION"
+if ! echo "$APPIMAGETOOL_SHA256  $APPIMAGETOOL" | sha256sum -c --quiet >/dev/null 2>&1; then
+  echo "Downloading appimagetool $APPIMAGETOOL_VERSION..."
+  curl -sSL -f -o "$APPIMAGETOOL" \
+    "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL_VERSION/appimagetool-x86_64.AppImage"
+  echo "$APPIMAGETOOL_SHA256  $APPIMAGETOOL" | sha256sum -c --quiet || { rm -f "$APPIMAGETOOL"; exit 1; }
+  chmod +x "$APPIMAGETOOL"
 fi
 
 echo "Creating AppImage..."
